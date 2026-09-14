@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
-import { Trophy, Flame } from 'lucide-react'
+import { useAuth } from '../App'
+import { Flame, ArrowUp } from 'lucide-react'
 
 export function PantallaRanking() {
+  const { perfil } = useAuth()
   const [lista, setLista] = useState([])
   const [filtro, setFiltro] = useState('total')
   const [cargando, setCargando] = useState(true)
@@ -17,12 +19,10 @@ export function PantallaRanking() {
         if (data && data.length > 0) {
           setLista(data)
         } else {
-          // Si las vistas están vacías o en modo demo, consultar profiles
           const { data: profData } = await supabase.from('profiles').select('*').order('puntos_total', { ascending: false }).limit(20)
           if (profData && profData.length > 0) {
             setLista(profData)
           } else {
-            // Datos representativos para previsualización
             setLista([
               { id: '1', nombre: 'Sofía Rodríguez', avatar_emoji: '👩‍🎓', puntos_total: 340, racha_actual: 12 },
               { id: '2', nombre: 'Martín Gómez', avatar_emoji: '🧑‍💻', puntos_total: 290, racha_actual: 9 },
@@ -47,19 +47,25 @@ export function PantallaRanking() {
     cargar()
   }, [filtro])
 
+  // Calcular la posición del alumno actual
+  const posicionPropia = perfil ? lista.findIndex((p) => p.id === perfil.id || p.nombre === perfil.nombre) + 1 : 0
+  const puntosParaSubir = posicionPropia > 1 && lista[posicionPropia - 2]
+    ? Math.max(lista[posicionPropia - 2].puntos_total - (perfil?.puntos_total || 0) + 5, 5)
+    : 0
+
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main className="page-enter" style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 18 }}>
         <h1 className="apple-large-title">
           Ranking
         </h1>
         <p className="apple-subheadline" style={{ marginTop: 2 }}>
-          Clasificación general por asistencia y participación.
+          Clasificación por asistencia regular y participación en clase.
         </p>
       </header>
 
       {/* Segmented Control nativo iOS */}
-      <div className="segmented-control" style={{ marginBottom: 16 }}>
+      <div className="segmented-control" style={{ marginBottom: 14 }}>
         <button
           className={`segmented-control-item ${filtro === 'total' ? 'active' : ''}`}
           onClick={() => setFiltro('total')}
@@ -74,6 +80,44 @@ export function PantallaRanking() {
         </button>
       </div>
 
+      {/* Tarjeta motivacional de tu posición */}
+      {perfil && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '10px 16px',
+          borderRadius: 12,
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-separator)',
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>{perfil.avatar_emoji || '🧑‍🎓'}</span>
+            <div>
+              <span className="apple-caption" style={{ fontWeight: 600 }}>Tu posición</span>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>
+                {posicionPropia > 0 ? `#${posicionPropia} en la clase` : 'Participando'}
+              </div>
+            </div>
+          </div>
+
+          {puntosParaSubir > 0 && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--color-accent)',
+            }}>
+              <ArrowUp size={14} />
+              <span>+{puntosParaSubir} pts para ascender</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Lista estilo Inset Grouped */}
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {cargando ? (
@@ -83,7 +127,9 @@ export function PantallaRanking() {
         ) : (
           lista.map((p, i) => {
             const esTop3 = i < 3
-            const medallaColores = ['#E5A00D', '#8E8E93', '#C9773B']
+            const medallaColores = ['#E5A00D', '#7E868C', '#B35A25']
+            const esElUsuario = perfil && (p.id === perfil.id || p.nombre === perfil.nombre)
+
             return (
               <div
                 key={p.id || i}
@@ -92,14 +138,18 @@ export function PantallaRanking() {
                   alignItems: 'center',
                   padding: '12px 16px',
                   borderBottom: i < lista.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                  backgroundColor: esTop3 ? 'var(--color-surface-secondary)' : 'transparent',
+                  backgroundColor: esElUsuario
+                    ? 'rgba(0, 122, 255, 0.08)'
+                    : esTop3
+                    ? 'var(--color-surface-secondary)'
+                    : 'transparent',
                 }}
               >
                 {/* Posición */}
                 <div style={{ width: 32, textAlign: 'center', marginRight: 10 }}>
                   {esTop3 ? (
                     <span style={{
-                      fontWeight: 800,
+                      fontWeight: 900,
                       fontSize: 14,
                       color: medallaColores[i],
                     }}>
@@ -119,8 +169,15 @@ export function PantallaRanking() {
 
                 {/* Info estudiante */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {p.nombre}
+                  <div style={{
+                    fontWeight: esElUsuario ? 700 : 600,
+                    fontSize: 15,
+                    color: esElUsuario ? 'var(--color-accent)' : 'var(--color-ink)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>
+                    {p.nombre} {esElUsuario && '(Tú)'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
                     <Flame size={12} color="var(--color-warning)" fill="var(--color-warning)" />

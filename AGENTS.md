@@ -5,9 +5,9 @@
 - Frontend: Vite + React + Tailwind (CDN) en `frontend/`
 - Backend: Express en `server/` con Supabase + Pinecone
 - DB principal: Supabase Postgres
-- Schema: `database.sql`
+- Schema: `database.sql` + `database/` (4 archivos separados)
 - Diseño Apple: skill `apple-design` en `.opencode/skills/`
-- Deploy: Vercel (frontend) + Express (API)
+- Deploy: Vercel (frontend estático) + Express (API)
 
 ## Reglas de diseño
 
@@ -37,12 +37,17 @@ Antes de crear cualquier UI, cargar desde `.opencode/skills/apple-design/referen
 
 ## Base de datos
 
-Ejecutar `database.sql` en Supabase SQL Editor. Las tablas:
-- profiles (auto-creado al hacer login con Google)
-- checkins, messages, message_likes, apuntes, retos, reto_completado, achievements
-- Trigger `actualizar_racha` actualiza racha y puntos automáticamente
-- Función `increment_likes` para sumar likes a mensajes
-- Vistas `ranking_diario` y `ranking_semanal`
+Schema: `database.sql` incluye todos los archivos en orden.
+4 archivos l\u00f3gicos en `database/`:
+- `01_tables.sql` - todas las tablas + \u00edndices
+- `02_rls.sql` - todas las políticas RLS
+- `03_funciones_triggers.sql` - funciones + triggers
+- `04_vistas.sql` - ranking_diario, ranking_semanal
+
+Tablas: profiles, checkins, messages, message_likes, apuntes, retos, reto_completado, achievements
+Trigger `on_auth_user_created` auto-crea perfil al hacer login
+Función `increment_likes` para sumar likes
+Trigger `trg_checkin_after_insert` actualiza racha automáticamente
 
 ## Auth
 
@@ -57,19 +62,19 @@ Ejecutar `database.sql` en Supabase SQL Editor. Las tablas:
 - `GET /api/apuntes/buscar?query=...` - busqueda semantica Pinecone
 - Todos los datos del chat, check-in, ranking van por Supabase directo desde el frontend
 
-## Deploy en Vercel
+## Vercel Deploy
 
-1. Subir el repo a GitHub
+1. Subir repo a GitHub
 2. Conectar en Vercel
-3. Agregar variables de entorno en Vercel Dashboard:
-   - VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-   - SUPABASE_SERVICE_KEY, PINECONE_API_KEY, OPENAI_API_KEY
-4. `vercel.json` configura rutas: `/api/*` → server, todo lo demás → frontend
-5. Para el Express en Vercel, server.js exporta la app
+3. Agregar variables de entorno: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY, PINECONE_API_KEY, OPENAI_API_KEY
+4. `vercel.json` configura rutas: `/api/*` → server, todo lo demás → frontend/dist/index.html
+5. Build: `cd frontend && npm install && npm run build`
+6. El Express en Vercel exporta `app` desde `server/src/server.js`
 
 ## Notas
 
 - Las credenciales van en `.env` (NO commitear)
 - Pinecone solo se usa para embeddings de apuntes, no para puntos ni rachas
-- Tailwind CSS usa CDN, no build
+- Tailwind CSS usa CDN (`cdn.tailwindcss.com`), no build
+- Node.js disponible en: `C:\Users\smrt210\AppData\Local\Temp\opencode\node\node-v24.19.0-win-x64\bin`
 - El build de producción funciona correctamente

@@ -1,14 +1,12 @@
-import { Flame } from 'lucide-react'
+import { EmblemaRacha } from './icons/EmblemaRacha'
 
 export function RachaBar({ racha = 0, mejorRacha = 0 }) {
-  // Generar los últimos 7 días con formato de fecha real
   const dias = Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (6 - i))
     return d
   })
 
-  // Días activos de la racha actual (mínimo 0, máximo 7 en la barra visible)
   const diasActivos = Math.min(Math.max(racha, 0), 7)
 
   return (
@@ -19,18 +17,25 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
         alignItems: 'center',
         marginBottom: 16
       }}>
-        <div>
-          <h3 className="apple-headline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            Racha de asistencia
-            <Flame size={18} color="var(--color-warning)" fill="var(--color-warning)" />
-          </h3>
-          <p className="apple-subheadline" style={{ fontSize: 13, marginTop: 2 }}>
-            <span className="tabular-nums font-semibold">{racha}</span> {racha === 1 ? 'día consecutivo' : 'días consecutivos'} · Récord: <span className="tabular-nums font-semibold">{mejorRacha}</span>
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="flame-animada" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <EmblemaRacha size={38} />
+          </div>
+
+          <div>
+            <h3 className="apple-headline">
+              Racha de asistencia
+            </h3>
+            <p className="apple-subheadline" style={{ fontSize: 13, marginTop: 1 }}>
+              <strong className="tabular-nums" style={{ color: 'var(--color-ink)' }}>{racha}</strong> {racha === 1 ? 'día consecutivo' : 'días consecutivos'} · Récord: <span className="tabular-nums font-semibold">{mejorRacha}</span>
+            </p>
+          </div>
         </div>
 
-        <div className="apple-badge apple-badge-flame">
-          <span className="tabular-nums" style={{ fontSize: 15 }}>{racha} 🔥</span>
+        <div className="apple-badge apple-badge-flame" style={{ padding: '6px 12px' }}>
+          <span className="tabular-nums" style={{ fontSize: 14, fontWeight: 700 }}>
+            {racha} {racha === 1 ? 'DÍA' : 'DÍAS'}
+          </span>
         </div>
       </div>
 
@@ -51,7 +56,7 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
                 style={{
                   width: '100%',
                   aspectRatio: '1 / 1',
-                  maxHeight: 42,
+                  maxHeight: 40,
                   borderRadius: 10,
                   backgroundColor: activo ? 'var(--color-positive)' : 'var(--color-fill-secondary)',
                   color: activo ? '#FFFFFF' : 'var(--color-tertiary-ink)',
@@ -61,7 +66,8 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
                   fontWeight: 700,
                   fontSize: 13,
                   border: esHoy && !activo ? '1.5px dashed var(--color-separator-opaque)' : 'none',
-                  transition: 'background-color 0.2s ease',
+                  boxShadow: activo ? '0 2px 6px rgba(52, 199, 89, 0.25)' : 'none',
+                  transition: 'all 0.2s ease',
                 }}
               >
                 {activo ? '✓' : ''}

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
-import { ArrowUp, Heart, Hash } from 'lucide-react'
+import { ArrowUp, Heart, Hash, Sparkles } from 'lucide-react'
+import { sound } from '../utils/haptics'
 
 const CANALES = [
   { id: 'general', label: 'General' },
@@ -10,10 +11,18 @@ const CANALES = [
   { id: 'retos', label: 'Retos' },
 ]
 
+const RESPUESTAS_RAPIDAS = [
+  '👍 Entendido',
+  '🔥 ¡Buena racha!',
+  '📚 ¿Qué página?',
+  '✅ Duda resuelta',
+]
+
 export function PantallaChat() {
   const { perfil } = useAuth()
   const [canal, setCanal] = useState('general')
   const [texto, setTexto] = useState('')
+  const [likedId, setLikedId] = useState(null)
   const { mensajes, cargando, enviar, like } = useChat(canal)
   const chatEndRef = useRef(null)
 
@@ -26,17 +35,25 @@ export function PantallaChat() {
     if (!texto.trim() || !perfil) return
     const contenido = texto
     setTexto('')
+    sound.playPop()
     await enviar(contenido, perfil.id, perfil)
   }
 
+  const manejarLike = (id) => {
+    setLikedId(id)
+    sound.playPop()
+    like(id, perfil?.id)
+    setTimeout(() => setLikedId(null), 300)
+  }
+
   return (
-    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main className="page-enter" style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 16 }}>
         <h1 className="apple-large-title">
           Chat de Clase
         </h1>
         <p className="apple-subheadline" style={{ marginTop: 2 }}>
-          Pregunta, comparte dudas y debate con tus compañeros.
+          Espacio colaborativo de debate, dudas y apuntes compartidos.
         </p>
       </header>
 
@@ -44,7 +61,7 @@ export function PantallaChat() {
       <div style={{
         display: 'flex',
         gap: 8,
-        marginBottom: 16,
+        marginBottom: 12,
         overflowX: 'auto',
         paddingBottom: 4,
         scrollbarWidth: 'none',
@@ -88,7 +105,7 @@ export function PantallaChat() {
           flexDirection: 'column',
           padding: 0,
           overflow: 'hidden',
-          marginBottom: 12
+          marginBottom: 8
         }}
       >
         <div style={{
@@ -109,6 +126,7 @@ export function PantallaChat() {
               const hora = m.created_at
                 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : ''
+              const isLiked = likedId === m.id
 
               return (
                 <div
@@ -165,7 +183,8 @@ export function PantallaChat() {
                     </span>
 
                     <button
-                      onClick={() => like(m.id, perfil?.id)}
+                      onClick={() => manejarLike(m.id)}
+                      className={isLiked ? 'heart-pop' : ''}
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -179,7 +198,7 @@ export function PantallaChat() {
                       }}
                     >
                       <Heart
-                        size={12}
+                        size={13}
                         fill={(m.likes_count || 0) > 0 ? 'currentColor' : 'none'}
                       />
                       <span className="tabular-nums font-semibold">{m.likes_count || 0}</span>
@@ -190,6 +209,38 @@ export function PantallaChat() {
             })
           )}
           <div ref={chatEndRef} />
+        </div>
+
+        {/* Respuestas rápidas escolares */}
+        <div style={{
+          display: 'flex',
+          gap: 6,
+          padding: '6px 12px',
+          overflowX: 'auto',
+          backgroundColor: 'var(--color-surface-secondary)',
+          borderTop: '0.5px solid var(--color-separator)',
+          scrollbarWidth: 'none',
+        }}>
+          {RESPUESTAS_RAPIDAS.map((frase) => (
+            <button
+              key={frase}
+              type="button"
+              onClick={() => setTexto(frase)}
+              style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-separator)',
+                padding: '4px 10px',
+                borderRadius: 9999,
+                fontSize: 12,
+                fontWeight: 500,
+                color: 'var(--color-secondary-ink)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {frase}
+            </button>
+          ))}
         </div>
 
         {/* Barra de entrada de texto estilo iOS */}
@@ -232,7 +283,7 @@ export function PantallaChat() {
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
-              transition: 'background-color 0.15s ease',
+              transition: 'all 0.15s ease',
             }}
           >
             <ArrowUp size={18} strokeWidth={2.5} />

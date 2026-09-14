@@ -1,12 +1,24 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../App'
 import { NIVELES, EMOJIS_AVATAR, supabase } from '../utils/supabase'
-import { LogOut, Flame, Award, Shield, CheckCircle2 } from 'lucide-react'
+import { CalendarioActividad } from '../components/CalendarioActividad'
+import { LogOut, Sun, Moon, Monitor } from 'lucide-react'
+import { sound } from '../utils/haptics'
 
 export function PantallaPerfil() {
   const { perfil, setPerfil, cerrarSesion } = useAuth()
   const [guardando, setGuardando] = useState(false)
   const [mostrarSelector, setMostrarSelector] = useState(false)
+  const [tema, setTema] = useState(() => localStorage.getItem('racha_tema') || 'auto')
+
+  useEffect(() => {
+    if (tema === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', tema)
+    }
+    localStorage.setItem('racha_tema', tema)
+  }, [tema])
 
   if (!perfil) return null
 
@@ -18,6 +30,7 @@ export function PantallaPerfil() {
 
   const cambiarEmoji = async (emoji) => {
     setGuardando(true)
+    sound.playPop()
     const updated = { ...perfil, avatar_emoji: emoji }
     setPerfil(updated)
     setMostrarSelector(false)
@@ -40,7 +53,7 @@ export function PantallaPerfil() {
   ]
 
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main className="page-enter" style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 18 }}>
         <h1 className="apple-large-title">
           Perfil
@@ -150,6 +163,9 @@ export function PantallaPerfil() {
         </div>
       </section>
 
+      {/* Calendario de Actividad mensual */}
+      <CalendarioActividad racha={perfil.racha_actual || 5} />
+
       {/* Estadísticas en Inset Group */}
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--color-separator)' }}>
@@ -178,6 +194,39 @@ export function PantallaPerfil() {
             </span>
           </div>
         ))}
+      </section>
+
+      {/* Selector de Apariencia Apple */}
+      <section className="card">
+        <h3 className="apple-headline" style={{ fontSize: 15, marginBottom: 12 }}>
+          Apariencia
+        </h3>
+        <div className="segmented-control">
+          <button
+            className={`segmented-control-item ${tema === 'light' ? 'active' : ''}`}
+            onClick={() => { sound.playPop(); setTema('light') }}
+            style={{ gap: 6 }}
+          >
+            <Sun size={15} />
+            <span>Claro</span>
+          </button>
+          <button
+            className={`segmented-control-item ${tema === 'dark' ? 'active' : ''}`}
+            onClick={() => { sound.playPop(); setTema('dark') }}
+            style={{ gap: 6 }}
+          >
+            <Moon size={15} />
+            <span>Oscuro</span>
+          </button>
+          <button
+            className={`segmented-control-item ${tema === 'auto' ? 'active' : ''}`}
+            onClick={() => { sound.playPop(); setTema('auto') }}
+            style={{ gap: 6 }}
+          >
+            <Monitor size={15} />
+            <span>Automático</span>
+          </button>
+        </div>
       </section>
 
       {/* Logros */}

@@ -2,6 +2,7 @@ import { useState, createContext, useContext, useEffect, useRef } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './utils/supabase'
 import { TabBar } from './components/TabBar'
+import { EmblemaRacha } from './components/icons/EmblemaRacha'
 import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
@@ -180,7 +181,7 @@ function PantallaInicio() {
   const { inicioSesion, loginError, entrarModoDemo } = useAuth()
 
   return (
-    <main style={{
+    <main className="page-enter" style={{
       maxWidth: 440,
       margin: '0 auto',
       minHeight: '100vh',
@@ -190,15 +191,15 @@ function PantallaInicio() {
       padding: '24px 20px',
     }}>
       <div className="card" style={{
-        padding: '36px 28px',
+        padding: '40px 28px',
         textAlign: 'center',
       }}>
-        <div style={{
-          fontSize: 68,
-          marginBottom: 16,
-          lineHeight: 1,
+        <div className="flame-animada" style={{
+          display: 'flex',
+          justifyContent: 'center',
+          marginBottom: 20,
         }}>
-          🔥
+          <EmblemaRacha size={74} />
         </div>
 
         <h1 className="apple-large-title" style={{ marginBottom: 8, fontSize: 32 }}>
@@ -220,7 +221,7 @@ function PantallaInicio() {
 
           <button
             className="btn-secondary"
-            onClick={entrarModoDemo}
+            onClick={() => entrarModoDemo()}
             style={{ width: '100%' }}
           >
             Probar Modo Demostración
@@ -244,7 +245,7 @@ function PantallaInicio() {
 
         <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--color-separator)' }}>
           <p className="apple-caption">
-            Diseñado con principios Apple Human Interface Guidelines
+            Diseño artesanal basado en Apple Human Interface Guidelines
           </p>
         </div>
       </div>

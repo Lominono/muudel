@@ -315,3 +315,104 @@ h3.apple-headline {
   background: var(--color-separator-opaque);
   border-radius: 3px;
 }
+
+/* Apple HIG Micro-Animations */
+@keyframes stampIn {
+  0% {
+    opacity: 0;
+    transform: scale(2.2) rotate(15deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.95) rotate(-5deg);
+  }
+  80% {
+    transform: scale(1.04) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(-3.5deg);
+  }
+}
+
+.sello-animado {
+  animation: stampIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes flamePulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 2px 6px rgba(255, 69, 58, 0.25));
+  }
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 4px 12px rgba(255, 69, 58, 0.45));
+  }
+}
+
+.flame-animada {
+  animation: flamePulse 2.8s ease-in-out infinite;
+}
+
+@keyframes heartPop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.38);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.heart-pop {
+  animation: heartPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: pageEnter 0.22s ease-out forwards;
+}
+
+/* Explicit theme toggling support */
+[data-theme="light"] {
+  --color-bg: #F2F2F7;
+  --color-surface: #FFFFFF;
+  --color-surface-secondary: #F8F8FA;
+  --color-surface-elevated: #FFFFFF;
+  --color-fill-secondary: rgba(120, 120, 128, 0.12);
+  --color-fill-tertiary: rgba(120, 120, 128, 0.08);
+  --color-ink: #000000;
+  --color-secondary-ink: #6C6C70;
+  --color-tertiary-ink: #8E8E93;
+  --color-separator: rgba(60, 60, 67, 0.14);
+  --tab-bar-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] {
+  --color-bg: #000000;
+  --color-surface: #1C1C1E;
+  --color-surface-secondary: #2C2C2E;
+  --color-surface-elevated: #2C2C2E;
+  --color-fill-secondary: rgba(120, 120, 128, 0.24);
+  --color-fill-tertiary: rgba(120, 120, 128, 0.16);
+  --color-ink: #FFFFFF;
+  --color-secondary-ink: #8E8E93;
+  --color-tertiary-ink: #636366;
+  --color-separator: rgba(84, 84, 88, 0.38);
+  --tab-bar-bg: rgba(28, 28, 30, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.12);
+}
+
