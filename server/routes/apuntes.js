@@ -4,38 +4,53 @@ import { Pinecone } from '@pinecone-database/pinecone'
 import { config } from '../config/env.js'
 
 const router = Router()
+
 const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey)
 const pc = new Pinecone({ apiKey: config.pineconeApiKey })
 const index = pc.index(config.pineconeIndexName)
 
 const embeddingModel = 'text-embedding-3-small'
-const openaiKey = process.env.OPENAI_API_KEY
+
+function checkAuth(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Sin autorización' })
+  }
+  next()
+}
 
 async function getEmbedding(text) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY no configurada')
+  }
   const resp = await fetch(`https://api.openai.com/v1/embeddings`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${openaiKey}`,
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({ model: embeddingModel, input: text }),
   })
+  if (!resp.ok) throw new Error('Error creando embedding')
   const data = await resp.json()
   return data.data[0].embedding
 }
 
-router.post('/subir', async (req, res) => {
+router.post('/subir', checkAuth, async (req, res) => {
   try {
     const { titulo, materia, texto, userId } = req.body
-    const embedding = await getEmbedding(`${titulo} ${texto}`)
+    if (!titulo || !materia) {
+      return res.status(400).json({ error: 'Faltan título y materia' })
+    }
+    const embedding = await getEmbedding(`${titulo} ${texto || ''}`)
 
-    const { data: apunte, error } = await supabase
+    const { data: apunte, error: dbError } = await supabase
       .from('apuntes')
       .insert({ titulo, materia, texto, user_id: userId })
       .select()
       .single()
 
-    if (error) throw error
+    if (dbError) throw dbError
 
     await index.namespace('apuntes').upsert([
       {
@@ -59,6 +74,9 @@ router.post('/subir', async (req, res) => {
 router.get('/buscar', async (req, res) => {
   try {
     const { query } = req.query
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Buscar al menos 2 caracteres' })
+    }
     const embedding = await getEmbedding(query)
 
     const results = await index.namespace('apuntes').query({

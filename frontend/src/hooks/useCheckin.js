@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabase'
 export function useCheckin(userId) {
   const [hoy, setHoy] = useState(null)
   const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     if (!userId) return
@@ -13,29 +14,33 @@ export function useCheckin(userId) {
   const chequear = async () => {
     setCargando(true)
     const hoyStr = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
+    const { data, error: err } = await supabase
       .from('checkins')
       .select('*')
       .eq('user_id', userId)
       .eq('fecha', hoyStr)
       .single()
     setHoy(data)
+    setError(err || null)
     setCargando(false)
   }
 
   const hacerCheckin = async (esTarde) => {
+    setError(null)
     const hoyStr = new Date().toISOString().split('T')[0]
     const puntos = esTarde ? 5 : 10
-    const { data, error } = await supabase
+    const { data, error: err } = await supabase
       .from('checkins')
       .insert({ user_id: userId, fecha: hoyStr, hora: new Date().toLocaleTimeString(), es_tarde: esTarde, puntos_ganados: puntos })
       .select()
       .single()
-    if (!error) {
-      await chequear()
+    if (err) {
+      setError(err.message)
+      return { data: null, error: err }
     }
-    return { data, error }
+    await chequear()
+    return { data, error: null }
   }
 
-  return { hoy, cargando, hacerCheckin, chequear }
+  return { hoy, cargando, hacerCheckin, chequear, error }
 }

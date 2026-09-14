@@ -14,8 +14,6 @@ export function PantallaRanking() {
     cargar()
   }, [])
 
-  const posicion = lista.findIndex(p => p.id === 'yo')
-
   return (
     <div style={{ maxWidth: 500, margin: '0 auto', padding: 24, paddingBottom: 80 }}>
       <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}>🏆 Ranking</h1>

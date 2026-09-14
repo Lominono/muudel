@@ -9,11 +9,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  css: {
-    postcss: {
-      plugins: [],
-    },
-  },
   server: {
     port: 5173,
     proxy: {
@@ -22,5 +17,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
   },
 })
