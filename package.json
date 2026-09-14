@@ -12,5 +12,9 @@
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
     "start:server": "cd server && npm start"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.63.3",
+    "@rollup/rollup-linux-x64-musl": "^4.63.3"
   }
 }

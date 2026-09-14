@@ -1,16 +1,11 @@
 import { useState, createContext, useContext, useEffect, useRef } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from './utils/supabase'
 import { TabBar } from './components/TabBar'
 import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 const AuthContext = createContext(null)
 
@@ -26,6 +21,21 @@ function App() {
   const cargandoRef = useRef(false)
 
   useEffect(() => {
+    // Verificar si hay sesión de demo guardada localmente
+    const demoGuardado = localStorage.getItem('racha_demo_user')
+    if (demoGuardado) {
+      try {
+        const parsed = JSON.parse(demoGuardado)
+        setSession({ user: { id: parsed.id, email: 'demo@alumno.es' } })
+        setPerfil(parsed)
+        setCargando(false)
+        return
+      } catch (e) {
+        localStorage.removeItem('racha_demo_user')
+      }
+    }
+
+    // Comprobar sesión de Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       if (session?.user) {
@@ -33,6 +43,8 @@ function App() {
       } else {
         setCargando(false)
       }
+    }).catch(() => {
+      setCargando(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -40,79 +52,203 @@ function App() {
         setSession(session)
         if (session?.user && !cargandoRef.current) {
           cargarPerfil(session.user.id)
-        } else if (!session) {
+        } else if (!session && !localStorage.getItem('racha_demo_user')) {
           setPerfil(null)
           setCargando(false)
         }
       }
     )
-    return () => subscription.unsubscribe()
+    return () => subscription?.unsubscribe()
   }, [])
 
   const cargarPerfil = async (userId) => {
     if (cargandoRef.current) return
     cargandoRef.current = true
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    setPerfil(data)
-    setCargando(false)
-    cargandoRef.current = false
+    try {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+      if (data) {
+        setPerfil(data)
+      } else {
+        // Perfil por defecto si no existe aún
+        const nuevo = {
+          id: userId,
+          nombre: 'Alumno',
+          avatar_emoji: '🧑‍🎓',
+          puntos_total: 10,
+          racha_actual: 1,
+          mejor_racha: 1,
+          rol: 'alumno'
+        }
+        setPerfil(nuevo)
+      }
+    } catch (e) {
+      console.warn('No se pudo cargar perfil:', e)
+    } finally {
+      setCargando(false)
+      cargandoRef.current = false
+    }
   }
 
   const inicioSesion = async () => {
     try {
       setLoginError(null)
-      await supabase.auth.signInWithOAuth({ provider: 'google' })
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      })
+      if (error) throw error
     } catch (e) {
-      setLoginError('No se pudo conectar. Intentá de nuevo.')
+      console.error(e)
+      setLoginError('No se pudo conectar con Google. Puedes probar el modo demo debajo.')
     }
+  }
+
+  const entrarModoDemo = () => {
+    const demoPerfil = {
+      id: 'demo-user-1234',
+      nombre: 'Estudiante Demo',
+      avatar_emoji: '🧑‍🎓',
+      puntos_total: 150,
+      racha_actual: 5,
+      mejor_racha: 7,
+      frase: 'Siempre presente en clase',
+      rol: 'alumno'
+    }
+    localStorage.setItem('racha_demo_user', JSON.stringify(demoPerfil))
+    setSession({ user: { id: demoPerfil.id, email: 'demo@alumno.es' } })
+    setPerfil(demoPerfil)
+  }
+
+  const cerrarSesion = async () => {
+    localStorage.removeItem('racha_demo_user')
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {}
+    setSession(null)
+    setPerfil(null)
   }
 
   if (cargando) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div style={{ fontSize: 32 }}>⏳</div>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        gap: 12
+      }}>
+        <div style={{ fontSize: 40, animation: 'pulse 1.5s infinite' }}>🔥</div>
+        <p className="apple-caption">Cargando Racha de Clase...</p>
       </div>
     )
   }
 
   return (
-    <AuthContext.Provider value={{ session, perfil, setPerfil }}>
-      <Routes>
-        {!session ? (
-          <Route path="*" element={<PantallaInicio />} />
-        ) : (
-          <>
-            <Route path="/" element={<PantallaHoy />} />
-            <Route path="/ranking" element={<PantallaRanking />} />
-            <Route path="/chat" element={<PantallaChat />} />
-            <Route path="/perfil" element={<PantallaPerfil />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </>
-        )}
-      </Routes>
+    <AuthContext.Provider value={{
+      session,
+      perfil,
+      setPerfil,
+      inicioSesion,
+      loginError,
+      cerrarSesion,
+      entrarModoDemo
+    }}>
+      <div style={{ minHeight: '100vh', paddingBottom: session ? 84 : 0 }}>
+        <Routes>
+          {!session ? (
+            <Route path="*" element={<PantallaInicio />} />
+          ) : (
+            <>
+              <Route path="/" element={<PantallaHoy />} />
+              <Route path="/ranking" element={<PantallaRanking />} />
+              <Route path="/chat" element={<PantallaChat />} />
+              <Route path="/perfil" element={<PantallaPerfil />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </>
+          )}
+        </Routes>
+      </div>
       {session && <TabBar />}
     </AuthContext.Provider>
   )
 }
 
 function PantallaInicio() {
-  const { inicioSesion } = useAuth()
-  const { loginError } = useAuth()
+  const { inicioSesion, loginError, entrarModoDemo } = useAuth()
+
   return (
-    <div style={{ maxWidth: 400, margin: '100px auto', textAlign: 'center', padding: 32 }}>
-      <div style={{ fontSize: 64, marginBottom: 16 }}>🔥</div>
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Racha de Clase</h1>
-      <p style={{ color: '#6B6B70', fontSize: 17, marginBottom: 40 }}>
-        Ve a clase, sumá puntos, subí tu racha. Simple así.
-      </p>
-      <button className="btn-primary" onClick={inicioSesion} style={{ width: '100%' }}>
-        Entrar con Google
-      </button>
-      {loginError && <p style={{ color: '#FF453A', marginTop: 12, fontSize: 15 }}>{loginError}</p>}
-      <p style={{ marginTop: 16, fontSize: 13, color: '#98989D' }}>
-        Pón tu código de clase cuando te pidan
-      </p>
-    </div>
+    <main style={{
+      maxWidth: 440,
+      margin: '0 auto',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: '24px 20px',
+    }}>
+      <div className="card" style={{
+        padding: '36px 28px',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          fontSize: 68,
+          marginBottom: 16,
+          lineHeight: 1,
+        }}>
+          🔥
+        </div>
+
+        <h1 className="apple-large-title" style={{ marginBottom: 8, fontSize: 32 }}>
+          Racha de Clase
+        </h1>
+
+        <p className="apple-subheadline" style={{ marginBottom: 32, fontSize: 16 }}>
+          Asiste a clase, acumula puntos y mantén tu racha activa todos los días.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button
+            className="btn-primary"
+            onClick={inicioSesion}
+            style={{ width: '100%' }}
+          >
+            Continuar con Google
+          </button>
+
+          <button
+            className="btn-secondary"
+            onClick={entrarModoDemo}
+            style={{ width: '100%' }}
+          >
+            Probar Modo Demostración
+          </button>
+        </div>
+
+        {loginError && (
+          <div style={{
+            marginTop: 16,
+            padding: '10px 14px',
+            borderRadius: 10,
+            background: 'var(--color-negative-bg)',
+            color: 'var(--color-negative)',
+            fontSize: 14,
+            fontWeight: 500,
+            textAlign: 'center'
+          }}>
+            {loginError}
+          </div>
+        )}
+
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--color-separator)' }}>
+          <p className="apple-caption">
+            Diseñado con principios Apple Human Interface Guidelines
+          </p>
+        </div>
+      </div>
+    </main>
   )
 }
 
