@@ -1,90 +1,66 @@
 -- ==============================================================================
--- RACHA DE CLASE - SCHEMA COMPLETO SUPABASE
--- ==============================================================================
--- Puedes copiar y pegar todo este script directamente en el SQL Editor de Supabase.
--- Incluye: Extensiones, Tablas, Índices, RLS, Funciones, Triggers y Vistas.
--- ==============================================================================
-
--- 1. EXTENSIONES
-create extension if not exists "uuid-ossp";
-
--- ==============================================================================
--- 2. TABLAS E ÍNDICES
+-- ACTUALIZACIÓN SEGURA: SOLO LO NUEVO / FALTANTE
+-- Puedes copiar y pegar todo este archivo en el SQL Editor de Supabase
+-- Es 100% idempotente (no dará errores si algo ya existe).
 -- ==============================================================================
 
--- Tabla: perfiles
+-- 1. TABLAS BÁSICAS (por si alguna no fue creada)
 create table if not exists profiles (
   id uuid references auth.users on delete cascade primary key,
-  nombre text not null check (length(nombre) >= 2 and length(nombre) <= 30),
+  nombre text not null default 'Alumno',
   avatar_emoji text default '🧑‍🎓',
-  color_id integer default 1,
-  frase text default '',
   puntos_total integer default 0,
-  xp_nivel integer default 0,
   racha_actual integer default 0,
   mejor_racha integer default 0,
-  ultimo_checkin text,
-  rol text default 'alumno' check (rol in ('alumno','moderador')),
-  freeze_usadas integer default 0,
+  ultimo_checkin date,
+  color_acento text default '#0A84FF',
+  frase text,
+  rol text default 'alumno' check (rol in ('alumno', 'moderador')),
+  xp_nivel integer default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
--- Tabla: checkins (asistencias)
 create table if not exists checkins (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
-  fecha date default current_date,
-  hora text not null,
-  es_tarde boolean default false,
-  puntos_ganados integer not null,
-  nota text default '',
+  fecha date default current_date not null,
+  hora_checkin time default current_time not null,
+  en_hora boolean default true,
+  puntos_ganados integer default 10,
+  comentario text,
   created_at timestamptz default now(),
   unique(user_id, fecha)
 );
 
-create index if not exists idx_checkins_fecha on checkins(fecha);
-create index if not exists idx_checkins_user on checkins(user_id, fecha);
-
--- Tabla: mensajes (chat)
 create table if not exists messages (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
-  canal text not null check (canal in ('general','dudas','apuntes','retos')),
-  texto text not null check (length(texto) >= 1 and length(texto) <= 2000),
-  reply_to uuid references messages(id) on delete set null,
+  canal text not null default 'general',
+  contenido text not null check (length(contenido) >= 1 and length(contenido) <= 1000),
   likes_count integer default 0,
-  es_solucion boolean default false,
   soft_deleted boolean default false,
   created_at timestamptz default now()
 );
 
-create index if not exists idx_messages_canal on messages(canal, created_at);
-create index if not exists idx_messages_user on messages(user_id);
-
--- Tabla: likes de mensajes
 create table if not exists message_likes (
-  message_id uuid references messages(id) on delete cascade,
   user_id uuid references profiles(id) on delete cascade,
+  message_id uuid references messages(id) on delete cascade,
   created_at timestamptz default now(),
-  primary key (message_id, user_id)
+  primary key (user_id, message_id)
 );
 
--- Tabla: apuntes compartidos
 create table if not exists apuntes (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
-  titulo text not null check (length(titulo) >= 2 and length(titulo) <= 100),
+  titulo text not null check (length(titulo) >= 3 and length(titulo) <= 120),
   materia text not null,
-  texto text,
+  descripcion text,
   file_url text,
   favoritos_count integer default 0,
   created_at timestamptz default now()
 );
 
-create index if not exists idx_apuntes_materia on apuntes(materia);
-
--- Tabla: retos
 create table if not exists retos (
   id uuid default uuid_generate_v4() primary key,
   titulo text not null check (length(titulo) >= 5 and length(titulo) <= 100),
@@ -96,7 +72,6 @@ create table if not exists retos (
   created_at timestamptz default now()
 );
 
--- Tabla: retos completados
 create table if not exists reto_completado (
   reto_id uuid references retos(id) on delete cascade,
   user_id uuid references profiles(id) on delete cascade,
@@ -105,7 +80,6 @@ create table if not exists reto_completado (
   primary key (reto_id, user_id)
 );
 
--- Tabla: logros / insignias
 create table if not exists achievements (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
@@ -114,10 +88,7 @@ create table if not exists achievements (
   unique(user_id, codigo)
 );
 
--- ==============================================================================
--- 3. POLÍTICAS DE SEGURIDAD (ROW LEVEL SECURITY - RLS)
--- ==============================================================================
-
+-- 2. POLÍTICAS DE SEGURIDAD (Con DROP IF EXISTS para evitar error 42710)
 alter table profiles enable row level security;
 drop policy if exists "lectura publica" on profiles;
 create policy "lectura publica" on profiles for select using (true);
@@ -190,11 +161,7 @@ create policy "lectura propia" on achievements for select using (auth.uid() = us
 drop policy if exists "insert propio" on achievements;
 create policy "insert propio" on achievements for insert with check (auth.uid() = user_id);
 
--- ==============================================================================
--- 4. FUNCIONES Y TRIGGERS
--- ==============================================================================
-
--- Trigger para auto-crear perfil al autenticarse con OAuth (Google)
+-- 3. TRIGGER AUTOMÁTICO: Auto-crear perfil al hacer login con Google
 create or replace function handle_new_user()
 returns trigger as $$
 begin
@@ -214,7 +181,7 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
 
--- Función para sumar likes
+-- 4. FUNCIÓN PARA LIKES EN MENSAJES
 create or replace function increment_likes(msg_id uuid)
 returns void as $$
 begin
@@ -222,7 +189,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- Trigger para actualizar racha y nivel de XP tras check-in
+-- 5. TRIGGER AUTOMÁTICO: Cálculo de racha y puntos tras Check-in
 create or replace function actualizar_racha()
 returns trigger as $$
 declare
@@ -261,10 +228,7 @@ create trigger trg_checkin_after_insert
   after insert on checkins
   for each row execute function actualizar_racha();
 
--- ==============================================================================
--- 5. VISTAS PARA RANKING
--- ==============================================================================
-
+-- 6. VISTAS DE RANKING DIARIO Y SEMANAL
 create or replace view ranking_diario as
 select p.id, p.nombre, p.avatar_emoji, p.puntos_total,
        p.racha_actual, p.mejor_racha, count(c.id) as checkins_hoy
