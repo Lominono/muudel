@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Target, CheckCircle2, Award } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
+import gsap from 'gsap'
 
 export function RetoDelDia({ perfil, onCompletado }) {
   const [completado, setCompletado] = useState(false)
   const [cargando, setCargando] = useState(false)
+  const successBadgeRef = useRef(null)
 
-  // Reto de hoy
+  // Reto diario
   const reto = {
     id: 'reto-dia-1',
-    titulo: 'Llegada puntual y apunte',
-    descripcion: 'Llega 5 minutos antes a tu clase y comparte una nota clave en el canal #apuntes.',
+    titulo: 'Puntualidad y nota colaborativa',
+    descripcion: 'Llega 5 minutos antes y deja una idea clave de la lección en el canal #apuntes.',
     puntos: 25,
   }
 
@@ -21,6 +23,16 @@ export function RetoDelDia({ perfil, onCompletado }) {
       setCompletado(true)
     }
   }, [perfil?.id])
+
+  useEffect(() => {
+    if (completado && successBadgeRef.current) {
+      gsap.fromTo(
+        successBadgeRef.current,
+        { scale: 0.9, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.8)' }
+      )
+    }
+  }, [completado])
 
   const manejarCompletar = () => {
     if (completado || cargando) return
@@ -81,20 +93,23 @@ export function RetoDelDia({ perfil, onCompletado }) {
       </p>
 
       {completado ? (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          padding: '10px 14px',
-          borderRadius: 10,
-          backgroundColor: 'var(--color-positive-bg)',
-          color: 'var(--color-positive)',
-          fontSize: 14,
-          fontWeight: 600,
-        }}>
+        <div
+          ref={successBadgeRef}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 14px',
+            borderRadius: 10,
+            backgroundColor: 'var(--color-positive-bg)',
+            color: 'var(--color-positive)',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
           <CheckCircle2 size={16} />
-          <span>¡Reto superado! +{reto.puntos} puntos sumados</span>
+          <span>¡Reto superado! +{reto.puntos} puntos añadidos</span>
         </div>
       ) : (
         <button
@@ -104,7 +119,7 @@ export function RetoDelDia({ perfil, onCompletado }) {
           style={{ width: '100%', minHeight: 40, fontSize: 14, gap: 6 }}
         >
           <Award size={16} />
-          <span>Marcar reto completado</span>
+          <span>Marcar reto como conseguido</span>
         </button>
       )}
     </section>

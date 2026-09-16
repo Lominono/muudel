@@ -3,30 +3,62 @@
 -- ============================================
 
 -- Auto-crear perfil al hacer login con Google o Correo
-create or replace function handle_new_user()
-returns trigger as $$
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_nombre text;
 begin
-  insert into profiles (id, nombre, avatar_emoji)
+  v_nombre := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'nombre'), ''),
+    nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
+    nullif(trim(new.raw_user_meta_data->>'name'), ''),
+    nullif(split_part(new.email, '@', 1), ''),
+    'Estudiante'
+  );
+
+  if length(v_nombre) < 2 then
+    v_nombre := 'Estudiante';
+  elsif length(v_nombre) > 30 then
+    v_nombre := substring(v_nombre from 1 for 30);
+  end if;
+
+  insert into public.profiles (
+    id,
+    nombre,
+    avatar_emoji,
+    puntos_total,
+    racha_actual,
+    mejor_racha,
+    rol
+  )
   values (
     new.id,
-    coalesce(
-      new.raw_user_meta_data->>'nombre',
-      new.raw_user_meta_data->>'full_name',
-      new.raw_user_meta_data->>'name',
-      split_part(new.email, '@', 1),
-      'Estudiante'
-    ),
-    '🧑‍🎓'
+    v_nombre,
+    '🧑‍🎓',
+    10,
+    1,
+    1,
+    'alumno'
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update set
+    nombre = coalesce(nullif(profiles.nombre, 'Alumno'), excluded.nombre),
+    updated_at = now();
+
   return new;
+exception
+  when others then
+    return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute function handle_new_user();
+  for each row execute function public.handle_new_user();
 
 -- Sumar like a un mensaje
 create or replace function increment_likes(msg_id uuid)

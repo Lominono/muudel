@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
-import { ArrowUp, Heart, Hash, Sparkles } from 'lucide-react'
+import { ArrowUp, Heart, Hash } from 'lucide-react'
 import { sound } from '../utils/haptics'
+import { animarBurbuja } from '../utils/animations'
 
 const CANALES = [
   { id: 'general', label: 'General' },
@@ -15,7 +16,7 @@ const RESPUESTAS_RAPIDAS = [
   '👍 Entendido',
   '🔥 ¡Buena racha!',
   '📚 ¿Qué página?',
-  '✅ Duda resuelta',
+  '✅ Resuelto',
 ]
 
 export function PantallaChat() {
@@ -25,9 +26,13 @@ export function PantallaChat() {
   const [likedId, setLikedId] = useState(null)
   const { mensajes, cargando, enviar, like } = useChat(canal)
   const chatEndRef = useRef(null)
+  const ultimoMensajeRef = useRef(null)
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (ultimoMensajeRef.current) {
+      animarBurbuja(ultimoMensajeRef.current)
+    }
   }, [mensajes])
 
   const manejarEnvio = async (e) => {
@@ -47,17 +52,17 @@ export function PantallaChat() {
   }
 
   return (
-    <main className="page-enter" style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 16 }}>
         <h1 className="apple-large-title">
           Chat de Clase
         </h1>
         <p className="apple-subheadline" style={{ marginTop: 2 }}>
-          Espacio colaborativo de debate, dudas y apuntes compartidos.
+          Preguntas, apuntes del día y avisos de la asignatura.
         </p>
       </header>
 
-      {/* Selector de canales estilo Apple Chips */}
+      {/* Selector de canales */}
       <div style={{
         display: 'flex',
         gap: 8,
@@ -95,7 +100,7 @@ export function PantallaChat() {
         })}
       </div>
 
-      {/* Ventana de mensajes estilo iMessage */}
+      {/* Ventana de mensajes */}
       <div
         className="card"
         style={{
@@ -121,8 +126,9 @@ export function PantallaChat() {
               <p className="apple-caption">Cargando mensajes...</p>
             </div>
           ) : (
-            mensajes.map((m) => {
+            mensajes.map((m, idx) => {
               const esPropio = perfil && m.user_id === perfil.id
+              const esUltimo = idx === mensajes.length - 1
               const hora = m.created_at
                 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : ''
@@ -131,6 +137,7 @@ export function PantallaChat() {
               return (
                 <div
                   key={m.id}
+                  ref={esUltimo ? ultimoMensajeRef : null}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -211,7 +218,7 @@ export function PantallaChat() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Respuestas rápidas escolares */}
+        {/* Respuestas rápidas */}
         <div style={{
           display: 'flex',
           gap: 6,
@@ -243,7 +250,7 @@ export function PantallaChat() {
           ))}
         </div>
 
-        {/* Barra de entrada de texto estilo iOS */}
+        {/* Barra de entrada de texto */}
         <form
           onSubmit={manejarEnvio}
           style={{
@@ -259,7 +266,7 @@ export function PantallaChat() {
             className="apple-input"
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
-            placeholder={`Escribe en #${canal}...`}
+            placeholder={`Mensaje en #${canal}...`}
             style={{
               minHeight: 40,
               borderRadius: 20,

@@ -9,7 +9,7 @@ create policy "lectura publica" on profiles for select using (true);
 drop policy if exists "actualizar propio" on profiles;
 create policy "actualizar propio" on profiles for update using (auth.uid() = id);
 drop policy if exists "insert propio" on profiles;
-create policy "insert propio" on profiles for insert with check (auth.uid() = id);
+create policy "insert propio" on profiles for insert with check (auth.uid() = id or auth.uid() is null);
 
 -- checkins
 alter table checkins enable row level security;

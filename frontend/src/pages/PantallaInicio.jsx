@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Mail, Lock, User, LogIn, UserPlus, Sparkles, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { Mail, Lock, User, LogIn, UserPlus, Compass, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { animarEscalonado } from '../utils/animations'
 
 export function PantallaInicio() {
   const {
@@ -19,6 +20,14 @@ export function PantallaInicio() {
   const [nombre, setNombre] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [mostrarDemo, setMostrarDemo] = useState(false)
+
+  const cardRef = useRef(null)
+
+  useEffect(() => {
+    if (cardRef.current) {
+      animarEscalonado(cardRef.current.children, { stagger: 0.05, duration: 0.4 })
+    }
+  }, [])
 
   const cambiarModo = (nuevoModo) => {
     limpiarErrores()
@@ -39,7 +48,7 @@ export function PantallaInicio() {
   }
 
   return (
-    <main className="page-enter" style={{
+    <main style={{
       maxWidth: 460,
       margin: '0 auto',
       minHeight: '100vh',
@@ -48,11 +57,15 @@ export function PantallaInicio() {
       justifyContent: 'center',
       padding: '28px 20px',
     }}>
-      <div className="card" style={{
-        padding: '36px 28px',
-        textAlign: 'center',
-      }}>
-        {/* Logo artesanal del usuario */}
+      <div
+        ref={cardRef}
+        className="card"
+        style={{
+          padding: '36px 28px',
+          textAlign: 'center',
+        }}
+      >
+        {/* Logo de la aplicación */}
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -60,13 +73,14 @@ export function PantallaInicio() {
         }}>
           <img
             src="/logo.png"
-            alt="Logo Racha de Clase"
+            alt="Racha de Clase"
             style={{
-              width: 88,
-              height: 88,
-              borderRadius: 22,
+              width: 84,
+              height: 84,
+              borderRadius: 20,
               objectFit: 'contain',
-              boxShadow: '0 8px 20px -4px rgba(10, 132, 255, 0.3)',
+              border: '1px solid var(--color-separator)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
               backgroundColor: 'var(--color-surface)',
             }}
           />
@@ -77,7 +91,7 @@ export function PantallaInicio() {
         </h1>
 
         <p className="apple-subheadline" style={{ marginBottom: 24, fontSize: 15 }}>
-          Asiste a clase, acumula puntos y mantén tu racha activa todos los días.
+          Pasa lista, mantén viva tu racha y compite con tu grupo cada semana.
         </p>
 
         {/* Notificación de éxito o información */}
@@ -159,7 +173,7 @@ export function PantallaInicio() {
           <span>Continuar con Google</span>
         </button>
 
-        {/* Separador sutil */}
+        {/* Separador */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -168,12 +182,12 @@ export function PantallaInicio() {
         }}>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
           <span className="apple-caption" style={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: 11 }}>
-            o con correo
+            o con tu correo
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
         </div>
 
-        {/* Control segmentado Apple: Iniciar Sesión / Crear Cuenta */}
+        {/* Selector de modo */}
         <div className="segmented-control" style={{ marginBottom: 20 }}>
           <button
             type="button"
@@ -191,12 +205,12 @@ export function PantallaInicio() {
           </button>
         </div>
 
-        {/* Formulario de Correo y Contraseña */}
+        {/* Formulario */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {modo === 'registro' && (
             <div style={{ textAlign: 'left' }}>
               <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-                Nombre completo
+                Nombre y apellido
               </label>
               <div style={{ position: 'relative' }}>
                 <User size={18} style={{
@@ -209,7 +223,7 @@ export function PantallaInicio() {
                 <input
                   type="text"
                   className="apple-input"
-                  placeholder="Tu nombre y apellido"
+                  placeholder="Tu nombre en clase"
                   value={nombre}
                   onChange={(e) => setNombre(e.target.value)}
                   style={{ paddingLeft: 42 }}
@@ -236,7 +250,7 @@ export function PantallaInicio() {
                 autoComplete="email"
                 autoCapitalize="none"
                 className="apple-input"
-                placeholder="alumno@ejemplo.com"
+                placeholder="alumno@instituto.es"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={{ paddingLeft: 42 }}
@@ -283,22 +297,22 @@ export function PantallaInicio() {
             }}
           >
             {enviando ? (
-              <span>Procesando...</span>
+              <span>Entrando...</span>
             ) : modo === 'login' ? (
               <>
                 <LogIn size={18} />
-                <span>Iniciar Sesión</span>
+                <span>Entrar a mi clase</span>
               </>
             ) : (
               <>
                 <UserPlus size={18} />
-                <span>Crear Cuenta</span>
+                <span>Registrarme</span>
               </>
             )}
           </button>
         </form>
 
-        {/* Sección de Modo Demostración */}
+        {/* Modo de prueba rápida */}
         <div style={{ marginTop: 26, paddingTop: 20, borderTop: '1px solid var(--color-separator)' }}>
           {!mostrarDemo ? (
             <button
@@ -310,15 +324,16 @@ export function PantallaInicio() {
                 fontSize: 14,
                 minHeight: 40,
                 color: 'var(--color-secondary-ink)',
+                gap: 8,
               }}
             >
-              <Sparkles size={16} />
-              <span>¿Quieres explorar la app primero? Modo Demo</span>
+              <Compass size={16} />
+              <span>Entrar sin registro · Modo Demo</span>
             </button>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <p className="apple-caption" style={{ fontWeight: 600 }}>
-                Selecciona un rol para probar sin crear cuenta:
+                Elige un perfil de prueba:
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <button
@@ -341,9 +356,12 @@ export function PantallaInicio() {
             </div>
           )}
 
-          <p className="apple-caption" style={{ marginTop: 18 }}>
-            Diseño artesanal basado en Apple Human Interface Guidelines
-          </p>
+          {/* Créditos JuanFe */}
+          <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>
+            <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
+              Racha de Clase · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
+            </p>
+          </div>
         </div>
       </div>
     </main>

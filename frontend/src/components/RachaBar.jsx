@@ -1,6 +1,19 @@
+import { useEffect, useRef } from 'react'
 import { EmblemaRacha } from './icons/EmblemaRacha'
+import { animarLlama, animarEscalonado } from '../utils/animations'
 
 export function RachaBar({ racha = 0, mejorRacha = 0 }) {
+  const flameRef = useRef(null)
+  const daysRef = useRef(null)
+
+  useEffect(() => {
+    const tween = animarLlama(flameRef.current)
+    if (daysRef.current) {
+      animarEscalonado(daysRef.current.children, { stagger: 0.04, duration: 0.3 })
+    }
+    return () => tween?.kill()
+  }, [])
+
   const dias = Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (6 - i))
@@ -18,7 +31,7 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
         marginBottom: 16
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="flame-animada" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div ref={flameRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <EmblemaRacha size={38} />
           </div>
 
@@ -39,12 +52,15 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
         </div>
       </div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: 8,
-        textAlign: 'center'
-      }}>
+      <div
+        ref={daysRef}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          gap: 8,
+          textAlign: 'center'
+        }}
+      >
         {dias.map((d, i) => {
           const activo = i >= 7 - diasActivos && diasActivos > 0
           const esHoy = i === 6
@@ -67,7 +83,7 @@ export function RachaBar({ racha = 0, mejorRacha = 0 }) {
                   fontSize: 13,
                   border: esHoy && !activo ? '1.5px dashed var(--color-separator-opaque)' : 'none',
                   boxShadow: activo ? '0 2px 6px rgba(52, 199, 89, 0.25)' : 'none',
-                  transition: 'all 0.2s ease',
+                  transition: 'background-color 0.2s ease',
                 }}
               >
                 {activo ? '✓' : ''}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
 import { CheckinCard } from '../components/CheckinCard'
 import { RachaBar } from '../components/RachaBar'
@@ -6,10 +6,12 @@ import { RetoDelDia } from '../components/RetoDelDia'
 import { TopRanking } from '../components/TopRanking'
 import { supabase, NIVELES } from '../utils/supabase'
 import { Award, TrendingUp } from 'lucide-react'
+import { animarEscalonado } from '../utils/animations'
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
   const [ranking, setRanking] = useState([])
+  const contentRef = useRef(null)
 
   useEffect(() => {
     const cargar = async () => {
@@ -40,6 +42,12 @@ export function PantallaHoy() {
     cargar()
   }, [])
 
+  useEffect(() => {
+    if (contentRef.current) {
+      animarEscalonado(contentRef.current.children, { stagger: 0.06, duration: 0.35 })
+    }
+  }, [])
+
   const sumarPuntosReto = (puntosGanados) => {
     if (!perfil) return
     const nuevosPuntos = (perfil.puntos_total || 0) + puntosGanados
@@ -60,8 +68,8 @@ export function PantallaHoy() {
   })
 
   return (
-    <main className="page-enter" style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
-      {/* Apple Navigation Header */}
+    <main style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
+      {/* Cabecera */}
       <header style={{ marginBottom: 20 }}>
         <p className="apple-caption" style={{ textTransform: 'capitalize', fontWeight: 600, letterSpacing: 0.2 }}>
           {fechaHoy}
@@ -84,59 +92,61 @@ export function PantallaHoy() {
         </div>
       </header>
 
-      {/* Tarjeta de Checkin interactiva con sello animado */}
-      <CheckinCard userId={perfil.id} />
+      <div ref={contentRef}>
+        {/* Tarjeta de Checkin */}
+        <CheckinCard userId={perfil.id} />
 
-      {/* Barra de racha con llama animada */}
-      <RachaBar racha={perfil.racha_actual || 0} mejorRacha={perfil.mejor_racha || 0} />
+        {/* Barra de racha */}
+        <RachaBar racha={perfil.racha_actual || 0} mejorRacha={perfil.mejor_racha || 0} />
 
-      {/* Reto diario interactivo */}
-      <RetoDelDia perfil={perfil} onCompletado={sumarPuntosReto} />
+        {/* Reto diario */}
+        <RetoDelDia perfil={perfil} onCompletado={sumarPuntosReto} />
 
-      {/* Podio de honor con trofeos SVG */}
-      <TopRanking lista={ranking} />
+        {/* Podio */}
+        <TopRanking lista={ranking} />
 
-      {/* Progreso del estudiante */}
-      <section className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h3 className="apple-headline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            Tu progreso actual
-            <Award size={17} color="var(--color-accent)" />
-          </h3>
-          <span className="apple-badge apple-badge-accent">
-            {nivelActual.nombre}
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{
-            backgroundColor: 'var(--color-surface-secondary)',
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: '1px solid var(--color-separator)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <TrendingUp size={14} color="var(--color-accent)" />
-              <span className="apple-caption">Puntos acumulados</span>
-            </div>
-            <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-accent)', marginTop: 2 }}>
-              {perfil.puntos_total || 0} <span style={{ fontSize: 13, fontWeight: 500 }}>pts</span>
-            </div>
+        {/* Marcador personal */}
+        <section className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 className="apple-headline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              Tu marcador
+              <Award size={17} color="var(--color-accent)" />
+            </h3>
+            <span className="apple-badge apple-badge-accent">
+              {nivelActual.nombre}
+            </span>
           </div>
 
-          <div style={{
-            backgroundColor: 'var(--color-surface-secondary)',
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: '1px solid var(--color-separator)'
-          }}>
-            <span className="apple-caption">Mejor racha histórica</span>
-            <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-positive)', marginTop: 2 }}>
-              {perfil.mejor_racha || 0} <span style={{ fontSize: 13, fontWeight: 500 }}>días</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{
+              backgroundColor: 'var(--color-surface-secondary)',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid var(--color-separator)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <TrendingUp size={14} color="var(--color-accent)" />
+                <span className="apple-caption">Puntos totales</span>
+              </div>
+              <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-accent)', marginTop: 2 }}>
+                {perfil.puntos_total || 0} <span style={{ fontSize: 13, fontWeight: 500 }}>pts</span>
+              </div>
+            </div>
+
+            <div style={{
+              backgroundColor: 'var(--color-surface-secondary)',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid var(--color-separator)'
+            }}>
+              <span className="apple-caption">Récord personal</span>
+              <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-positive)', marginTop: 2 }}>
+                {perfil.mejor_racha || 0} <span style={{ fontSize: 13, fontWeight: 500 }}>días</span>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   )
 }

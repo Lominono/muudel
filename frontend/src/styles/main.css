@@ -1,4 +1,4 @@
-/* Apple Human Interface Guidelines Design Tokens & Styling */
+/* Tokens de diseño del sistema - Racha de Clase */
 :root {
   /* System Backgrounds */
   --color-bg: #F2F2F7;
@@ -267,7 +267,7 @@ h3.apple-headline {
   color: var(--color-negative);
 }
 
-/* Unico elemento memorable: Sello PRESENTE */
+/* Sello PRESENTE */
 .sello-presente {
   display: inline-block;
   border: 2px solid var(--color-positive);
@@ -316,7 +316,7 @@ h3.apple-headline {
   border-radius: 3px;
 }
 
-/* Apple HIG Micro-Animations */
+/* Micro-animaciones y efectos visuales */
 @keyframes stampIn {
   0% {
     opacity: 0;

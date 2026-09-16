@@ -6,8 +6,8 @@ import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
+import { EmblemaRacha } from './components/icons/EmblemaRacha'
 
-// Re-exportar useAuth para mantener compatibilidad con imports existentes
 export { useAuth }
 
 function ContenidoApp() {
@@ -21,10 +21,13 @@ function ContenidoApp() {
         justifyContent: 'center',
         alignItems: 'center',
         height: '100vh',
-        gap: 12
+        gap: 14,
+        backgroundColor: 'var(--color-bg)',
       }}>
-        <div style={{ fontSize: 40, animation: 'pulse 1.5s infinite' }}>🔥</div>
-        <p className="apple-caption">Cargando Racha de Clase...</p>
+        <EmblemaRacha size={46} className="flame-animada" />
+        <p className="apple-caption" style={{ fontWeight: 500, letterSpacing: 0.2 }}>
+          Cargando Racha de Clase...
+        </p>
       </div>
     )
   }
