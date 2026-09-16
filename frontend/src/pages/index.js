@@ -1,0 +1,5 @@
+export { PantallaInicio } from './PantallaInicio'
+export { PantallaHoy } from './PantallaHoy'
+export { PantallaRanking } from './PantallaRanking'
+export { PantallaChat } from './PantallaChat'
+export { PantallaPerfil } from './PantallaPerfil'

@@ -1,17 +1,15 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "devCommand": "cd server && npm install && npm run dev",
-  "installCommand": "npm install && cd frontend && npm install",
-  "framework": "custom",
-  "regions": ["iad1"],
-  "routes": [
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend/dist",
+  "cleanUrls": true,
+  "rewrites": [
     {
-      "src": "/api/:path*",
-      "dest": "/server/src/server.js"
+      "source": "/api/(.*)",
+      "destination": "/api"
     },
     {
-      "src": "/(.*)",
-      "dest": "/frontend/dist/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

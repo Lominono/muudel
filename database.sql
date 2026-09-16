@@ -1,8 +1,5 @@
 -- Racha de Clase - Schema Supabase
--- Ejecutar en Supabase SQL Editor
--- Cada \i incluye un bloque lógico. Orden: 01 → 04
+-- Puedes ejecutar este archivo completo directamente en el Supabase SQL Editor
+-- O revisar los archivos modulares organizados en la carpeta /database/
 
-\i database/01_tables.sql
-\i database/02_rls.sql
-\i database/03_funciones_triggers.sql
-\i database/04_vistas.sql
+\i database/database_completo.sql

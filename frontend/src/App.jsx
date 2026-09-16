@@ -1,135 +1,17 @@
-import { useState, createContext, useContext, useEffect, useRef } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { supabase } from './utils/supabase'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { TabBar } from './components/TabBar'
-import { EmblemaRacha } from './components/icons/EmblemaRacha'
+import { PantallaInicio } from './pages/PantallaInicio'
 import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
 
-const AuthContext = createContext(null)
+// Re-exportar useAuth para mantener compatibilidad con imports existentes
+export { useAuth }
 
-export function useAuth() {
-  return useContext(AuthContext)
-}
-
-function App() {
-  const [session, setSession] = useState(null)
-  const [perfil, setPerfil] = useState(null)
-  const [cargando, setCargando] = useState(true)
-  const [loginError, setLoginError] = useState(null)
-  const cargandoRef = useRef(false)
-
-  useEffect(() => {
-    // Verificar si hay sesión de demo guardada localmente
-    const demoGuardado = localStorage.getItem('racha_demo_user')
-    if (demoGuardado) {
-      try {
-        const parsed = JSON.parse(demoGuardado)
-        setSession({ user: { id: parsed.id, email: 'demo@alumno.es' } })
-        setPerfil(parsed)
-        setCargando(false)
-        return
-      } catch (e) {
-        localStorage.removeItem('racha_demo_user')
-      }
-    }
-
-    // Comprobar sesión de Supabase
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        cargarPerfil(session.user.id)
-      } else {
-        setCargando(false)
-      }
-    }).catch(() => {
-      setCargando(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        if (session?.user && !cargandoRef.current) {
-          cargarPerfil(session.user.id)
-        } else if (!session && !localStorage.getItem('racha_demo_user')) {
-          setPerfil(null)
-          setCargando(false)
-        }
-      }
-    )
-    return () => subscription?.unsubscribe()
-  }, [])
-
-  const cargarPerfil = async (userId) => {
-    if (cargandoRef.current) return
-    cargandoRef.current = true
-    try {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
-      if (data) {
-        setPerfil(data)
-      } else {
-        // Perfil por defecto si no existe aún
-        const nuevo = {
-          id: userId,
-          nombre: 'Alumno',
-          avatar_emoji: '🧑‍🎓',
-          puntos_total: 10,
-          racha_actual: 1,
-          mejor_racha: 1,
-          rol: 'alumno'
-        }
-        setPerfil(nuevo)
-      }
-    } catch (e) {
-      console.warn('No se pudo cargar perfil:', e)
-    } finally {
-      setCargando(false)
-      cargandoRef.current = false
-    }
-  }
-
-  const inicioSesion = async () => {
-    try {
-      setLoginError(null)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      })
-      if (error) throw error
-    } catch (e) {
-      console.error(e)
-      setLoginError('No se pudo conectar con Google. Puedes probar el modo demo debajo.')
-    }
-  }
-
-  const entrarModoDemo = () => {
-    const demoPerfil = {
-      id: 'demo-user-1234',
-      nombre: 'Estudiante Demo',
-      avatar_emoji: '🧑‍🎓',
-      puntos_total: 150,
-      racha_actual: 5,
-      mejor_racha: 7,
-      frase: 'Siempre presente en clase',
-      rol: 'alumno'
-    }
-    localStorage.setItem('racha_demo_user', JSON.stringify(demoPerfil))
-    setSession({ user: { id: demoPerfil.id, email: 'demo@alumno.es' } })
-    setPerfil(demoPerfil)
-  }
-
-  const cerrarSesion = async () => {
-    localStorage.removeItem('racha_demo_user')
-    try {
-      await supabase.auth.signOut()
-    } catch (e) {}
-    setSession(null)
-    setPerfil(null)
-  }
+function ContenidoApp() {
+  const { session, cargando } = useAuth()
 
   if (cargando) {
     return (
@@ -148,109 +30,29 @@ function App() {
   }
 
   return (
-    <AuthContext.Provider value={{
-      session,
-      perfil,
-      setPerfil,
-      inicioSesion,
-      loginError,
-      cerrarSesion,
-      entrarModoDemo
-    }}>
-      <div style={{ minHeight: '100vh', paddingBottom: session ? 84 : 0 }}>
-        <Routes>
-          {!session ? (
-            <Route path="*" element={<PantallaInicio />} />
-          ) : (
-            <>
-              <Route path="/" element={<PantallaHoy />} />
-              <Route path="/ranking" element={<PantallaRanking />} />
-              <Route path="/chat" element={<PantallaChat />} />
-              <Route path="/perfil" element={<PantallaPerfil />} />
-              <Route path="*" element={<Navigate to="/" />} />
-            </>
-          )}
-        </Routes>
-      </div>
-      {session && <TabBar />}
-    </AuthContext.Provider>
-  )
-}
-
-function PantallaInicio() {
-  const { inicioSesion, loginError, entrarModoDemo } = useAuth()
-
-  return (
-    <main className="page-enter" style={{
-      maxWidth: 440,
-      margin: '0 auto',
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      padding: '24px 20px',
-    }}>
-      <div className="card" style={{
-        padding: '40px 28px',
-        textAlign: 'center',
-      }}>
-        <div className="flame-animada" style={{
-          display: 'flex',
-          justifyContent: 'center',
-          marginBottom: 20,
-        }}>
-          <EmblemaRacha size={74} />
-        </div>
-
-        <h1 className="apple-large-title" style={{ marginBottom: 8, fontSize: 32 }}>
-          Racha de Clase
-        </h1>
-
-        <p className="apple-subheadline" style={{ marginBottom: 32, fontSize: 16 }}>
-          Asiste a clase, acumula puntos y mantén tu racha activa todos los días.
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <button
-            className="btn-primary"
-            onClick={inicioSesion}
-            style={{ width: '100%' }}
-          >
-            Continuar con Google
-          </button>
-
-          <button
-            className="btn-secondary"
-            onClick={() => entrarModoDemo()}
-            style={{ width: '100%' }}
-          >
-            Probar Modo Demostración
-          </button>
-        </div>
-
-        {loginError && (
-          <div style={{
-            marginTop: 16,
-            padding: '10px 14px',
-            borderRadius: 10,
-            background: 'var(--color-negative-bg)',
-            color: 'var(--color-negative)',
-            fontSize: 14,
-            fontWeight: 500,
-            textAlign: 'center'
-          }}>
-            {loginError}
-          </div>
+    <div style={{ minHeight: '100vh', paddingBottom: session ? 84 : 0 }}>
+      <Routes>
+        {!session ? (
+          <Route path="*" element={<PantallaInicio />} />
+        ) : (
+          <>
+            <Route path="/" element={<PantallaHoy />} />
+            <Route path="/ranking" element={<PantallaRanking />} />
+            <Route path="/chat" element={<PantallaChat />} />
+            <Route path="/perfil" element={<PantallaPerfil />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </>
         )}
-
-        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--color-separator)' }}>
-          <p className="apple-caption">
-            Diseño artesanal basado en Apple Human Interface Guidelines
-          </p>
-        </div>
-      </div>
-    </main>
+      </Routes>
+      {session && <TabBar />}
+    </div>
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <ContenidoApp />
+    </AuthProvider>
+  )
+}
