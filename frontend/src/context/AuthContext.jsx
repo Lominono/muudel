@@ -89,6 +89,14 @@ export function AuthProvider({ children }) {
   const inicioSesion = async () => {
     try {
       setLoginError(null)
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+        throw new Error(
+          'Faltan variables de Supabase en Vercel. Ve a Settings > Environment Variables y agrega VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.'
+        )
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -97,8 +105,9 @@ export function AuthProvider({ children }) {
       })
       if (error) throw error
     } catch (e) {
-      console.error(e)
-      setLoginError('No se pudo conectar con Google. Puedes usar el modo demostración debajo.')
+      console.error('Error al iniciar sesión con Google:', e)
+      const msg = e?.message || e?.error_description || (typeof e === 'string' ? e : '')
+      setLoginError(msg || 'No se pudo conectar con Google. Puedes probar el modo demostración mientras configuras Supabase.')
     }
   }
 

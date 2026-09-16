@@ -18,12 +18,23 @@ export function PantallaInicio() {
         padding: '40px 28px',
         textAlign: 'center',
       }}>
-        <div className="flame-animada" style={{
+        <div style={{
           display: 'flex',
           justifyContent: 'center',
           marginBottom: 20,
         }}>
-          <EmblemaRacha size={74} />
+          <img
+            src="/logo.png"
+            alt="Logo Racha de Clase"
+            style={{
+              width: 96,
+              height: 96,
+              borderRadius: 24,
+              objectFit: 'contain',
+              boxShadow: '0 10px 25px -5px rgba(10, 132, 255, 0.35)',
+              transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            }}
+          />
         </div>
 
         <h1 className="apple-large-title" style={{ marginBottom: 8, fontSize: 32 }}>
