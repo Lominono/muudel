@@ -161,14 +161,20 @@ create policy "lectura propia" on achievements for select using (auth.uid() = us
 drop policy if exists "insert propio" on achievements;
 create policy "insert propio" on achievements for insert with check (auth.uid() = user_id);
 
--- 3. TRIGGER AUTOMÁTICO: Auto-crear perfil al hacer login con Google
+-- 3. TRIGGER AUTOMÁTICO: Auto-crear perfil al hacer login con Google o Correo
 create or replace function handle_new_user()
 returns trigger as $$
 begin
   insert into profiles (id, nombre, avatar_emoji)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'nombre', new.raw_user_meta_data->>'full_name', 'Alumno'),
+    coalesce(
+      new.raw_user_meta_data->>'nombre',
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      split_part(new.email, '@', 1),
+      'Estudiante'
+    ),
     '🧑‍🎓'
   )
   on conflict (id) do nothing;

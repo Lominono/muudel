@@ -194,14 +194,20 @@ create policy "insert propio" on achievements for insert with check (auth.uid() 
 -- 4. FUNCIONES Y TRIGGERS
 -- ==============================================================================
 
--- Trigger para auto-crear perfil al autenticarse con OAuth (Google)
+-- Trigger para auto-crear perfil al autenticarse con OAuth (Google) o Correo
 create or replace function handle_new_user()
 returns trigger as $$
 begin
   insert into profiles (id, nombre, avatar_emoji)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'nombre', new.raw_user_meta_data->>'full_name', 'Alumno'),
+    coalesce(
+      new.raw_user_meta_data->>'nombre',
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      split_part(new.email, '@', 1),
+      'Estudiante'
+    ),
     '🧑‍🎓'
   )
   on conflict (id) do nothing;

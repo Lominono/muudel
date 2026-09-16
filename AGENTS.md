@@ -76,5 +76,5 @@ Trigger `trg_checkin_after_insert` actualiza racha automáticamente
 - Las credenciales van en `.env` (NO commitear)
 - Pinecone solo se usa para embeddings de apuntes, no para puntos ni rachas
 - Tailwind CSS usa CDN (`cdn.tailwindcss.com`), no build
-- Node.js disponible en: `C:\Users\smrt210\AppData\Local\Temp\opencode\node\node-v24.19.0-win-x64\bin`
-- El build de producción funciona correctamente
+- Node.js disponible en: `C:\Users\smrt210\AppData\Local\Temp\opencode\node\node-v24.19.0-win-x64\node.exe`
+- Build: `& "C:\Users\smrt210\AppData\Local\Temp\opencode\node\node-v24.19.0-win-x64\node.exe" "node_modules/vite/bin/vite.js" build && node frontend/postbuild.js`
