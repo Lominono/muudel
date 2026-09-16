@@ -15,9 +15,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ estado: 'ok' })
 })
 
+import fs from 'fs'
+
 // Servir estáticos del frontend si existen
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const distPath = path.resolve(__dirname, '../../frontend/dist')
+const rootDistPath = path.resolve(__dirname, '../../dist')
+const frontendDistPath = path.resolve(__dirname, '../../frontend/dist')
+const distPath = fs.existsSync(rootDistPath) ? rootDistPath : frontendDistPath
 
 app.use(express.static(distPath))
 
