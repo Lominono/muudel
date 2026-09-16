@@ -1,14 +1,21 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Trophy, MessageSquare, User } from 'lucide-react'
-
-const tabs = [
-  { to: '/', label: 'Hoy', icon: Calendar },
-  { to: '/ranking', label: 'Ranking', icon: Trophy },
-  { to: '/chat', label: 'Chat', icon: MessageSquare },
-  { to: '/perfil', label: 'Perfil', icon: User },
-]
+import { Calendar, Trophy, MessageSquare, User, ShieldCheck } from 'lucide-react'
+import { useAuth } from '../App'
 
 export function TabBar() {
+  const { perfil } = useAuth()
+
+  const tabs = [
+    { to: '/', label: 'Hoy', icon: Calendar },
+    { to: '/ranking', label: 'Ranking', icon: Trophy },
+    { to: '/chat', label: 'Chat', icon: MessageSquare },
+    { to: '/perfil', label: 'Perfil', icon: User },
+  ]
+
+  if (perfil?.rol === 'moderador') {
+    tabs.push({ to: '/admin', label: 'Gestión', icon: ShieldCheck })
+  }
+
   return (
     <nav
       aria-label="Navegación principal"
@@ -44,7 +51,7 @@ export function TabBar() {
               gap: 3,
               textDecoration: 'none',
               color: isActive ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
-              minWidth: 64,
+              minWidth: 54,
               minHeight: 44,
               transition: 'color 0.15s ease',
             })}
@@ -52,7 +59,7 @@ export function TabBar() {
             {({ isActive }) => (
               <>
                 <IconComponent
-                  size={23}
+                  size={22}
                   strokeWidth={isActive ? 2.3 : 1.7}
                 />
                 <span style={{

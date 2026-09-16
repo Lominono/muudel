@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { TrofeoPodio } from './icons/TrofeoPodio'
+import { AvatarUsuario } from './AvatarUsuario'
 import { animarPodio } from '../utils/animations'
 
 export function TopRanking({ lista = [] }) {
@@ -7,7 +8,7 @@ export function TopRanking({ lista = [] }) {
   const podiumRef = useRef(null)
 
   useEffect(() => {
-    if (podiumRef.current) {
+    if (podiumRef.current && top.length > 0) {
       animarPodio(podiumRef.current.children)
     }
   }, [lista])
@@ -69,17 +70,20 @@ export function TopRanking({ lista = [] }) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 4,
+                gap: 6,
                 border: esPrimero ? '2px solid rgba(229, 160, 13, 0.45)' : '1px solid var(--color-separator)',
                 boxShadow: esPrimero ? '0 4px 14px rgba(229, 160, 13, 0.12)' : 'none',
                 transform: esPrimero ? 'translateY(-6px)' : 'none',
               }}
             >
-              <TrofeoPodio rank={rank} size={esPrimero ? 38 : 32} />
+              <TrofeoPodio rank={rank} size={esPrimero ? 36 : 30} />
 
-              <div style={{ fontSize: esPrimero ? 32 : 26, margin: '2px 0' }}>
-                {item.avatar_emoji || '🧑‍🎓'}
-              </div>
+              <AvatarUsuario
+                nombre={item.nombre}
+                color={item.color_acento}
+                size={esPrimero ? 44 : 36}
+                fontSize={esPrimero ? 16 : 13}
+              />
 
               <div
                 style={{

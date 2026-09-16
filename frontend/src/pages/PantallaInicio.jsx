@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Mail, Lock, User, LogIn, UserPlus, Compass, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Mail, Lock, User, LogIn, UserPlus, AlertCircle, CheckCircle2, ShieldCheck, GraduationCap, ArrowRight } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
 export function PantallaInicio() {
@@ -10,16 +10,16 @@ export function PantallaInicio() {
     registrarseConEmail,
     loginError,
     loginNotice,
-    entrarModoDemo,
     limpiarErrores,
   } = useAuth()
 
-  const [modo, setModo] = useState('login') // 'login' | 'registro'
+  const [modo, setModo] = useState('login') // 'login' | 'registro' | 'rapido'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
+  const [rol, setRol] = useState('alumno') // 'alumno' | 'moderador'
+  const [codigoAdmin, setCodigoAdmin] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const [mostrarDemo, setMostrarDemo] = useState(false)
 
   const cardRef = useRef(null)
 
@@ -27,7 +27,7 @@ export function PantallaInicio() {
     if (cardRef.current) {
       animarEscalonado(cardRef.current.children, { stagger: 0.05, duration: 0.4 })
     }
-  }, [])
+  }, [modo])
 
   const cambiarModo = (nuevoModo) => {
     limpiarErrores()
@@ -42,8 +42,18 @@ export function PantallaInicio() {
     if (modo === 'login') {
       await iniciarSesionConEmail(email, password)
     } else {
-      await registrarseConEmail(email, password, nombre)
+      await registrarseConEmail(email, password, nombre, rol, codigoAdmin)
     }
+    setEnviando(false)
+  }
+
+  // Acceso rápido para probar con perfil real limpio (sin datos falsos)
+  const handleAccesoRapido = async (rolElegido) => {
+    if (enviando) return
+    setEnviando(true)
+    const emailGenerado = rolElegido === 'moderador' ? 'profesor@instituto.es' : 'alumno@instituto.es'
+    const nombreGenerado = rolElegido === 'moderador' ? 'Profesor' : 'Alumno'
+    await registrarseConEmail(emailGenerado, 'password123', nombreGenerado, rolElegido, 'PROFE2026')
     setEnviando(false)
   }
 
@@ -75,8 +85,8 @@ export function PantallaInicio() {
             src="/logo.png"
             alt="Racha de Clase"
             style={{
-              width: 84,
-              height: 84,
+              width: 80,
+              height: 80,
               borderRadius: 20,
               objectFit: 'contain',
               border: '1px solid var(--color-separator)',
@@ -86,12 +96,12 @@ export function PantallaInicio() {
           />
         </div>
 
-        <h1 className="apple-large-title" style={{ marginBottom: 6, fontSize: 30 }}>
+        <h1 className="apple-large-title" style={{ marginBottom: 6, fontSize: 28 }}>
           Racha de Clase
         </h1>
 
-        <p className="apple-subheadline" style={{ marginBottom: 24, fontSize: 15 }}>
-          Pasa lista, mantén viva tu racha y compite con tu grupo cada semana.
+        <p className="apple-subheadline" style={{ marginBottom: 22, fontSize: 15 }}>
+          Registro de asistencia, control del aula y racha semanal.
         </p>
 
         {/* Notificación de éxito o información */}
@@ -114,7 +124,7 @@ export function PantallaInicio() {
           </div>
         )}
 
-        {/* Mensaje de error amigable */}
+        {/* Mensaje de error */}
         {loginError && (
           <div style={{
             display: 'flex',
@@ -141,7 +151,7 @@ export function PantallaInicio() {
           onClick={inicioSesion}
           style={{
             width: '100%',
-            marginBottom: 20,
+            marginBottom: 18,
             backgroundColor: 'var(--color-surface-elevated)',
             color: 'var(--color-ink)',
             border: '1px solid var(--color-separator)',
@@ -152,7 +162,7 @@ export function PantallaInicio() {
             gap: 12,
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
             <path
               fill="#4285F4"
               d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -170,7 +180,7 @@ export function PantallaInicio() {
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
             />
           </svg>
-          <span>Continuar con Google</span>
+          <span>Acceder con Google</span>
         </button>
 
         {/* Separador */}
@@ -178,16 +188,16 @@ export function PantallaInicio() {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          margin: '20px 0',
+          margin: '18px 0',
         }}>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
           <span className="apple-caption" style={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: 11 }}>
-            o con tu correo
+            o con correo
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
         </div>
 
-        {/* Selector de modo */}
+        {/* Segmented Control */}
         <div className="segmented-control" style={{ marginBottom: 20 }}>
           <button
             type="button"
@@ -208,29 +218,98 @@ export function PantallaInicio() {
         {/* Formulario */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {modo === 'registro' && (
-            <div style={{ textAlign: 'left' }}>
-              <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-                Nombre y apellido
-              </label>
-              <div style={{ position: 'relative' }}>
-                <User size={18} style={{
-                  position: 'absolute',
-                  left: 14,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--color-tertiary-ink)',
-                }} />
-                <input
-                  type="text"
-                  className="apple-input"
-                  placeholder="Tu nombre en clase"
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                  style={{ paddingLeft: 42 }}
-                  required
-                />
+            <>
+              {/* Selector de rol de usuario */}
+              <div style={{ textAlign: 'left' }}>
+                <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                  Tipo de cuenta en clase
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setRol('alumno')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: rol === 'alumno' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                      backgroundColor: rol === 'alumno' ? 'rgba(0, 122, 255, 0.08)' : 'var(--color-surface)',
+                      color: rol === 'alumno' ? 'var(--color-accent)' : 'var(--color-ink)',
+                      fontWeight: 600,
+                      fontSize: 13,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <GraduationCap size={16} />
+                    <span>Alumno</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRol('moderador')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: rol === 'moderador' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                      backgroundColor: rol === 'moderador' ? 'rgba(0, 122, 255, 0.08)' : 'var(--color-surface)',
+                      color: rol === 'moderador' ? 'var(--color-accent)' : 'var(--color-ink)',
+                      fontWeight: 600,
+                      fontSize: 13,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <ShieldCheck size={16} />
+                    <span>Profesor</span>
+                  </button>
+                </div>
               </div>
-            </div>
+
+              {rol === 'moderador' && (
+                <div style={{ textAlign: 'left' }}>
+                  <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
+                    Código de Profesor / Centro (opcional: PROFE2026)
+                  </label>
+                  <input
+                    type="text"
+                    className="apple-input"
+                    placeholder="Código de autorización"
+                    value={codigoAdmin}
+                    onChange={(e) => setCodigoAdmin(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div style={{ textAlign: 'left' }}>
+                <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
+                  Nombre y apellido
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <User size={18} style={{
+                    position: 'absolute',
+                    left: 14,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--color-tertiary-ink)',
+                  }} />
+                  <input
+                    type="text"
+                    className="apple-input"
+                    placeholder="Tu nombre real"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    style={{ paddingLeft: 42 }}
+                    required
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div style={{ textAlign: 'left' }}>
@@ -250,7 +329,7 @@ export function PantallaInicio() {
                 autoComplete="email"
                 autoCapitalize="none"
                 className="apple-input"
-                placeholder="alumno@instituto.es"
+                placeholder="usuario@instituto.es"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={{ paddingLeft: 42 }}
@@ -297,64 +376,46 @@ export function PantallaInicio() {
             }}
           >
             {enviando ? (
-              <span>Entrando...</span>
+              <span>Procesando...</span>
             ) : modo === 'login' ? (
               <>
                 <LogIn size={18} />
-                <span>Entrar a mi clase</span>
+                <span>Iniciar Sesión</span>
               </>
             ) : (
               <>
                 <UserPlus size={18} />
-                <span>Registrarme</span>
+                <span>Crear Cuenta de {rol === 'moderador' ? 'Profesor' : 'Alumno'}</span>
               </>
             )}
           </button>
         </form>
 
-        {/* Modo de prueba rápida */}
-        <div style={{ marginTop: 26, paddingTop: 20, borderTop: '1px solid var(--color-separator)' }}>
-          {!mostrarDemo ? (
+        {/* Acceso directo para pruebas locales limpias */}
+        <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--color-separator)' }}>
+          <p className="apple-caption" style={{ marginBottom: 10, fontWeight: 600 }}>
+            Acceso rápido de prueba (datos limpios):
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => setMostrarDemo(true)}
-              style={{
-                width: '100%',
-                fontSize: 14,
-                minHeight: 40,
-                color: 'var(--color-secondary-ink)',
-                gap: 8,
-              }}
+              onClick={() => handleAccesoRapido('alumno')}
+              style={{ fontSize: 13, minHeight: 40, padding: '6px 10px', gap: 6 }}
             >
-              <Compass size={16} />
-              <span>Entrar sin registro · Modo Demo</span>
+              <GraduationCap size={15} />
+              <span>Entrar como Alumno</span>
             </button>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <p className="apple-caption" style={{ fontWeight: 600 }}>
-                Elige un perfil de prueba:
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => entrarModoDemo('alumno')}
-                  style={{ fontSize: 13, minHeight: 42, padding: '6px 10px' }}
-                >
-                  🧑‍🎓 Como Alumno
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => entrarModoDemo('moderador')}
-                  style={{ fontSize: 13, minHeight: 42, padding: '6px 10px' }}
-                >
-                  👨‍🏫 Como Profesor
-                </button>
-              </div>
-            </div>
-          )}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => handleAccesoRapido('moderador')}
+              style={{ fontSize: 13, minHeight: 40, padding: '6px 10px', gap: 6 }}
+            >
+              <ShieldCheck size={15} />
+              <span>Entrar como Profesor</span>
+            </button>
+          </div>
 
           {/* Créditos JuanFe */}
           <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>

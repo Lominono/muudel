@@ -1,22 +1,23 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
-import { ArrowUp, Heart, Hash } from 'lucide-react'
+import { ArrowUp, Heart, Hash, ShieldCheck, MessageSquare } from 'lucide-react'
 import { sound } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
+import { AvatarUsuario } from '../components/AvatarUsuario'
 
 const CANALES = [
   { id: 'general', label: 'General' },
   { id: 'dudas', label: 'Dudas' },
   { id: 'apuntes', label: 'Apuntes' },
-  { id: 'retos', label: 'Retos' },
+  { id: 'avisos', label: 'Avisos' },
 ]
 
 const RESPUESTAS_RAPIDAS = [
-  '👍 Entendido',
-  '🔥 ¡Buena racha!',
-  '📚 ¿Qué página?',
-  '✅ Resuelto',
+  'Entendido',
+  'Anotado',
+  '¿En qué tema?',
+  'Duda resuelta',
 ]
 
 export function PantallaChat() {
@@ -47,7 +48,7 @@ export function PantallaChat() {
   const manejarLike = (id) => {
     setLikedId(id)
     sound.playPop()
-    like(id, perfil?.id)
+    like(id)
     setTimeout(() => setLikedId(null), 300)
   }
 
@@ -125,6 +126,18 @@ export function PantallaChat() {
             <div style={{ textAlign: 'center', margin: 'auto' }}>
               <p className="apple-caption">Cargando mensajes...</p>
             </div>
+          ) : mensajes.length === 0 ? (
+            <div style={{ textAlign: 'center', margin: 'auto', padding: 24 }}>
+              <div style={{ display: 'inline-flex', padding: 12, borderRadius: 14, background: 'var(--color-fill-secondary)', color: 'var(--color-secondary-ink)', marginBottom: 8 }}>
+                <MessageSquare size={24} />
+              </div>
+              <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                No hay mensajes en #{canal}.
+              </p>
+              <p className="apple-caption" style={{ marginTop: 2 }}>
+                Escribe una pregunta o aviso para tu grupo.
+              </p>
+            </div>
           ) : (
             mensajes.map((m, idx) => {
               const esPropio = perfil && m.user_id === perfil.id
@@ -133,10 +146,13 @@ export function PantallaChat() {
                 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : ''
               const isLiked = likedId === m.id
+              const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
+              const autorRol = m.rol || m.profiles?.rol || 'alumno'
+              const autorColor = m.color_acento || m.profiles?.color_acento
 
               return (
                 <div
-                  key={m.id}
+                  key={m.id || idx}
                   ref={esUltimo ? ultimoMensajeRef : null}
                   style={{
                     display: 'flex',
@@ -154,10 +170,26 @@ export function PantallaChat() {
                       marginBottom: 3,
                       paddingLeft: 4
                     }}>
-                      <span style={{ fontSize: 13 }}>{m.avatar_emoji || m.profiles?.avatar_emoji || '🧑‍🎓'}</span>
+                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={20} fontSize={9} />
                       <span className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-secondary-ink)' }}>
-                        {m.nombre || m.profiles?.nombre || 'Compañero'}
+                        {autorNombre}
                       </span>
+                      {autorRol === 'moderador' && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: 'var(--color-accent)',
+                          backgroundColor: 'rgba(0, 122, 255, 0.12)',
+                          padding: '1px 6px',
+                          borderRadius: 9999
+                        }}>
+                          <ShieldCheck size={10} />
+                          <span>Profesor</span>
+                        </span>
+                      )}
                     </div>
                   )}
 

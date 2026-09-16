@@ -1,43 +1,69 @@
 -- ==============================================================================
--- ACTUALIZACIÓN SEGURA: SOLO LO NUEVO / FALTANTE
--- Puedes copiar y pegar todo este archivo en el SQL Editor de Supabase
--- Es 100% idempotente (no dará errores si algo ya existe).
+-- RACHA DE CLASE — MIGRACIÓN SUPABASE: CONTROL DE ASISTENCIA Y SESIONES
+-- Puedes copiar y pegar todo este script en el SQL Editor de Supabase.
+-- Es 100% idempotente (no da errores si tablas o políticas ya existen).
 -- ==============================================================================
 
--- 1. TABLAS BÁSICAS (por si alguna no fue creada)
+-- 1. EXTENSIÓN UUID
+create extension if not exists "uuid-ossp";
+
+-- 2. TABLA DE PERFILES (Asegurar columnas rol, avatar_color, frase)
 create table if not exists profiles (
   id uuid references auth.users on delete cascade primary key,
-  nombre text not null default 'Alumno',
+  nombre text not null default 'Estudiante',
   avatar_emoji text default '🧑‍🎓',
+  color_acento text default '#0A84FF',
+  frase text default '',
   puntos_total integer default 0,
   racha_actual integer default 0,
   mejor_racha integer default 0,
-  ultimo_checkin date,
-  color_acento text default '#0A84FF',
-  frase text,
+  ultimo_checkin text,
   rol text default 'alumno' check (rol in ('alumno', 'moderador')),
   xp_nivel integer default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
+-- Si la tabla ya existía, añadir columnas faltantes de forma segura
+alter table profiles add column if not exists rol text default 'alumno' check (rol in ('alumno', 'moderador'));
+alter table profiles add column if not exists color_acento text default '#0A84FF';
+alter table profiles add column if not exists frase text default '';
+
+-- 3. TABLA DE CHECKINS (ASISTENCIA)
 create table if not exists checkins (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
   fecha date default current_date not null,
-  hora_checkin time default current_time not null,
-  en_hora boolean default true,
-  puntos_ganados integer default 10,
-  comentario text,
+  hora time not null,
+  es_tarde boolean default false,
+  puntos_ganados integer default 10 not null,
+  nota text default '',
   created_at timestamptz default now(),
   unique(user_id, fecha)
 );
 
+create index if not exists idx_checkins_fecha on checkins(fecha);
+create index if not exists idx_checkins_user on checkins(user_id, fecha);
+
+-- 4. TABLA DE SESIONES DE CLASE Y AVISOS DEL PROFESOR
+create table if not exists sesiones_clase (
+  id uuid default uuid_generate_v4() primary key,
+  fecha date default current_date not null unique,
+  codigo_pin text,
+  activa boolean default true,
+  abierta_por uuid references profiles(id),
+  aviso text default '',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- 5. TABLA DE MENSAJES Y LIKES
 create table if not exists messages (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references profiles(id) on delete cascade not null,
   canal text not null default 'general',
-  contenido text not null check (length(contenido) >= 1 and length(contenido) <= 1000),
+  texto text not null check (length(texto) >= 1 and length(texto) <= 2000),
+  reply_to uuid references messages(id) on delete set null,
   likes_count integer default 0,
   soft_deleted boolean default false,
   created_at timestamptz default now()
@@ -50,118 +76,68 @@ create table if not exists message_likes (
   primary key (user_id, message_id)
 );
 
-create table if not exists apuntes (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references profiles(id) on delete cascade not null,
-  titulo text not null check (length(titulo) >= 3 and length(titulo) <= 120),
-  materia text not null,
-  descripcion text,
-  file_url text,
-  favoritos_count integer default 0,
-  created_at timestamptz default now()
-);
+create index if not exists idx_messages_canal on messages(canal, created_at);
 
-create table if not exists retos (
-  id uuid default uuid_generate_v4() primary key,
-  titulo text not null check (length(titulo) >= 5 and length(titulo) <= 100),
-  descripcion text,
-  puntos integer not null check (puntos between 10 and 500),
-  fecha_limite date,
-  creado_por uuid references profiles(id),
-  activo boolean default true,
-  created_at timestamptz default now()
-);
-
-create table if not exists reto_completado (
-  reto_id uuid references retos(id) on delete cascade,
-  user_id uuid references profiles(id) on delete cascade,
-  fecha timestamptz default now(),
-  validado boolean default false,
-  primary key (reto_id, user_id)
-);
-
-create table if not exists achievements (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references profiles(id) on delete cascade not null,
-  codigo text not null,
-  fecha timestamptz default now(),
-  unique(user_id, codigo)
-);
-
--- 2. POLÍTICAS DE SEGURIDAD (Con DROP IF EXISTS para evitar error 42710)
+-- 6. POLÍTICAS DE ROW LEVEL SECURITY (RLS)
 alter table profiles enable row level security;
-drop policy if exists "lectura publica" on profiles;
-create policy "lectura publica" on profiles for select using (true);
-drop policy if exists "actualizar propio" on profiles;
-create policy "actualizar propio" on profiles for update using (auth.uid() = id);
-drop policy if exists "insert propio" on profiles;
-create policy "insert propio" on profiles for insert with check (auth.uid() = id or auth.uid() is null);
+drop policy if exists "lectura publica perfiles" on profiles;
+create policy "lectura publica perfiles" on profiles for select using (true);
+drop policy if exists "actualizar propio perfil" on profiles;
+create policy "actualizar propio perfil" on profiles for update using (auth.uid() = id);
+drop policy if exists "insert perfil" on profiles;
+create policy "insert perfil" on profiles for insert with check (auth.uid() = id or auth.uid() is null);
 
+-- Checkins: Alumno puede ver todos y el moderador puede insertar/modificar/borrar cualquier checkin
 alter table checkins enable row level security;
-drop policy if exists "lectura todos" on checkins;
-create policy "lectura todos" on checkins for select using (true);
-drop policy if exists "insert propio" on checkins;
-create policy "insert propio" on checkins for insert with check (auth.uid() = user_id);
-drop policy if exists "actualizar propio" on checkins;
-create policy "actualizar propio" on checkins for update using (auth.uid() = user_id);
+drop policy if exists "lectura checkins" on checkins;
+create policy "lectura checkins" on checkins for select using (true);
 
+drop policy if exists "insert checkin" on checkins;
+drop policy if exists "insert propio" on checkins;
+create policy "insert checkin" on checkins for insert with check (
+  auth.uid() = user_id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
+
+drop policy if exists "actualizar checkin" on checkins;
+drop policy if exists "actualizar propio" on checkins;
+create policy "actualizar checkin" on checkins for update using (
+  auth.uid() = user_id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
+
+drop policy if exists "borrar checkin moderador" on checkins;
+create policy "borrar checkin moderador" on checkins for delete using (
+  auth.uid() = user_id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
+
+-- Sesiones de clase: Todos leen, moderador gestiona
+alter table sesiones_clase enable row level security;
+drop policy if exists "lectura sesiones" on sesiones_clase;
+create policy "lectura sesiones" on sesiones_clase for select using (true);
+drop policy if exists "gestion sesiones moderador" on sesiones_clase;
+create policy "gestion sesiones moderador" on sesiones_clase for all using (
+  exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
+
+-- Mensajes y Likes
 alter table messages enable row level security;
-drop policy if exists "lectura canales" on messages;
-create policy "lectura canales" on messages for select using (soft_deleted = false);
-drop policy if exists "insert propio" on messages;
-create policy "insert propio" on messages for insert with check (auth.uid() = user_id);
-drop policy if exists "actualizar propio" on messages;
-create policy "actualizar propio" on messages for update using (auth.uid() = user_id);
+drop policy if exists "lectura mensajes" on messages;
+create policy "lectura mensajes" on messages for select using (soft_deleted = false);
+drop policy if exists "insert mensaje" on messages;
+create policy "insert mensaje" on messages for insert with check (auth.uid() = user_id);
 drop policy if exists "borrar mensaje" on messages;
 create policy "borrar mensaje" on messages for delete using (
   auth.uid() = user_id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
 );
 
 alter table message_likes enable row level security;
-drop policy if exists "lectura" on message_likes;
-create policy "lectura" on message_likes for select using (true);
-drop policy if exists "insert propio" on message_likes;
-create policy "insert propio" on message_likes for insert with check (auth.uid() = user_id);
-drop policy if exists "delete propio" on message_likes;
-create policy "delete propio" on message_likes for delete using (auth.uid() = user_id);
+drop policy if exists "lectura likes" on message_likes;
+create policy "lectura likes" on message_likes for select using (true);
+drop policy if exists "insert like" on message_likes;
+create policy "insert like" on message_likes for insert with check (auth.uid() = user_id);
+drop policy if exists "delete like" on message_likes;
+create policy "delete like" on message_likes for delete using (auth.uid() = user_id);
 
-alter table apuntes enable row level security;
-drop policy if exists "lectura todos" on apuntes;
-create policy "lectura todos" on apuntes for select using (true);
-drop policy if exists "insert propio" on apuntes;
-create policy "insert propio" on apuntes for insert with check (auth.uid() = user_id);
-drop policy if exists "actualizar propio" on apuntes;
-create policy "actualizar propio" on apuntes for update using (auth.uid() = user_id);
-drop policy if exists "borrar propio" on apuntes;
-create policy "borrar propio" on apuntes for delete using (auth.uid() = user_id);
-
-alter table retos enable row level security;
-drop policy if exists "lectura todos" on retos;
-create policy "lectura todos" on retos for select using (true);
-drop policy if exists "insert propio" on retos;
-create policy "insert propio" on retos for insert with check (auth.uid() = creado_por);
-drop policy if exists "actualizar moderador" on retos;
-create policy "actualizar moderador" on retos for update using (
-  exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
-);
-
-alter table reto_completado enable row level security;
-drop policy if exists "lectura" on reto_completado;
-create policy "lectura" on reto_completado for select using (true);
-drop policy if exists "insert propio" on reto_completado;
-create policy "insert propio" on reto_completado for insert with check (auth.uid() = user_id);
-drop policy if exists "actualizar moderador" on reto_completado;
-create policy "actualizar moderador" on reto_completado for update using (
-  exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
-);
-
-alter table achievements enable row level security;
-drop policy if exists "lectura propia" on achievements;
-create policy "lectura propia" on achievements for select using (auth.uid() = user_id);
-drop policy if exists "insert propio" on achievements;
-create policy "insert propio" on achievements for insert with check (auth.uid() = user_id);
-
--- 3. TRIGGER AUTOMÁTICO: Auto-crear perfil al hacer login con Google o Correo
+-- 7. TRIGGER: Auto-crear perfil en Auth
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -170,6 +146,7 @@ set search_path = public
 as $$
 declare
   v_nombre text;
+  v_rol text;
 begin
   v_nombre := coalesce(
     nullif(trim(new.raw_user_meta_data->>'nombre'), ''),
@@ -177,6 +154,11 @@ begin
     nullif(trim(new.raw_user_meta_data->>'name'), ''),
     nullif(split_part(new.email, '@', 1), ''),
     'Estudiante'
+  );
+
+  v_rol := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'rol'), ''),
+    'alumno'
   );
 
   if length(v_nombre) < 2 then
@@ -188,7 +170,6 @@ begin
   insert into public.profiles (
     id,
     nombre,
-    avatar_emoji,
     puntos_total,
     racha_actual,
     mejor_racha,
@@ -197,14 +178,13 @@ begin
   values (
     new.id,
     v_nombre,
-    '🧑‍🎓',
-    10,
-    1,
-    1,
-    'alumno'
+    0,
+    0,
+    0,
+    v_rol
   )
   on conflict (id) do update set
-    nombre = coalesce(nullif(profiles.nombre, 'Alumno'), excluded.nombre),
+    nombre = coalesce(nullif(profiles.nombre, 'Estudiante'), excluded.nombre),
     updated_at = now();
 
   return new;
@@ -219,15 +199,7 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- 4. FUNCIÓN PARA LIKES EN MENSAJES
-create or replace function increment_likes(msg_id uuid)
-returns void as $$
-begin
-  update messages set likes_count = likes_count + 1 where id = msg_id;
-end;
-$$ language plpgsql security definer;
-
--- 5. TRIGGER AUTOMÁTICO: Cálculo de racha y puntos tras Check-in
+-- 8. TRIGGER: Actualizar racha y puntos tras Check-in
 create or replace function actualizar_racha()
 returns trigger as $$
 declare
@@ -250,10 +222,10 @@ begin
 
   update profiles set
     racha_actual = v_nueva_racha,
-    mejor_racha = greatest(mejor_racha, v_nueva_racha),
+    mejor_racha = greatest(coalesce(mejor_racha, 0), v_nueva_racha),
     ultimo_checkin = new.fecha::text,
-    puntos_total = puntos_total + new.puntos_ganados,
-    xp_nivel = puntos_total + new.puntos_ganados,
+    puntos_total = coalesce(puntos_total, 0) + new.puntos_ganados,
+    xp_nivel = coalesce(puntos_total, 0) + new.puntos_ganados,
     updated_at = now()
   where id = new.user_id;
 
@@ -266,19 +238,21 @@ create trigger trg_checkin_after_insert
   after insert on checkins
   for each row execute function actualizar_racha();
 
--- 6. VISTAS DE RANKING DIARIO Y SEMANAL
+-- 9. VISTAS DE CLASIFICACIÓN
 create or replace view ranking_diario as
-select p.id, p.nombre, p.avatar_emoji, p.puntos_total,
-       p.racha_actual, p.mejor_racha, count(c.id) as checkins_hoy
+select p.id, p.nombre, p.color_acento, p.puntos_total,
+       p.racha_actual, p.mejor_racha, p.rol, count(c.id) as checkins_hoy
 from profiles p
 left join checkins c on c.user_id = p.id and c.fecha = current_date
-group by p.id, p.nombre, p.avatar_emoji, p.puntos_total, p.racha_actual, p.mejor_racha
+where p.rol = 'alumno'
+group by p.id, p.nombre, p.color_acento, p.puntos_total, p.racha_actual, p.mejor_racha, p.rol
 order by p.puntos_total desc;
 
 create or replace view ranking_semanal as
-select p.id, p.nombre, p.avatar_emoji, p.puntos_total,
-       p.racha_actual, p.mejor_racha, count(c.id) as checkins_semana
+select p.id, p.nombre, p.color_acento, p.puntos_total,
+       p.racha_actual, p.mejor_racha, p.rol, count(c.id) as checkins_semana
 from profiles p
 left join checkins c on c.user_id = p.id and c.fecha >= current_date - interval '7 days'
-group by p.id, p.nombre, p.avatar_emoji, p.puntos_total, p.racha_actual, p.mejor_racha
+where p.rol = 'alumno'
+group by p.id, p.nombre, p.color_acento, p.puntos_total, p.racha_actual, p.mejor_racha, p.rol
 order by p.puntos_total desc;

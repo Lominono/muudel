@@ -25,7 +25,7 @@ export function useChat(canal) {
     try {
       const { data, error: err } = await supabase
         .from('messages')
-        .select('*, profiles(nombre, avatar_emoji)')
+        .select('*, profiles(nombre, color_acento, rol)')
         .eq('canal', canal)
         .order('created_at', { ascending: true })
         .limit(100)
@@ -35,43 +35,29 @@ export function useChat(canal) {
       if (data && data.length > 0) {
         setMensajes(data)
       } else {
-        // Mensajes de bienvenida o demostración
-        setMensajes([
-          {
-            id: 'demo-msg-1',
-            canal,
-            user_id: 'profesor-1',
-            texto: `¡Bienvenidos al canal #${canal}! Recuerden registrar su asistencia todos los días.`,
-            nombre: 'Profesor Carlos',
-            avatar_emoji: '👨‍🏫',
-            likes_count: 3,
-            created_at: new Date(Date.now() - 3600000).toISOString()
-          },
-          {
-            id: 'demo-msg-2',
-            canal,
-            user_id: 'estudiante-2',
-            texto: '¡Hoy llegué a tiempo! Racha al día 🔥',
-            nombre: 'Sofía R.',
-            avatar_emoji: '👩‍🎓',
-            likes_count: 2,
-            created_at: new Date(Date.now() - 1800000).toISOString()
+        // Cargar mensajes locales guardados del canal si existen
+        const local = localStorage.getItem('racha_chat_' + canal)
+        if (local) {
+          try {
+            setMensajes(JSON.parse(local))
+          } catch (e) {
+            setMensajes([])
           }
-        ])
+        } else {
+          setMensajes([])
+        }
       }
     } catch (e) {
-      setMensajes([
-        {
-          id: 'demo-msg-1',
-          canal,
-          user_id: 'profesor-1',
-          texto: `¡Bienvenidos al canal #${canal}!`,
-          nombre: 'Profesor Carlos',
-          avatar_emoji: '👨‍🏫',
-          likes_count: 1,
-          created_at: new Date().toISOString()
+      const local = localStorage.getItem('racha_chat_' + canal)
+      if (local) {
+        try {
+          setMensajes(JSON.parse(local))
+        } catch (err) {
+          setMensajes([])
         }
-      ])
+      } else {
+        setMensajes([])
+      }
     } finally {
       setCargando(false)
     }
@@ -96,21 +82,24 @@ export function useChat(canal) {
   const enviar = async (texto, userId, perfil = null, replyTo = null) => {
     if (!texto.trim()) return { data: null, error: 'Escribe un mensaje' }
 
-    // Si es demo o falla Supabase
-    if (userId === 'demo-user-1234') {
-      const nuevoMensaje = {
-        id: 'msg-' + Date.now(),
-        canal,
-        user_id: userId,
-        texto: texto.trim(),
-        nombre: perfil?.nombre || 'Tú',
-        avatar_emoji: perfil?.avatar_emoji || '🧑‍🎓',
-        likes_count: 0,
-        created_at: new Date().toISOString()
-      }
-      setMensajes(prev => [...prev, nuevoMensaje])
-      return { data: nuevoMensaje, error: null }
+    const nuevoMensaje = {
+      id: 'msg-' + Date.now(),
+      canal,
+      user_id: userId,
+      texto: texto.trim(),
+      nombre: perfil?.nombre || 'Usuario',
+      color_acento: perfil?.color_acento,
+      rol: perfil?.rol || 'alumno',
+      likes_count: 0,
+      created_at: new Date().toISOString()
     }
+
+    // Persistir localmente para tener reactividad inmediata
+    setMensajes(prev => {
+      const actualizados = [...prev, nuevoMensaje]
+      localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados.slice(-100)))
+      return actualizados
+    })
 
     try {
       const { data, error: err } = await supabase
@@ -124,35 +113,27 @@ export function useChat(canal) {
         .select()
         .single()
 
-      if (err) {
-        // Fallback local
-        const nuevoMensaje = {
-          id: 'msg-' + Date.now(),
-          canal,
-          user_id: userId,
-          texto: texto.trim(),
-          nombre: perfil?.nombre || 'Tú',
-          avatar_emoji: perfil?.avatar_emoji || '🧑‍🎓',
-          likes_count: 0,
-          created_at: new Date().toISOString()
-        }
-        setMensajes(prev => [...prev, nuevoMensaje])
-        return { data: nuevoMensaje, error: null }
-      }
-
-      return { data, error: null }
+      return { data: data || nuevoMensaje, error: err || null }
     } catch (e) {
-      return { data: null, error: e }
+      return { data: nuevoMensaje, error: null }
     }
   }
 
-  const like = async (messageId, userId) => {
-    setMensajes(prev => prev.map(m => {
-      if (m.id === messageId) {
-        return { ...m, likes_count: (m.likes_count || 0) + 1 }
-      }
-      return m
-    }))
+  const like = async (messageId) => {
+    setMensajes(prev => {
+      const actualizados = prev.map(m => {
+        if (m.id === messageId) {
+          return { ...m, likes_count: (m.likes_count || 0) + 1 }
+        }
+        return m
+      })
+      localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      return actualizados
+    })
+
+    try {
+      await supabase.rpc('increment_likes', { msg_id: messageId })
+    } catch (e) {}
     return true
   }
 

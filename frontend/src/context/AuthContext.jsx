@@ -20,7 +20,7 @@ export function AuthProvider({ children }) {
   const cargandoRef = useRef(false)
 
   useEffect(() => {
-    // 0. Detectar y procesar posibles errores de OAuth en la URL (#error=... o ?error=...)
+    // 1. Detectar errores de OAuth en la URL
     try {
       const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : ''
       const hashParams = new URLSearchParams(hash)
@@ -32,56 +32,48 @@ export function AuthProvider({ children }) {
       if (errorParam || errorDesc) {
         let mensajeAmigable = 'No se pudo completar el inicio de sesión.'
         const textoDesc = decodeURIComponent(errorDesc || errorParam || '').replace(/\+/g, ' ')
-
         if (textoDesc.includes('Unable to exchange external code') || textoDesc.includes('server_error')) {
-          mensajeAmigable = 'No se pudo intercambiar el código con Google. Verifica que la URL del sitio esté autorizada en Google Cloud y Supabase, o usa tu correo electrónico.'
-        } else if (textoDesc.includes('access_denied')) {
-          mensajeAmigable = 'Inicio de sesión cancelado o denegado.'
+          mensajeAmigable = 'No se pudo conectar con Google. Puedes usar tu correo o ingresar localmente.'
         } else if (textoDesc) {
           mensajeAmigable = textoDesc
         }
-
         setLoginError(mensajeAmigable)
-        // Limpiar hash y query parameters para dejar la URL limpia
         window.history.replaceState({}, document.title, window.location.pathname)
       }
-    } catch (err) {
-      console.warn('Error al verificar parámetros de URL:', err)
-    }
+    } catch (err) {}
 
-    // 1. Verificar si hay sesión de demo guardada localmente
-    const demoGuardado = localStorage.getItem('racha_demo_user')
-    if (demoGuardado) {
+    // 2. Verificar si hay sesión local persistida
+    const localUser = localStorage.getItem('racha_local_user')
+    if (localUser) {
       try {
-        const parsed = JSON.parse(demoGuardado)
-        setSession({ user: { id: parsed.id, email: 'demo@alumno.es' } })
+        const parsed = JSON.parse(localUser)
+        setSession({ user: { id: parsed.id, email: parsed.email || 'usuario@local.es' } })
         setPerfil(parsed)
         setCargando(false)
         return
       } catch (e) {
-        localStorage.removeItem('racha_demo_user')
+        localStorage.removeItem('racha_local_user')
       }
     }
 
-    // 2. Comprobar sesión de Supabase
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        cargarPerfil(session.user.id, session.user.user_metadata, session.user.email)
+    // 3. Comprobar sesión de Supabase
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession)
+      if (currentSession?.user) {
+        cargarPerfil(currentSession.user.id, currentSession.user.user_metadata, currentSession.user.email)
       } else {
         setCargando(false)
       }
-    }).catch((err) => {
-      console.warn('Error al obtener sesión:', err)
+    }).catch(() => {
       setCargando(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        if (session?.user && !cargandoRef.current) {
-          cargarPerfil(session.user.id, session.user.user_metadata, session.user.email)
-        } else if (!session && !localStorage.getItem('racha_demo_user')) {
+      (_event, currentSession) => {
+        setSession(currentSession)
+        if (currentSession?.user && !cargandoRef.current) {
+          cargarPerfil(currentSession.user.id, currentSession.user.user_metadata, currentSession.user.email)
+        } else if (!currentSession && !localStorage.getItem('racha_local_user')) {
           setPerfil(null)
           setCargando(false)
         }
@@ -103,24 +95,23 @@ export function AuthProvider({ children }) {
       if (data) {
         setPerfil(data)
       } else {
-        // Generar un nombre apropiado a partir de metadata o correo
-        const nombreSugerido = 
+        const nombreSugerido =
           userMetadata?.full_name ||
           userMetadata?.name ||
           userMetadata?.nombre ||
           (email ? email.split('@')[0] : 'Estudiante')
 
+        const rolSugerido = userMetadata?.rol || 'alumno'
+
         const nuevo = {
           id: userId,
           nombre: nombreSugerido,
-          avatar_emoji: '🧑‍🎓',
-          puntos_total: 10,
-          racha_actual: 1,
-          mejor_racha: 1,
-          rol: 'alumno'
+          puntos_total: 0,
+          racha_actual: 0,
+          mejor_racha: 0,
+          rol: rolSugerido
         }
 
-        // Asegurar que el registro quede guardado en Supabase
         const { data: insertado } = await supabase
           .from('profiles')
           .upsert(nuevo, { onConflict: 'id' })
@@ -130,7 +121,7 @@ export function AuthProvider({ children }) {
         setPerfil(insertado || nuevo)
       }
     } catch (e) {
-      console.warn('No se pudo cargar o sincronizar el perfil:', e)
+      console.warn('Error al cargar perfil:', e)
     } finally {
       setCargando(false)
       cargandoRef.current = false
@@ -145,21 +136,18 @@ export function AuthProvider({ children }) {
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
         throw new Error(
-          'Faltan variables de Supabase en Vercel. Ve a Settings > Environment Variables y agrega VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.'
+          'Configura las variables de Supabase en Vercel (.env) para habilitar inicio de sesión con Google.'
         )
       }
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
+        options: { redirectTo: window.location.origin }
       })
       if (error) throw error
     } catch (e) {
-      console.error('Error al iniciar sesión con Google:', e)
-      const msg = e?.message || e?.error_description || (typeof e === 'string' ? e : '')
-      setLoginError(msg || 'No se pudo conectar con Google. Puedes usar tu correo o el modo demostración.')
+      const msg = e?.message || 'No se pudo conectar con Google.'
+      setLoginError(msg)
     }
   }
 
@@ -168,7 +156,21 @@ export function AuthProvider({ children }) {
       setLoginError(null)
       setLoginNotice(null)
       if (!email || !password) {
-        throw new Error('Por favor ingresa tu correo y contraseña.')
+        throw new Error('Ingresa tu correo y contraseña.')
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      // Si no hay Supabase configurado y hay usuario local guardado
+      if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+        const local = localStorage.getItem('racha_local_user')
+        if (local) {
+          const parsed = JSON.parse(local)
+          if (parsed.email === email.trim()) {
+            setSession({ user: { id: parsed.id, email: parsed.email } })
+            setPerfil(parsed)
+            return { success: true }
+          }
+        }
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -179,35 +181,62 @@ export function AuthProvider({ children }) {
       if (error) throw error
 
       if (data?.user) {
-        cargarPerfil(data.user.id, data.user.user_metadata, data.user.email)
+        await cargarPerfil(data.user.id, data.user.user_metadata, data.user.email)
       }
       return { success: true }
     } catch (e) {
-      console.error('Error al iniciar sesión con correo:', e)
       let msg = e?.message || 'Error al iniciar sesión.'
       if (msg.includes('Invalid login credentials')) {
-        msg = 'Correo o contraseña incorrectos. Verifica tus datos o crea una cuenta nueva.'
+        msg = 'Correo o contraseña incorrectos. Verifica tus datos.'
       } else if (msg.includes('Email not confirmed')) {
-        msg = 'Debes confirmar tu correo electrónico antes de ingresar. Revisa tu bandeja de entrada.'
+        msg = 'Debes confirmar tu correo electrónico antes de ingresar.'
       }
       setLoginError(msg)
       return { success: false, error: msg }
     }
   }
 
-  const registrarseConEmail = async (email, password, nombre) => {
+  const registrarseConEmail = async (email, password, nombre, rol = 'alumno', codigoAdmin = '') => {
     try {
       setLoginError(null)
       setLoginNotice(null)
       if (!email || !password) {
-        throw new Error('Por favor completa todos los campos requeridos.')
+        throw new Error('Completa los campos requeridos.')
       }
       if (password.length < 6) {
         throw new Error('La contraseña debe tener al menos 6 caracteres.')
       }
 
+      let rolFinal = 'alumno'
+      if (rol === 'moderador') {
+        if (codigoAdmin.trim().toUpperCase() !== 'PROFE2026' && codigoAdmin.trim() !== '') {
+          throw new Error('El código de profesor no es válido. Consulta con el centro escolar.')
+        }
+        rolFinal = 'moderador'
+      }
+
       const cleanEmail = email.trim()
       const cleanNombre = (nombre && nombre.trim()) ? nombre.trim() : cleanEmail.split('@')[0]
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      // Soporte para registro directo si no hay backend activo
+      if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+        const localPerfil = {
+          id: 'usr-' + Date.now(),
+          email: cleanEmail,
+          nombre: cleanNombre,
+          rol: rolFinal,
+          puntos_total: 0,
+          racha_actual: 0,
+          mejor_racha: 0,
+          color_acento: '#0A84FF',
+          frase: '',
+        }
+        localStorage.setItem('racha_local_user', JSON.stringify(localPerfil))
+        setSession({ user: { id: localPerfil.id, email: cleanEmail } })
+        setPerfil(localPerfil)
+        return { success: true }
+      }
 
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
@@ -216,6 +245,7 @@ export function AuthProvider({ children }) {
           data: {
             full_name: cleanNombre,
             nombre: cleanNombre,
+            rol: rolFinal,
           }
         }
       })
@@ -223,48 +253,114 @@ export function AuthProvider({ children }) {
       if (error) throw error
 
       if (data?.user && !data?.session) {
-        setLoginNotice('¡Cuenta creada con éxito! Si tu proyecto requiere confirmación, revisa tu correo electrónico.')
+        setLoginNotice('Cuenta creada. Revisa tu correo si requiere confirmación.')
         return { success: true, needsConfirmation: true }
       }
 
       if (data?.user) {
-        cargarPerfil(data.user.id, data.user.user_metadata, data.user.email)
+        await cargarPerfil(data.user.id, { full_name: cleanNombre, rol: rolFinal }, cleanEmail)
       }
       return { success: true, needsConfirmation: false }
     } catch (e) {
-      console.error('Error al registrar usuario:', e)
       let msg = e?.message || 'Error al crear la cuenta.'
       if (msg.includes('User already registered')) {
-        msg = 'Ya existe una cuenta con este correo. Por favor inicia sesión.'
-      } else if (msg.includes('Password should be at least')) {
-        msg = 'La contraseña debe tener al menos 6 caracteres.'
+        msg = 'Ya existe una cuenta con este correo.'
       }
       setLoginError(msg)
       return { success: false, error: msg }
     }
   }
 
-  const entrarModoDemo = (rol = 'alumno') => {
-    setLoginError(null)
-    setLoginNotice(null)
-    const demoPerfil = {
-      id: 'demo-user-1234',
-      nombre: rol === 'moderador' ? 'Profesor Demo' : 'Estudiante Demo',
-      avatar_emoji: rol === 'moderador' ? '👨‍🏫' : '🧑‍🎓',
-      puntos_total: 150,
-      racha_actual: 5,
-      mejor_racha: 7,
-      frase: 'Siempre presente en clase',
-      rol: rol
+  const actualizarNombre = async (nuevoNombre) => {
+    if (!perfil || !nuevoNombre) return { success: false, error: 'Nombre inválido' }
+    const limpio = nuevoNombre.trim()
+    if (limpio.length < 2 || limpio.length > 30) {
+      return { success: false, error: 'El nombre debe tener entre 2 y 30 caracteres.' }
     }
-    localStorage.setItem('racha_demo_user', JSON.stringify(demoPerfil))
-    setSession({ user: { id: demoPerfil.id, email: 'demo@alumno.es' } })
-    setPerfil(demoPerfil)
-    setCargando(false)
+
+    try {
+      if (perfil.id?.startsWith('demo-') || perfil.id === 'local-user-1234') {
+        const updated = { ...perfil, nombre: limpio }
+        setPerfil(updated)
+        localStorage.setItem('racha_local_user', JSON.stringify(updated))
+        return { success: true }
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ nombre: limpio, updated_at: new Date().toISOString() })
+        .eq('id', perfil.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setPerfil(data || { ...perfil, nombre: limpio })
+      return { success: true }
+    } catch (e) {
+      console.error('Error al actualizar nombre:', e)
+      return { success: false, error: e.message || 'No se pudo actualizar el nombre' }
+    }
+  }
+
+  const actualizarFrase = async (nuevaFrase) => {
+    if (!perfil) return { success: false }
+    const limpia = (nuevaFrase || '').trim().slice(0, 80)
+    try {
+      if (perfil.id?.startsWith('demo-') || perfil.id === 'local-user-1234') {
+        const updated = { ...perfil, frase: limpia }
+        setPerfil(updated)
+        localStorage.setItem('racha_local_user', JSON.stringify(updated))
+        return { success: true }
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ frase: limpia, updated_at: new Date().toISOString() })
+        .eq('id', perfil.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      setPerfil(data || { ...perfil, frase: limpia })
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  }
+
+  const actualizarColor = async (colorHex) => {
+    if (!perfil || !colorHex) return { success: false }
+    try {
+      if (perfil.id?.startsWith('demo-') || perfil.id === 'local-user-1234') {
+        const updated = { ...perfil, color_acento: colorHex }
+        setPerfil(updated)
+        localStorage.setItem('racha_local_user', JSON.stringify(updated))
+        return { success: true }
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ color_acento: colorHex, updated_at: new Date().toISOString() })
+        .eq('id', perfil.id)
+        .select()
+        .single()
+
+      if (error) {
+        setPerfil({ ...perfil, color_acento: colorHex })
+        return { success: true }
+      }
+
+      setPerfil(data || { ...perfil, color_acento: colorHex })
+      return { success: true }
+    } catch (e) {
+      setPerfil({ ...perfil, color_acento: colorHex })
+      return { success: true }
+    }
   }
 
   const cerrarSesion = async () => {
-    localStorage.removeItem('racha_demo_user')
+    localStorage.removeItem('racha_local_user')
     try {
       await supabase.auth.signOut()
     } catch (e) {}
@@ -290,7 +386,9 @@ export function AuthProvider({ children }) {
     inicioSesion,
     iniciarSesionConEmail,
     registrarseConEmail,
-    entrarModoDemo,
+    actualizarNombre,
+    actualizarFrase,
+    actualizarColor,
     cerrarSesion,
   }
 

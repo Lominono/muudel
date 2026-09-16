@@ -1,17 +1,59 @@
+import { useState, useEffect } from 'react'
 import { Calendar } from 'lucide-react'
+import { supabase } from '../utils/supabase'
 
-export function CalendarioActividad({ racha = 5 }) {
-  // Generar 28 días (4 semanas completas)
-  const totalDias = 28
+export function CalendarioActividad({ userId = null }) {
+  const [registros, setRegistros] = useState({})
+  const totalDias = 28 // 4 semanas completas
+
+  useEffect(() => {
+    if (!userId) return
+
+    const hoy = new Date()
+    const hace28Dias = new Date()
+    hace28Dias.setDate(hoy.getDate() - (totalDias - 1))
+    const fechaInicioStr = hace28Dias.toISOString().split('T')[0]
+
+    supabase
+      .from('checkins')
+      .select('fecha, es_tarde')
+      .eq('user_id', userId)
+      .gte('fecha', fechaInicioStr)
+      .then(({ data }) => {
+        const mapa = {}
+        if (data) {
+          data.forEach((chk) => {
+            mapa[chk.fecha] = chk
+          })
+        }
+        // Comprobar también checkins locales del día si existen
+        const hoyStr = hoy.toISOString().split('T')[0]
+        const localCheckins = localStorage.getItem('racha_checkins_' + hoyStr)
+        if (localCheckins) {
+          try {
+            const parsed = JSON.parse(localCheckins)
+            if (parsed[userId]) {
+              mapa[hoyStr] = parsed[userId]
+            }
+          } catch (e) {}
+        }
+
+        setRegistros(mapa)
+      })
+      .catch(() => {})
+  }, [userId])
+
   const dias = Array.from({ length: totalDias }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (totalDias - 1 - i))
-    // Simular historial basado en la racha actual
-    const esActivo = i >= totalDias - racha || (i % 3 !== 0 && i < 15)
+    const fechaStr = d.toISOString().split('T')[0]
+    const registro = registros[fechaStr]
+
     return {
       fecha: d,
-      activo: esActivo,
-      esTarde: esActivo && i % 4 === 0,
+      fechaStr,
+      activo: Boolean(registro),
+      esTarde: Boolean(registro?.es_tarde),
       esHoy: i === totalDias - 1,
     }
   })
@@ -28,10 +70,10 @@ export function CalendarioActividad({ racha = 5 }) {
         marginBottom: 14,
       }}>
         <h3 className="apple-headline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          Asistencia mensual
+          Historial de asistencia
           <Calendar size={17} color="var(--color-accent)" />
         </h3>
-        <span className="apple-badge apple-badge-positive">
+        <span className="apple-badge apple-badge-accent">
           {porcentaje}% de presencia
         </span>
       </div>
@@ -96,7 +138,7 @@ export function CalendarioActividad({ racha = 5 }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'var(--color-fill-secondary)' }} />
-            <span className="apple-caption">Libre</span>
+            <span className="apple-caption">Sin clase</span>
           </div>
         </div>
 

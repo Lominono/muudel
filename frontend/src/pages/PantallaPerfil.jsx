@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
-import { NIVELES, EMOJIS_AVATAR, supabase } from '../utils/supabase'
+import { NIVELES, COLORES_AVATAR, supabase } from '../utils/supabase'
 import { CalendarioActividad } from '../components/CalendarioActividad'
-import { LogOut, Sun, Moon, Monitor } from 'lucide-react'
+import { AvatarUsuario } from '../components/AvatarUsuario'
+import { LogOut, Sun, Moon, Monitor, Flame, Clock, MessageSquare, Award, Palette } from 'lucide-react'
 import { sound } from '../utils/haptics'
 import { animarEscalonado } from '../utils/animations'
 import gsap from 'gsap'
 
 export function PantallaPerfil() {
   const { perfil, setPerfil, cerrarSesion } = useAuth()
-  const [guardando, setGuardando] = useState(false)
-  const [mostrarSelector, setMostrarSelector] = useState(false)
+  const [mostrarSelectorColor, setMostrarSelectorColor] = useState(false)
   const [tema, setTema] = useState(() => localStorage.getItem('racha_tema') || 'auto')
   const progressBarRef = useRef(null)
   const pageRef = useRef(null)
@@ -48,28 +48,51 @@ export function PantallaPerfil() {
     }
   }, [progresoPorcentaje])
 
-  const cambiarEmoji = async (emoji) => {
-    setGuardando(true)
+  const cambiarColor = async (color) => {
     sound.playPop()
-    const updated = { ...perfil, avatar_emoji: emoji }
+    const updated = { ...perfil, color_acento: color }
     setPerfil(updated)
-    setMostrarSelector(false)
+    setMostrarSelectorColor(false)
 
-    if (perfil.id === 'demo-user-1234') {
-      localStorage.setItem('racha_demo_user', JSON.stringify(updated))
-    } else {
-      try {
-        await supabase.from('profiles').update({ avatar_emoji: emoji }).eq('id', perfil.id)
-      } catch (e) {}
-    }
-    setGuardando(false)
+    localStorage.setItem('racha_local_user', JSON.stringify(updated))
+    try {
+      await supabase.from('profiles').update({ color_acento: color }).eq('id', perfil.id)
+    } catch (e) {}
   }
 
-  const logros = [
-    { id: '1', emoji: '🔥', titulo: 'Primera Racha', desc: '3 días seguidos' },
-    { id: '2', emoji: '⚡', titulo: 'Puntual', desc: 'Llegada antes de hora' },
-    { id: '3', emoji: '💬', titulo: 'Participativo', desc: 'Aportes en el chat' },
-    { id: '4', emoji: '🏆', titulo: 'Constancia', desc: '10 asistencias' },
+  const insignias = [
+    {
+      id: '1',
+      icon: Flame,
+      titulo: 'Primera Racha',
+      desc: '3 días seguidos',
+      activo: (perfil.racha_actual || 0) >= 3 || (perfil.mejor_racha || 0) >= 3,
+      color: 'var(--color-warning)'
+    },
+    {
+      id: '2',
+      icon: Clock,
+      titulo: 'Puntualidad',
+      desc: 'Llegada antes de hora',
+      activo: (perfil.puntos_total || 0) >= 10,
+      color: 'var(--color-positive)'
+    },
+    {
+      id: '3',
+      icon: MessageSquare,
+      titulo: 'Participación',
+      desc: 'Mensajes en el grupo',
+      activo: true,
+      color: 'var(--color-accent)'
+    },
+    {
+      id: '4',
+      icon: Award,
+      titulo: 'Constancia',
+      desc: '10 asistencias',
+      activo: (perfil.puntos_total || 0) >= 100,
+      color: '#AF52DE'
+    },
   ]
 
   return (
@@ -84,35 +107,42 @@ export function PantallaPerfil() {
         {/* Tarjeta de Identidad y Nivel */}
         <section className="card" style={{ textAlign: 'center', padding: '28px 20px' }}>
           <div style={{ position: 'relative', display: 'inline-block', marginBottom: 12 }}>
+            <AvatarUsuario
+              nombre={perfil.nombre}
+              color={perfil.color_acento}
+              rol={perfil.rol}
+              size={88}
+              fontSize={32}
+              showRoleBadge={true}
+            />
+
             <button
-              onClick={() => setMostrarSelector(!mostrarSelector)}
-              title="Cambiar avatar"
+              onClick={() => setMostrarSelectorColor(!mostrarSelectorColor)}
+              title="Cambiar color de perfil"
               style={{
-                fontSize: 64,
-                width: 96,
-                height: 96,
+                position: 'absolute',
+                bottom: 0,
+                right: -4,
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-separator)',
                 borderRadius: 9999,
-                backgroundColor: 'var(--color-surface-secondary)',
-                border: '2px solid var(--color-separator)',
-                cursor: 'pointer',
+                width: 28,
+                height: 28,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto',
-                transition: 'transform 0.15s ease',
+                cursor: 'pointer',
+                color: 'var(--color-ink)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.12)'
               }}
             >
-              {perfil.avatar_emoji || '🧑‍🎓'}
+              <Palette size={14} />
             </button>
-            <span className="apple-caption" style={{ display: 'block', marginTop: 4 }}>
-              Toca para cambiar
-            </span>
           </div>
 
-          {mostrarSelector && (
+          {mostrarSelectorColor && (
             <div style={{
               display: 'flex',
-              flexWrap: 'wrap',
               gap: 8,
               justifyContent: 'center',
               padding: 12,
@@ -121,21 +151,22 @@ export function PantallaPerfil() {
               marginBottom: 16,
               border: '1px solid var(--color-separator)'
             }}>
-              {EMOJIS_AVATAR.slice(0, 12).map((emoji) => (
+              {COLORES_AVATAR.map((c) => (
                 <button
-                  key={emoji}
-                  onClick={() => cambiarEmoji(emoji)}
+                  key={c}
+                  onClick={() => cambiarColor(c)}
                   style={{
-                    fontSize: 24,
-                    padding: 6,
-                    borderRadius: 8,
-                    background: 'transparent',
-                    border: 'none',
+                    width: 28,
+                    height: 28,
+                    borderRadius: 9999,
+                    backgroundColor: c,
+                    border: perfil.color_acento === c ? '2px solid var(--color-ink)' : 'none',
                     cursor: 'pointer',
+                    outline: 'none',
+                    transform: perfil.color_acento === c ? 'scale(1.15)' : 'none',
+                    transition: 'transform 0.15s ease'
                   }}
-                >
-                  {emoji}
-                </button>
+                />
               ))}
             </div>
           )}
@@ -144,19 +175,18 @@ export function PantallaPerfil() {
             {perfil.nombre}
           </h2>
 
-          {perfil.frase && (
-            <p className="apple-subheadline" style={{ fontStyle: 'italic', marginBottom: 8 }}>
-              “{perfil.frase}”
-            </p>
-          )}
-
-          <div style={{ marginTop: 8 }}>
-            <span className="apple-badge apple-badge-accent" style={{ fontSize: 13, padding: '5px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+            <span className="apple-badge apple-badge-accent" style={{ fontSize: 13, padding: '4px 12px' }}>
               Nivel: {nivel.nombre}
             </span>
+            {perfil.rol === 'moderador' && (
+              <span className="apple-badge apple-badge-positive" style={{ fontSize: 13, padding: '4px 12px' }}>
+                Profesor / Administrador
+              </span>
+            )}
           </div>
 
-          {/* Barra de Progreso XP animada con GSAP */}
+          {/* Barra de Progreso XP */}
           <div style={{ marginTop: 20 }}>
             <div style={{
               height: 8,
@@ -180,14 +210,14 @@ export function PantallaPerfil() {
                 {xpEnNivel} XP en este nivel
               </span>
               <span className="apple-caption tabular-nums">
-                {siguiente ? `${xpNecesario - xpEnNivel} XP para ${siguiente.nombre}` : '¡Nivel máximo!'}
+                {siguiente ? `${xpNecesario - xpEnNivel} XP para ${siguiente.nombre}` : 'Nivel máximo'}
               </span>
             </div>
           </div>
         </section>
 
-        {/* Calendario de Actividad mensual */}
-        <CalendarioActividad racha={perfil.racha_actual || 5} />
+        {/* Historial real de asistencia */}
+        <CalendarioActividad userId={perfil.id} />
 
         {/* Estadísticas */}
         <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -199,7 +229,7 @@ export function PantallaPerfil() {
             { label: 'Puntos acumulados', valor: `${perfil.puntos_total || 0} pts`, color: 'var(--color-accent)' },
             { label: 'Racha actual', valor: `${perfil.racha_actual || 0} días`, color: 'var(--color-warning)' },
             { label: 'Récord personal', valor: `${perfil.mejor_racha || 0} días`, color: 'var(--color-positive)' },
-            { label: 'Rol en clase', valor: perfil.rol || 'alumno', color: 'var(--color-ink)' },
+            { label: 'Rol en clase', valor: perfil.rol === 'moderador' ? 'Profesor' : 'Alumno', color: 'var(--color-ink)' },
           ].map((item, index, arr) => (
             <div
               key={item.label}
@@ -252,33 +282,50 @@ export function PantallaPerfil() {
           </div>
         </section>
 
-        {/* Insignias */}
+        {/* Insignias con Iconos Vectoriales (Cero Emojis) */}
         <section className="card">
           <h3 className="apple-headline" style={{ fontSize: 15, marginBottom: 12 }}>
             Insignias conseguidas
           </h3>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-            {logros.map((l) => (
-              <div
-                key={l.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  borderRadius: 12,
-                  backgroundColor: 'var(--color-surface-secondary)',
-                  border: '1px solid var(--color-separator)'
-                }}
-              >
-                <span style={{ fontSize: 24 }}>{l.emoji}</span>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{l.titulo}</div>
-                  <div className="apple-caption" style={{ fontSize: 11 }}>{l.desc}</div>
+            {insignias.map((l) => {
+              const IconComp = l.icon
+              return (
+                <div
+                  key={l.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    border: '1px solid var(--color-separator)',
+                    opacity: l.activo ? 1 : 0.5
+                  }}
+                >
+                  <div style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-separator)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: l.activo ? l.color : 'var(--color-tertiary-ink)',
+                    flexShrink: 0
+                  }}>
+                    <IconComp size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{l.titulo}</div>
+                    <div className="apple-caption" style={{ fontSize: 11 }}>{l.desc}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
 
@@ -299,7 +346,7 @@ export function PantallaPerfil() {
           </button>
         </div>
 
-        {/* Créditos de JuanFe en el perfil */}
+        {/* Créditos de JuanFe */}
         <div style={{ marginTop: 24, textAlign: 'center', paddingBottom: 16 }}>
           <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
             Racha de Clase

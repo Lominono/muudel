@@ -15,16 +15,17 @@ export function useCheckin(userId) {
     setCargando(true)
     const hoyStr = new Date().toISOString().split('T')[0]
 
-    // Soporte para modo demo local
-    if (userId === 'demo-user-1234') {
-      const demoCheck = localStorage.getItem('racha_demo_checkin_' + hoyStr)
-      if (demoCheck) {
-        setHoy(JSON.parse(demoCheck))
-      } else {
-        setHoy(null)
-      }
-      setCargando(false)
-      return
+    // Comprobar si hay registro en almacenamiento local del pase de lista
+    const localCheckins = localStorage.getItem('racha_checkins_' + hoyStr)
+    if (localCheckins) {
+      try {
+        const parsed = JSON.parse(localCheckins)
+        if (parsed[userId]) {
+          setHoy(parsed[userId])
+          setCargando(false)
+          return
+        }
+      } catch (e) {}
     }
 
     try {
@@ -35,7 +36,11 @@ export function useCheckin(userId) {
         .eq('fecha', hoyStr)
         .maybeSingle()
 
-      setHoy(data)
+      if (data) {
+        setHoy(data)
+      } else {
+        setHoy(null)
+      }
       setError(err || null)
     } catch (e) {
       setError(e)
@@ -44,48 +49,45 @@ export function useCheckin(userId) {
     }
   }
 
-  const hacerCheckin = async (esTarde) => {
+  const hacerCheckin = async (esTarde = false) => {
     setError(null)
     const hoyStr = new Date().toISOString().split('T')[0]
     const puntos = esTarde ? 5 : 10
     const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    if (userId === 'demo-user-1234') {
-      const mockRecord = {
-        id: 'demo-chk-' + Date.now(),
-        user_id: userId,
-        fecha: hoyStr,
-        hora: horaActual,
-        es_tarde: esTarde,
-        puntos_ganados: puntos
-      }
-      localStorage.setItem('racha_demo_checkin_' + hoyStr, JSON.stringify(mockRecord))
-      setHoy(mockRecord)
-      return { data: mockRecord, error: null }
+    const nuevoRecord = {
+      user_id: userId,
+      fecha: hoyStr,
+      hora: horaActual,
+      es_tarde: esTarde,
+      puntos_ganados: puntos
     }
 
+    // Guardar en almacenamiento local de checkins del día
+    try {
+      const localCheckins = localStorage.getItem('racha_checkins_' + hoyStr)
+      const mapa = localCheckins ? JSON.parse(localCheckins) : {}
+      mapa[userId] = nuevoRecord
+      localStorage.setItem('racha_checkins_' + hoyStr, JSON.stringify(mapa))
+    } catch (e) {}
+
+    setHoy(nuevoRecord)
+
+    // Sincronizar en Supabase
     try {
       const { data, error: err } = await supabase
         .from('checkins')
-        .insert({
-          user_id: userId,
-          fecha: hoyStr,
-          hora: horaActual,
-          es_tarde: esTarde,
-          puntos_ganados: puntos
-        })
+        .upsert(nuevoRecord, { onConflict: 'user_id, fecha' })
         .select()
         .single()
 
       if (err) {
         setError(err.message)
-        return { data: null, error: err }
+        return { data: nuevoRecord, error: null }
       }
-      await chequear()
       return { data, error: null }
     } catch (e) {
-      setError(e.message)
-      return { data: null, error: e }
+      return { data: nuevoRecord, error: null }
     }
   }
 

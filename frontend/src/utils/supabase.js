@@ -4,25 +4,45 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.su
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder'
 
 if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-  console.warn('⚠️ Variables de entorno de Supabase no detectadas. Recuerda configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en Vercel.')
+  console.warn('Configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu entorno.')
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export const NIVELES = [
   { nombre: 'Novato', min: 0 },
-  { nombre: 'Presente', min: 100 },
-  { nombre: 'Constante', min: 400 },
-  { nombre: 'Imparable', min: 1000 },
-  { nombre: 'Leyenda', min: 2500 },
+  { nombre: 'Constante', min: 80 },
+  { nombre: 'Avanzado', min: 250 },
+  { nombre: 'Destacado', min: 600 },
+  { nombre: 'Referente', min: 1500 },
 ]
 
-export const EMOJIS_AVATAR = [
-  '🧑','👩','🧔','👨','👧','👦','🧑‍🎓','🧑‍💻','🧑‍🔬','🧑‍🏫',
-  '🦸','🦸‍♀️','🦸‍♂️','🧙','🧙‍♀️','🤸','🏃','🏃‍♀️','🧖','🧑‍🍳',
+export const COLORES_AVATAR = [
+  '#0A84FF', // Azul sistema
+  '#30D158', // Verde
+  '#FF9F0A', // Ámbar
+  '#FF375F', // Rosa
+  '#BF5AF2', // Violeta
+  '#64D2FF', // Celeste
+  '#5E5CE6', // Índigo
+  '#7D7C84', // Grafito
 ]
 
-export const COLORES = [
-  '#0A84FF','#30D158','#FF453A','#FF9500','#AF52DE',
-  '#FF2D55','#5AC8FA','#4CD964','#FFCC00','#8E8E93',
-]
+export function obtenerIniciales(nombre) {
+  if (!nombre || typeof nombre !== 'string') return 'AL'
+  const partes = nombre.trim().split(/\s+/)
+  if (partes.length === 1) {
+    return partes[0].slice(0, 2).toUpperCase()
+  }
+  return (partes[0][0] + partes[1][0]).toUpperCase()
+}
+
+export function obtenerColorPorNombre(nombre) {
+  if (!nombre) return COLORES_AVATAR[0]
+  let hash = 0
+  for (let i = 0; i < nombre.length; i++) {
+    hash = nombre.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const index = Math.abs(hash) % COLORES_AVATAR.length
+  return COLORES_AVATAR[index]
+}

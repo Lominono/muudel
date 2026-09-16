@@ -6,6 +6,7 @@ import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
+import { PantallaAdmin } from './pages/PantallaAdmin'
 import { EmblemaRacha } from './components/icons/EmblemaRacha'
 
 export { useAuth }
@@ -43,6 +44,7 @@ function ContenidoApp() {
             <Route path="/ranking" element={<PantallaRanking />} />
             <Route path="/chat" element={<PantallaChat />} />
             <Route path="/perfil" element={<PantallaPerfil />} />
+            <Route path="/admin" element={<PantallaAdmin />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}
