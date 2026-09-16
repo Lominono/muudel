@@ -6,11 +6,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const frontendDist = path.join(__dirname, 'dist')
 const rootDist = path.resolve(__dirname, '../dist')
 
-// Synchronize both dist directories so files exist in both locations
-if (fs.existsSync(rootDist) && !fs.existsSync(frontendDist)) {
-  fs.cpSync(rootDist, frontendDist, { recursive: true })
-} else if (fs.existsSync(frontendDist) && !fs.existsSync(rootDist)) {
-  fs.cpSync(frontendDist, rootDist, { recursive: true })
+// Copy completely so both directories always have the latest build
+if (fs.existsSync(rootDist)) {
+  fs.cpSync(rootDist, frontendDist, { recursive: true, force: true })
+} else if (fs.existsSync(frontendDist)) {
+  fs.cpSync(frontendDist, rootDist, { recursive: true, force: true })
 }
 
 const content = `import app from '../../server/src/server.js'
@@ -24,4 +24,4 @@ for (const dir of [rootDist, frontendDist]) {
   }
 }
 
-console.log('✓ Both dist directories (root dist/ and frontend/dist/) ready for Vercel')
+console.log('✓ Both dist directories (root dist/ and frontend/dist/) fully synchronized')
