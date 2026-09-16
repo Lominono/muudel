@@ -5,11 +5,22 @@ import { config } from '../config/env.js'
 
 const router = Router()
 
-const supabase = createClient(config.supabaseUrl, config.supabaseServiceKey)
-const pc = new Pinecone({ apiKey: config.pineconeApiKey })
-const index = pc.index(config.pineconeIndexName)
-
 const embeddingModel = 'text-embedding-3-small'
+
+function getSupabaseClient() {
+  if (!config.supabaseUrl || !config.supabaseServiceKey) {
+    throw new Error('SUPABASE_URL o SUPABASE_SERVICE_KEY no configuradas en el servidor')
+  }
+  return createClient(config.supabaseUrl.trim(), config.supabaseServiceKey.trim())
+}
+
+function getPineconeIndex() {
+  if (!config.pineconeApiKey) {
+    throw new Error('PINECONE_API_KEY no configurada en el servidor')
+  }
+  const pc = new Pinecone({ apiKey: config.pineconeApiKey.trim() })
+  return pc.index(config.pineconeIndexName)
+}
 
 function checkAuth(req, res, next) {
   const authHeader = req.headers.authorization
@@ -27,7 +38,7 @@ async function getEmbedding(text) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY.trim()}`,
     },
     body: JSON.stringify({ model: embeddingModel, input: text }),
   })
@@ -42,6 +53,9 @@ router.post('/subir', checkAuth, async (req, res) => {
     if (!titulo || !materia) {
       return res.status(400).json({ error: 'Faltan título y materia' })
     }
+
+    const supabase = getSupabaseClient()
+    const index = getPineconeIndex()
     const embedding = await getEmbedding(`${titulo} ${texto || ''}`)
 
     const { data: apunte, error: dbError } = await supabase
@@ -77,6 +91,9 @@ router.get('/buscar', async (req, res) => {
     if (!query || query.length < 2) {
       return res.status(400).json({ error: 'Buscar al menos 2 caracteres' })
     }
+
+    const supabase = getSupabaseClient()
+    const index = getPineconeIndex()
     const embedding = await getEmbedding(query)
 
     const results = await index.namespace('apuntes').query({

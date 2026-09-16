@@ -38,7 +38,7 @@ const start = () => {
   })
 }
 
-if (process.env.MODE !== 'vercel') {
+if (process.env.MODE !== 'vercel' && !process.env.VERCEL) {
   start()
 }
 
