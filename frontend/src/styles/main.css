@@ -416,3 +416,56 @@ h3.apple-headline {
   --glass-border: rgba(255, 255, 255, 0.12);
 }
 
+/* Botón Oficial de Google - Estándar Oficial Google Identity + Apple HIG */
+.apple-google-btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid #DADCE0;
+  background-color: #FFFFFF;
+  color: #3C4043;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  outline: none;
+}
+
+.apple-google-btn:hover {
+  background-color: #F8FAFD;
+  box-shadow: 0 2px 4px rgba(60, 64, 67, 0.18), 0 4px 8px 3px rgba(60, 64, 67, 0.08);
+  border-color: #D2E3FC;
+}
+
+.apple-google-btn:active {
+  background-color: #F1F3F4;
+  transform: scale(0.992);
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .apple-google-btn {
+    background-color: #1F1F1F;
+    border-color: #444746;
+    color: #E3E3E3;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  .apple-google-btn:hover {
+    background-color: #2D2E30;
+    border-color: #5E5E5E;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  .apple-google-btn:active {
+    background-color: #28292A;
+  }
+}
+
+

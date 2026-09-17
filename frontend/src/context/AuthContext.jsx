@@ -128,15 +128,20 @@ export function AuthProvider({ children }) {
 
         const rolSugerido = esLominono ? 'moderador' : (userMetadata?.rol || 'alumno')
 
-        let nuevo = {
+        // Columnas soportadas en profiles de Supabase
+        const payloadSupabase = {
           id: userId,
-          email: email || null,
-          nombre: nombreSugerido,
+          nombre: (nombreSugerido || 'Estudiante').slice(0, 30),
           puntos_total: 0,
           racha_actual: 0,
           mejor_racha: 0,
           rol: rolSugerido,
-          color_acento: '#0A84FF',
+          color_acento: '#0A84FF'
+        }
+
+        let perfilCompleto = {
+          ...payloadSupabase,
+          email: email || null,
           onboarding_completado: esLominono,
           ...localMeta
         }
@@ -144,13 +149,13 @@ export function AuthProvider({ children }) {
         try {
           const { data: insertado } = await supabase
             .from('profiles')
-            .upsert(nuevo, { onConflict: 'id' })
+            .upsert(payloadSupabase, { onConflict: 'id' })
             .select()
             .single()
 
-          setPerfil({ ...(insertado || nuevo), ...localMeta })
+          setPerfil({ ...(insertado || payloadSupabase), ...perfilCompleto })
         } catch (e) {
-          setPerfil(nuevo)
+          setPerfil(perfilCompleto)
         }
       }
     } catch (e) {
@@ -539,32 +544,19 @@ export function AuthProvider({ children }) {
 
     try {
       if (actualizado.id && !actualizado.id.startsWith('demo-') && !actualizado.id.startsWith('alumno-demo-')) {
-        const { error } = await supabase
+        // Enviar solo campos válidos para la tabla remota profiles
+        await supabase
           .from('profiles')
           .update({
-            nombre: actualizado.nombre,
-            username: actualizado.username,
-            digito_id: actualizado.digito_id,
-            color_acento: actualizado.color_acento,
-            frase: actualizado.frase,
+            nombre: (actualizado.nombre || 'Alumno').trim().slice(0, 30),
+            color_acento: actualizado.color_acento || '#0A84FF',
+            frase: (actualizado.frase || '').slice(0, 70),
             updated_at: new Date().toISOString()
           })
           .eq('id', actualizado.id)
-
-        if (error) {
-          await supabase
-            .from('profiles')
-            .update({
-              nombre: actualizado.nombre,
-              color_acento: actualizado.color_acento,
-              frase: actualizado.frase,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', actualizado.id)
-        }
       }
     } catch (e) {
-      console.warn('Nota: perfil guardado localmente:', e)
+      console.warn('Nota: guardado local activo:', e)
     }
 
     return { success: true, perfil: actualizado }
