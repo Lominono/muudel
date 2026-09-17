@@ -53,42 +53,6 @@ export function CheckinCard({ userId, rol = 'alumno', onAbrirPanelAdmin = null }
     )
   }
 
-  // Si el usuario es el administrador / profesor
-  if (rol === 'moderador') {
-    return (
-      <section ref={cardRef} className="card" style={{ padding: '22px 20px', textAlign: 'center' }}>
-        <div style={{
-          display: 'inline-flex',
-          padding: 10,
-          borderRadius: 12,
-          backgroundColor: 'rgba(0, 122, 255, 0.12)',
-          color: 'var(--color-accent)',
-          marginBottom: 10
-        }}>
-          <ShieldCheck size={26} />
-        </div>
-
-        <h2 className="apple-headline" style={{ fontSize: 18, marginBottom: 4 }}>
-          Control de Asistencia del Profesor
-        </h2>
-
-        <p className="apple-subheadline" style={{ fontSize: 14, marginBottom: 16 }}>
-          Como administrador, eres responsable de pasar lista o habilitar el PIN diario para tus alumnos.
-        </p>
-
-        {onAbrirPanelAdmin && (
-          <button
-            className="btn-primary"
-            onClick={onAbrirPanelAdmin}
-            style={{ width: '100%', minHeight: 40, fontSize: 14 }}
-          >
-            Abrir Pase de Lista
-          </button>
-        )}
-      </section>
-    )
-  }
-
   const yaRegistrado = Boolean(hoy)
   const puntos = yaRegistrado ? hoy.puntos_ganados : 10
 

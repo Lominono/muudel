@@ -8,15 +8,15 @@ import {
   UserPlus,
   AlertCircle,
   CheckCircle2,
-  ShieldCheck,
   GraduationCap,
-  ArrowRight
+  KeyRound,
+  X
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
+import { sound } from '../utils/haptics'
 
 export function PantallaInicio() {
   const {
-    inicioSesion,
     iniciarSesionConEmail,
     registrarseConEmail,
     entrarComoAdminLominono,
@@ -30,9 +30,14 @@ export function PantallaInicio() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
-  const [rol, setRol] = useState('alumno') // 'alumno' | 'moderador'
-  const [codigoAdmin, setCodigoAdmin] = useState('')
   const [enviando, setEnviando] = useState(false)
+
+  // Acceso secreto para lominoño mediante triple toque en el logo
+  const [toquesLogo, setToquesLogo] = useState(0)
+  const [ultimoToqueTiempo, setUltimoToqueTiempo] = useState(0)
+  const [mostrarAccesoSecreto, setMostrarAccesoSecreto] = useState(false)
+  const [pinSecreto, setPinSecreto] = useState('')
+  const [errorPinSecreto, setErrorPinSecreto] = useState('')
 
   const cardRef = useRef(null)
 
@@ -47,6 +52,35 @@ export function PantallaInicio() {
     setModo(nuevoModo)
   }
 
+  // Manejar toques en el logo: 3 toques rápidos abren el acceso discreto
+  const handleLogoClick = () => {
+    const ahora = Date.now()
+    if (ahora - ultimoToqueTiempo < 600) {
+      const nuevoConteo = toquesLogo + 1
+      setToquesLogo(nuevoConteo)
+      if (nuevoConteo >= 3) {
+        sound.playPop()
+        setMostrarAccesoSecreto(true)
+        setToquesLogo(0)
+      }
+    } else {
+      setToquesLogo(1)
+    }
+    setUltimoToqueTiempo(ahora)
+  }
+
+  const validarPinSecreto = (e) => {
+    e.preventDefault()
+    if (pinSecreto === '2026') {
+      sound.playStamp()
+      setMostrarAccesoSecreto(false)
+      entrarComoAdminLominono()
+    } else {
+      sound.playPop()
+      setErrorPinSecreto('Clave no válida')
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (enviando) return
@@ -55,7 +89,7 @@ export function PantallaInicio() {
     if (modo === 'login') {
       await iniciarSesionConEmail(email, password)
     } else {
-      await registrarseConEmail(email, password, nombre, rol, codigoAdmin)
+      await registrarseConEmail(email, password, nombre, 'alumno')
     }
     setEnviando(false)
   }
@@ -78,7 +112,7 @@ export function PantallaInicio() {
           textAlign: 'center',
         }}
       >
-        {/* Logo de la aplicación */}
+        {/* Logo de muudel (con disparador discreto para lominoño) */}
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -87,6 +121,7 @@ export function PantallaInicio() {
           <img
             src="/logo.png"
             alt="muudel"
+            onClick={handleLogoClick}
             style={{
               width: 76,
               height: 76,
@@ -95,6 +130,8 @@ export function PantallaInicio() {
               border: '1px solid var(--color-separator)',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
               backgroundColor: 'var(--color-surface)',
+              cursor: 'pointer',
+              userSelect: 'none'
             }}
           />
         </div>
@@ -103,34 +140,9 @@ export function PantallaInicio() {
           muudel
         </h1>
 
-        <p className="apple-subheadline" style={{ marginBottom: 18, fontSize: 14 }}>
+        <p className="apple-subheadline" style={{ marginBottom: 20, fontSize: 14 }}>
           La app de los de clase · Asistencia a las 15:30, podio y canjes.
         </p>
-
-        {/* Acceso fácil y directo para el Administrador lominoño */}
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={entrarComoAdminLominono}
-          style={{
-            width: '100%',
-            minHeight: 44,
-            marginBottom: 12,
-            gap: 8,
-            backgroundColor: 'rgba(10, 132, 255, 0.1)',
-            color: 'var(--color-accent)',
-            border: '1.5px solid rgba(10, 132, 255, 0.35)',
-            boxShadow: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <ShieldCheck size={18} />
-          <span>Acceso Administrador (lominoño)</span>
-        </button>
 
         {/* Notificación de éxito o aviso */}
         {loginNotice && (
@@ -195,104 +207,35 @@ export function PantallaInicio() {
         {/* Formulario */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {modo === 'registro' && (
-            <>
-              <div style={{ textAlign: 'left' }}>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
-                  Tu nombre y apellidos en clase
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <User size={17} style={{
-                    position: 'absolute',
-                    left: 14,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--color-secondary-ink)',
-                  }} />
-                  <input
-                    type="text"
-                    className="apple-input"
-                    placeholder="Ej: Daniel Sánchez"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    style={{ paddingLeft: 40 }}
-                    required
-                  />
-                </div>
+            <div style={{ textAlign: 'left' }}>
+              <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
+                Tu nombre y apellidos en clase
+              </label>
+              <div style={{ position: 'relative' }}>
+                <User size={17} style={{
+                  position: 'absolute',
+                  left: 14,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--color-secondary-ink)',
+                }} />
+                <input
+                  type="text"
+                  className="apple-input"
+                  placeholder="Ej: Daniel Sánchez"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  style={{ paddingLeft: 40 }}
+                  required
+                />
               </div>
-
-              {/* Selector Alumno / Profesor */}
-              <div style={{ textAlign: 'left' }}>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
-                  Tipo de cuenta
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setRol('alumno')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: rol === 'alumno' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: rol === 'alumno' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface)',
-                      color: rol === 'alumno' ? 'var(--color-accent)' : 'var(--color-ink)',
-                      fontWeight: 600,
-                      fontSize: 13,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <GraduationCap size={15} />
-                    <span>Alumno</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRol('moderador')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: rol === 'moderador' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: rol === 'moderador' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface)',
-                      color: rol === 'moderador' ? 'var(--color-accent)' : 'var(--color-ink)',
-                      fontWeight: 600,
-                      fontSize: 13,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <ShieldCheck size={15} />
-                    <span>Moderador</span>
-                  </button>
-                </div>
-              </div>
-
-              {rol === 'moderador' && (
-                <div style={{ textAlign: 'left' }}>
-                  <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 500 }}>
-                    Código de Moderador (opcional: PROFE2026)
-                  </label>
-                  <input
-                    type="text"
-                    className="apple-input"
-                    placeholder="Código de autorización"
-                    value={codigoAdmin}
-                    onChange={(e) => setCodigoAdmin(e.target.value)}
-                  />
-                </div>
-              )}
-            </>
+            </div>
           )}
 
           {/* Email / Usuario */}
           <div style={{ textAlign: 'left' }}>
             <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
-              {modo === 'login' ? 'Correo o Usuario' : 'Correo electrónico'}
+              {modo === 'login' ? 'Correo o Nombre' : 'Correo electrónico'}
             </label>
             <div style={{ position: 'relative' }}>
               <Mail size={17} style={{
@@ -305,7 +248,7 @@ export function PantallaInicio() {
               <input
                 type="text"
                 className="apple-input"
-                placeholder={modo === 'login' ? 'Ej: tu@correo.com o lominoño' : 'tu@correo.com'}
+                placeholder={modo === 'login' ? 'tu@correo.com o tu nombre' : 'tu@correo.com'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={{ paddingLeft: 40 }}
@@ -367,7 +310,7 @@ export function PantallaInicio() {
             ) : (
               <>
                 <UserPlus size={17} />
-                <span>Crear mi cuenta</span>
+                <span>Crear mi cuenta de clase</span>
               </>
             )}
           </button>
@@ -382,12 +325,12 @@ export function PantallaInicio() {
         }}>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
           <span className="apple-caption" style={{ textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 11 }}>
-            o acceso rápido
+            o prueba directa
           </span>
           <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
         </div>
 
-        {/* Botón para entrar como Alumno directo de prueba */}
+        {/* Botón de prueba rápida para alumnos */}
         <button
           type="button"
           onClick={() => entrarComoAlumno('Alumno de Clase')}
@@ -411,13 +354,91 @@ export function PantallaInicio() {
           <span>Probar como Alumno sin registro</span>
         </button>
 
-        {/* Créditos */}
+        {/* Créditos discretos */}
         <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>
           <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
             muudel · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
           </p>
         </div>
       </div>
+
+      {/* Modal Secreto de Autenticación Rápida para lominoño (disparado por triple toque en logo) */}
+      {mostrarAccesoSecreto && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 320, width: '100%', padding: '24px 20px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+              <button
+                onClick={() => setMostrarAccesoSecreto(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              backgroundColor: 'var(--color-fill-secondary)',
+              color: 'var(--color-ink)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 10px'
+            }}>
+              <KeyRound size={22} />
+            </div>
+
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
+              muudel vault
+            </h3>
+            <p className="apple-caption" style={{ marginBottom: 14 }}>
+              Introduce el PIN de acceso:
+            </p>
+
+            <form onSubmit={validarPinSecreto} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                autoFocus
+                value={pinSecreto}
+                onChange={(e) => {
+                  setErrorPinSecreto('')
+                  setPinSecreto(e.target.value.replace(/\D/g, ''))
+                }}
+                className="apple-input"
+                style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8, fontWeight: 700, minHeight: 46 }}
+                placeholder="••••"
+              />
+
+              {errorPinSecreto && (
+                <span style={{ fontSize: 12, color: 'var(--color-negative)', fontWeight: 600 }}>
+                  {errorPinSecreto}
+                </span>
+              )}
+
+              <button type="submit" className="btn-primary" style={{ minHeight: 40, fontSize: 14 }}>
+                Acceder
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

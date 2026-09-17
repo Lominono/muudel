@@ -5,7 +5,6 @@ import { CheckinCard } from '../components/CheckinCard'
 import { RachaBar } from '../components/RachaBar'
 import { RetoDelDia } from '../components/RetoDelDia'
 import { TopRanking } from '../components/TopRanking'
-import { PanelPaseLista } from '../components/PanelPaseLista'
 import { AvatarUsuario } from '../components/AvatarUsuario'
 import { ContadorCierreLista } from '../components/ContadorCierreLista'
 import { MetaAsistenciaAula } from '../components/MetaAsistenciaAula'
@@ -17,8 +16,6 @@ import {
   Award,
   TrendingUp,
   Megaphone,
-  ClipboardList,
-  LayoutDashboard,
   ShoppingBag,
   Flame,
   Zap
@@ -29,7 +26,6 @@ export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
   const navigate = useNavigate()
   const [ranking, setRanking] = useState([])
-  const [vistaAdmin, setVistaAdmin] = useState(false)
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
 
@@ -70,7 +66,7 @@ export function PantallaHoy() {
     if (contentRef.current) {
       animarEscalonado(contentRef.current.children, { stagger: 0.05, duration: 0.35 })
     }
-  }, [vistaAdmin])
+  }, [])
 
   const cargarDatosClase = async () => {
     try {
@@ -227,34 +223,9 @@ export function PantallaHoy() {
           </div>
         </div>
 
-        {/* Toggle para el profesor */}
-        {esModerador && (
-          <div className="segmented-control" style={{ marginTop: 14 }}>
-            <button
-              className={`segmented-control-item ${vistaAdmin ? 'active' : ''}`}
-              onClick={() => setVistaAdmin(true)}
-              style={{ gap: 6 }}
-            >
-              <ClipboardList size={15} />
-              <span>Control de Asistencia (15:30)</span>
-            </button>
-            <button
-              className={`segmented-control-item ${!vistaAdmin ? 'active' : ''}`}
-              onClick={() => setVistaAdmin(false)}
-              style={{ gap: 6 }}
-            >
-              <LayoutDashboard size={15} />
-              <span>Vista de Colegas</span>
-            </button>
-          </div>
-        )}
       </header>
 
-      {/* Vista de Pase de Lista para el profesor */}
-      {esModerador && vistaAdmin ? (
-        <PanelPaseLista />
-      ) : (
-        <div ref={contentRef}>
+      <div ref={contentRef}>
           {/* Tablón de avisos del profesor */}
           {avisoHoy && (
             <div className="card" style={{
@@ -391,7 +362,6 @@ export function PantallaHoy() {
             </div>
           </section>
         </div>
-      )}
 
       {/* MODAL DE LA CANTINA / TIENDA DE RECOMPENSAS */}
       {mostrarTienda && (

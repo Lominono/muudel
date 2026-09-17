@@ -35,29 +35,9 @@ export function AvatarUsuario({
         flexShrink: 0,
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
       }}
-      title={`${nombre} ${esModerador ? '(Profesor/Admin)' : ''}`}
+      title={nombre}
     >
       <span>{iniciales}</span>
-
-      {showRoleBadge && esModerador && (
-        <span
-          style={{
-            position: 'absolute',
-            bottom: -2,
-            right: -2,
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-accent)',
-            borderRadius: 9999,
-            padding: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
-          }}
-        >
-          <ShieldCheck size={Math.max(Math.round(size * 0.38), 12)} />
-        </span>
-      )}
     </div>
   )
 }

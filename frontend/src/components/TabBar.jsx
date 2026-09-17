@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Trophy, MessageSquare, User, ShieldCheck } from 'lucide-react'
+import { Calendar, Trophy, MessageSquare, User, ClipboardList } from 'lucide-react'
 import { useAuth } from '../App'
 
 export function TabBar() {
@@ -13,7 +13,7 @@ export function TabBar() {
   ]
 
   if (perfil?.rol === 'moderador') {
-    tabs.push({ to: '/admin', label: 'Gestión', icon: ShieldCheck })
+    tabs.push({ to: '/admin', label: 'Aula', icon: ClipboardList })
   }
 
   return (

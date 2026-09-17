@@ -179,11 +179,6 @@ export function PantallaPerfil() {
             <span className="apple-badge apple-badge-accent" style={{ fontSize: 13, padding: '4px 12px' }}>
               Nivel: {nivel.nombre}
             </span>
-            {perfil.rol === 'moderador' && (
-              <span className="apple-badge apple-badge-positive" style={{ fontSize: 13, padding: '4px 12px' }}>
-                Profesor / Administrador
-              </span>
-            )}
           </div>
 
           {/* Barra de Progreso XP */}
@@ -229,7 +224,7 @@ export function PantallaPerfil() {
             { label: 'Puntos acumulados', valor: `${perfil.puntos_total || 0} pts`, color: 'var(--color-accent)' },
             { label: 'Racha actual', valor: `${perfil.racha_actual || 0} días`, color: 'var(--color-warning)' },
             { label: 'Récord personal', valor: `${perfil.mejor_racha || 0} días`, color: 'var(--color-positive)' },
-            { label: 'Rol en clase', valor: perfil.rol === 'moderador' ? 'Profesor' : 'Alumno', color: 'var(--color-ink)' },
+            { label: 'Estado', valor: 'Activo en clase', color: 'var(--color-positive)' },
           ].map((item, index, arr) => (
             <div
               key={item.label}

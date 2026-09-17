@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../utils/supabase'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
@@ -399,36 +399,9 @@ export function PantallaAdmin() {
     setOpcionesFlash(['', '', ''])
   }
 
-  // 1. RESTRICCIÓN DE ACCESO SI NO ES MODERADOR
-  if (perfil && perfil.rol !== 'moderador') {
-    return (
-      <main style={{ maxWidth: 460, margin: '80px auto', padding: '24px', textAlign: 'center' }}>
-        <div className="card" style={{ padding: '36px 24px' }}>
-          <div style={{
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            backgroundColor: 'rgba(255, 59, 48, 0.12)',
-            color: 'var(--color-negative)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px'
-          }}>
-            <Lock size={26} />
-          </div>
-          <h2 className="apple-title-1" style={{ fontSize: 21, marginBottom: 8 }}>
-            Acceso Reservado
-          </h2>
-          <p className="apple-subheadline" style={{ marginBottom: 20, fontSize: 14 }}>
-            Este panel de gestión está restringido exclusivamente a lominoño y moderadores autorizados de muudel.
-          </p>
-          <button className="btn-primary" onClick={() => navigate('/')} style={{ width: '100%' }}>
-            Volver a la vista principal
-          </button>
-        </div>
-      </main>
-    )
+  // 1. RESTRICCIÓN TOTAL: Si no es moderador, redirigir sin dejar rastro de que la página existe
+  if (!perfil || perfil.rol !== 'moderador') {
+    return <Navigate to="/" replace />
   }
 
   // 2. PANTALLA DE BLOQUEO POR PIN DE SEGURIDAD

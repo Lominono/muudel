@@ -12,7 +12,7 @@ import { EmblemaRacha } from './components/icons/EmblemaRacha'
 export { useAuth }
 
 function ContenidoApp() {
-  const { session, cargando } = useAuth()
+  const { session, perfil, cargando } = useAuth()
 
   if (cargando) {
     return (
@@ -44,7 +44,9 @@ function ContenidoApp() {
             <Route path="/ranking" element={<PantallaRanking />} />
             <Route path="/chat" element={<PantallaChat />} />
             <Route path="/perfil" element={<PantallaPerfil />} />
-            <Route path="/admin" element={<PantallaAdmin />} />
+            {perfil?.rol === 'moderador' && (
+              <Route path="/admin" element={<PantallaAdmin />} />
+            )}
             <Route path="*" element={<Navigate to="/" />} />
           </>
         )}
