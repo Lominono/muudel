@@ -7,6 +7,7 @@ import { PantallaRanking } from './pages/PantallaRanking'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
 import { PantallaAdmin } from './pages/PantallaAdmin'
+import { PantallaCompletarPerfil } from './pages/PantallaCompletarPerfil'
 import { EmblemaRacha } from './components/icons/EmblemaRacha'
 
 export { useAuth }
@@ -31,6 +32,19 @@ function ContenidoApp() {
         </p>
       </div>
     )
+  }
+
+  // Si el alumno ha iniciado sesión pero aún no ha completado su nombre real y dígito
+  const necesitaCompletarFicha = Boolean(
+    session &&
+    perfil &&
+    perfil.rol !== 'moderador' &&
+    !perfil.onboarding_completado &&
+    !perfil.digito_id
+  )
+
+  if (necesitaCompletarFicha) {
+    return <PantallaCompletarPerfil />
   }
 
   return (

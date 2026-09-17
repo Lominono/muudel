@@ -88,6 +88,8 @@ export function useChat(canal) {
       user_id: userId,
       texto: texto.trim(),
       nombre: perfil?.nombre || 'Usuario',
+      digito_id: perfil?.digito_id || null,
+      username: perfil?.username || null,
       color_acento: perfil?.color_acento,
       rol: perfil?.rol || 'alumno',
       likes_count: 0,

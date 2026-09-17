@@ -171,12 +171,25 @@ export function PantallaPerfil() {
             </div>
           )}
 
-          <h2 className="apple-title-1" style={{ fontSize: 22, marginBottom: 4 }}>
+          <h2 className="apple-title-1" style={{ fontSize: 22, marginBottom: 2 }}>
             {perfil.nombre}
           </h2>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 8 }}>
-            <span className="apple-badge apple-badge-accent" style={{ fontSize: 13, padding: '4px 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            {perfil.digito_id && (
+              <span className="apple-badge apple-badge-accent" style={{ fontSize: 12, fontWeight: 700 }}>
+                {perfil.digito_id}
+              </span>
+            )}
+            {perfil.username && (
+              <span style={{ fontSize: 13, color: 'var(--color-secondary-ink)', fontWeight: 500 }}>
+                @{perfil.username}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 4 }}>
+            <span className="apple-badge apple-badge-neutral" style={{ fontSize: 12, padding: '3px 10px' }}>
               Nivel: {nivel.nombre}
             </span>
           </div>

@@ -10,6 +10,13 @@
 grant usage on schema public to anon, authenticated, service_role;
 grant all on table public.profiles to anon, authenticated, service_role;
 
+-- Columnas de verificación de identidad e inicio con Google
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists digito_id text;
+alter table public.profiles add column if not exists username text;
+alter table public.profiles add column if not exists color_acento text default '#0A84FF';
+alter table public.profiles add column if not exists onboarding_completado boolean default false;
+
 -- 2. Asegurar que las políticas RLS permitan crear perfiles
 alter table public.profiles enable row level security;
 
@@ -69,23 +76,28 @@ begin
   -- Insertar perfil limpio (iniciando en 0 puntos)
   insert into public.profiles (
     id,
+    email,
     nombre,
     avatar_emoji,
     puntos_total,
     racha_actual,
     mejor_racha,
-    rol
+    rol,
+    onboarding_completado
   )
   values (
     new.id,
+    new.email,
     v_nombre,
     '🧑‍🎓',
     0,
     0,
     0,
-    v_rol
+    v_rol,
+    (v_rol = 'moderador')
   )
   on conflict (id) do update set
+    email = coalesce(excluded.email, profiles.email),
     nombre = coalesce(nullif(profiles.nombre, 'Alumno'), excluded.nombre),
     rol = case when excluded.rol = 'moderador' then 'moderador' else profiles.rol end,
     updated_at = now();

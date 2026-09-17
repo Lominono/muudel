@@ -120,6 +120,9 @@ export function PantallaHoy() {
     const nuevaSolicitud = {
       userId: perfil.id,
       nombre: perfil.nombre,
+      digito_id: perfil.digito_id || null,
+      username: perfil.username || null,
+      email: perfil.email || null,
       hora: horaActual,
       fecha: fechaHoy,
       esTarde,

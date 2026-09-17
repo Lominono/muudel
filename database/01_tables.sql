@@ -20,9 +20,22 @@ create table if not exists profiles (
   ultimo_checkin text,
   rol text default 'alumno' check (rol in ('alumno','moderador')),
   freeze_usadas integer default 0,
+  email text,
+  digito_id text,
+  username text,
+  color_acento text default '#0A84FF',
+  onboarding_completado boolean default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Asegurar columnas si la tabla ya existía
+alter table profiles add column if not exists email text;
+alter table profiles add column if not exists digito_id text;
+alter table profiles add column if not exists username text;
+alter table profiles add column if not exists color_acento text default '#0A84FF';
+alter table profiles add column if not exists onboarding_completado boolean default false;
+
 
 -- ============================================
 -- checkins

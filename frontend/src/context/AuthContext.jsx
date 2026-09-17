@@ -98,12 +98,25 @@ export function AuthProvider({ children }) {
         userMetadata?.name?.toLowerCase().includes('lomino') ||
         userId === 'admin-lominono'
 
+      // Recuperar metadatos locales si existen (dígito, nick, onboarding)
+      let localMeta = {}
+      try {
+        const guardado = localStorage.getItem('muudel_user_meta_' + userId)
+        if (guardado) localMeta = JSON.parse(guardado)
+      } catch (e) {}
+
       if (data) {
+        let perfilCompleto = {
+          ...data,
+          email: email || data.email || null,
+          ...localMeta
+        }
+
         if (esLominono && data.rol !== 'moderador') {
           await supabase.from('profiles').update({ rol: 'moderador', nombre: 'lominoño' }).eq('id', userId)
-          setPerfil({ ...data, rol: 'moderador', nombre: data.nombre === 'Estudiante' ? 'lominoño' : data.nombre })
+          setPerfil({ ...perfilCompleto, rol: 'moderador', nombre: data.nombre === 'Estudiante' ? 'lominoño' : data.nombre, onboarding_completado: true })
         } else {
-          setPerfil(data)
+          setPerfil(perfilCompleto)
         }
       } else {
         const nombreSugerido = esLominono ? 'lominoño' : (
@@ -115,23 +128,30 @@ export function AuthProvider({ children }) {
 
         const rolSugerido = esLominono ? 'moderador' : (userMetadata?.rol || 'alumno')
 
-        const nuevo = {
+        let nuevo = {
           id: userId,
+          email: email || null,
           nombre: nombreSugerido,
           puntos_total: 0,
           racha_actual: 0,
           mejor_racha: 0,
           rol: rolSugerido,
-          color_acento: '#0A84FF'
+          color_acento: '#0A84FF',
+          onboarding_completado: esLominono,
+          ...localMeta
         }
 
-        const { data: insertado } = await supabase
-          .from('profiles')
-          .upsert(nuevo, { onConflict: 'id' })
-          .select()
-          .single()
+        try {
+          const { data: insertado } = await supabase
+            .from('profiles')
+            .upsert(nuevo, { onConflict: 'id' })
+            .select()
+            .single()
 
-        setPerfil(insertado || nuevo)
+          setPerfil({ ...(insertado || nuevo), ...localMeta })
+        } catch (e) {
+          setPerfil(nuevo)
+        }
       }
     } catch (e) {
       console.warn('Error al cargar perfil:', e)
@@ -148,14 +168,20 @@ export function AuthProvider({ children }) {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
-        throw new Error(
-          'Configura las variables de Supabase en Vercel (.env) para habilitar inicio de sesión con Google.'
-        )
+        setLoginNotice('Entrando en modo de clase local para pruebas...')
+        entrarComoAlumno('Nuevo Alumno (Google)')
+        return
       }
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin }
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account',
+          }
+        }
       })
       if (error) throw error
     } catch (e) {
@@ -444,11 +470,60 @@ export function AuthProvider({ children }) {
       racha_actual: 0,
       mejor_racha: 0,
       frase: 'Administrador de muudel',
+      onboarding_completado: true
     }
     localStorage.setItem('racha_local_user', JSON.stringify(adminPerfil))
     setSession({ user: { id: adminPerfil.id, email: 'lominono@muudel.app' } })
     setPerfil(adminPerfil)
     setCargando(false)
+  }
+
+  const actualizarPerfilCompleto = async (nuevosDatos) => {
+    if (!perfil) return { success: false }
+    const actualizado = {
+      ...perfil,
+      ...nuevosDatos,
+      onboarding_completado: true,
+      updated_at: new Date().toISOString()
+    }
+
+    setPerfil(actualizado)
+    localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
+    if (actualizado.id) {
+      localStorage.setItem('muudel_user_meta_' + actualizado.id, JSON.stringify(actualizado))
+    }
+
+    try {
+      if (actualizado.id && !actualizado.id.startsWith('demo-') && !actualizado.id.startsWith('alumno-demo-')) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            nombre: actualizado.nombre,
+            username: actualizado.username,
+            digito_id: actualizado.digito_id,
+            color_acento: actualizado.color_acento,
+            frase: actualizado.frase,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', actualizado.id)
+
+        if (error) {
+          await supabase
+            .from('profiles')
+            .update({
+              nombre: actualizado.nombre,
+              color_acento: actualizado.color_acento,
+              frase: actualizado.frase,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', actualizado.id)
+        }
+      }
+    } catch (e) {
+      console.warn('Nota: perfil guardado localmente:', e)
+    }
+
+    return { success: true, perfil: actualizado }
   }
 
   const value = {
@@ -467,6 +542,7 @@ export function AuthProvider({ children }) {
     actualizarNombre,
     actualizarFrase,
     actualizarColor,
+    actualizarPerfilCompleto,
     entrarComoAdminLominono,
     entrarComoAlumno,
     cerrarSesion,

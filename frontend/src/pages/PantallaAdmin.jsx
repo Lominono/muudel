@@ -114,7 +114,17 @@ export function PantallaAdmin() {
         .select('*')
         .order('nombre', { ascending: true })
 
-      setTodosAlumnos(alumnosData || [])
+      let listaAlumnos = alumnosData || []
+      // Enriquecer con metadatos locales (dígito de lista, nick) si existen
+      listaAlumnos = listaAlumnos.map(a => {
+        try {
+          const meta = localStorage.getItem('muudel_user_meta_' + a.id)
+          if (meta) return { ...a, ...JSON.parse(meta) }
+        } catch (e) {}
+        return a
+      })
+
+      setTodosAlumnos(listaAlumnos)
 
       // 2. Cargar checkins confirmados de hoy
       const { data: checkinsData } = await supabase
@@ -638,11 +648,31 @@ export function PantallaAdmin() {
                     }}
                   >
                     <div>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
-                        {sol.nombre}
-                      </span>
-                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1 }}>
-                        Envió aviso a las {sol.hora} · {sol.esTarde ? 'Retraso (+5 pts)' : 'Puntual (+10 pts)'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
+                          {sol.nombre}
+                        </span>
+                        {sol.digito_id && (
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: 6,
+                            backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                            color: 'var(--color-accent)',
+                            fontVariantNumeric: 'tabular-nums'
+                          }}>
+                            {sol.digito_id}
+                          </span>
+                        )}
+                        {sol.username && (
+                          <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                            @{sol.username}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                        {sol.email ? `${sol.email} · ` : ''}Aviso: {sol.hora} · {sol.esTarde ? 'Retraso (+5 pts)' : 'Puntual (+10 pts)'}
                       </div>
                     </div>
 
@@ -650,7 +680,7 @@ export function PantallaAdmin() {
                       className="btn-primary"
                       disabled={accionEnCurso === sol.userId}
                       onClick={() => handleAprobarSolicitud(sol)}
-                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
+                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600, flexShrink: 0 }}
                     >
                       Aprobar
                     </button>
@@ -822,9 +852,29 @@ export function PantallaAdmin() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento} size={36} />
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</div>
-                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                        {alumno.puntos_total || 0} pts · {alumno.racha_actual || 0} días de racha
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</span>
+                        {alumno.digito_id && (
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: 6,
+                            backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                            color: 'var(--color-accent)',
+                            fontVariantNumeric: 'tabular-nums'
+                          }}>
+                            {alumno.digito_id}
+                          </span>
+                        )}
+                        {alumno.username && (
+                          <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                            @{alumno.username}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1 }}>
+                        {alumno.email ? `${alumno.email} · ` : ''}{alumno.puntos_total || 0} pts · {alumno.racha_actual || 0} días de racha
                       </div>
                     </div>
                   </div>

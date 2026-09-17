@@ -149,6 +149,7 @@ export function PantallaChat() {
               const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
               const autorRol = m.rol || m.profiles?.rol || 'alumno'
               const autorColor = m.color_acento || m.profiles?.color_acento
+              const autorDigito = m.digito_id || m.profiles?.digito_id
 
               return (
                 <div
@@ -174,20 +175,17 @@ export function PantallaChat() {
                       <span className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-secondary-ink)' }}>
                         {autorNombre}
                       </span>
-                      {autorRol === 'moderador' && (
+                      {autorDigito && (
                         <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 2,
                           fontSize: 10,
                           fontWeight: 700,
-                          color: 'var(--color-accent)',
-                          backgroundColor: 'rgba(0, 122, 255, 0.12)',
-                          padding: '1px 6px',
-                          borderRadius: 9999
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          backgroundColor: 'var(--color-fill-secondary)',
+                          color: 'var(--color-secondary-ink)',
+                          fontVariantNumeric: 'tabular-nums'
                         }}>
-                          <ShieldCheck size={10} />
-                          <span>Profesor</span>
+                          {autorDigito}
                         </span>
                       )}
                     </div>

@@ -17,8 +17,9 @@ export function PantallaRanking() {
         const vista = filtro === 'semana' ? 'ranking_semanal' : 'ranking_diario'
         const { data, error } = await supabase.from(vista).select('*').limit(30)
 
+        let rankingFinal = []
         if (data && data.length > 0) {
-          setLista(data)
+          rankingFinal = data
         } else {
           // Fallback solo a la tabla real de perfiles si la vista estuviese vacía
           const { data: profData } = await supabase
@@ -28,8 +29,22 @@ export function PantallaRanking() {
             .order('puntos_total', { ascending: false })
             .limit(30)
 
-          setLista(profData || [])
+          rankingFinal = profData || []
         }
+
+        // Enriquecer con metadatos locales de identidad (dígito)
+        rankingFinal = rankingFinal.map(est => {
+          try {
+            const meta = localStorage.getItem('muudel_user_meta_' + est.id)
+            if (meta) return { ...est, ...JSON.parse(meta) }
+          } catch (e) {}
+          if (perfil && est.id === perfil.id && perfil.digito_id) {
+            return { ...est, digito_id: perfil.digito_id }
+          }
+          return est
+        })
+
+        setLista(rankingFinal)
       } catch (e) {
         console.warn('Error al cargar clasificación:', e)
         setLista([])
@@ -215,8 +230,24 @@ export function PantallaRanking() {
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
                     }}>
-                      {estudiante.nombre} {esElUsuario && '(Tú)'}
+                      <span>{estudiante.nombre} {esElUsuario && '(Tú)'}</span>
+                      {estudiante.digito_id && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          backgroundColor: 'var(--color-fill-secondary)',
+                          color: 'var(--color-secondary-ink)',
+                          fontVariantNumeric: 'tabular-nums'
+                        }}>
+                          {estudiante.digito_id}
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
                       <Flame size={12} color="var(--color-warning)" />
