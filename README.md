@@ -1,12 +1,12 @@
 # muudel
 
-Web para tu clase: check-in diario, rachas, puntos, ranking y chat. Sin IA de por medio, diseño Apple.
+Web para tu clase: asistencia a las 15:30, rachas, canjes de recompensas, podio y chat entre colegas. Diseño sobrio Apple.
 
 ## Stack
 
 - Frontend: Vite + React + Tailwind
 - Backend: Express + Supabase (Postgres, Auth, Realtime)
-- IA solo para busqueda semantica de apuntes: Pinecone + OpenAI embeddings
+- Cuaderno de apuntes: Base de datos Postgres en Supabase
 - Diseño: Apple HIG (skill apple-design en .opencode/skills/)
 
 ## Instalar
@@ -19,7 +19,7 @@ cd server && npm install && npm run dev
 ## Archivos clave
 
 - database.sql - Schema Supabase completo
-- server/ - API Express + Pinecone
+- server/ - API Express
 - frontend/src/ - App React
 - .opencode/skills/apple-design - Skill de diseño Apple HIG
 

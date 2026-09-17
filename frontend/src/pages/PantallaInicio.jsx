@@ -1,6 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Mail, Lock, User, LogIn, UserPlus, AlertCircle, CheckCircle2, ShieldCheck, GraduationCap, ArrowRight } from 'lucide-react'
+import {
+  Mail,
+  Lock,
+  User,
+  LogIn,
+  UserPlus,
+  AlertCircle,
+  CheckCircle2,
+  ShieldCheck,
+  GraduationCap,
+  ArrowRight
+} from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
 export function PantallaInicio() {
@@ -9,12 +20,13 @@ export function PantallaInicio() {
     iniciarSesionConEmail,
     registrarseConEmail,
     entrarComoAdminLominono,
+    entrarComoAlumno,
     loginError,
     loginNotice,
     limpiarErrores,
   } = useAuth()
 
-  const [modo, setModo] = useState('login') // 'login' | 'registro' | 'rapido'
+  const [modo, setModo] = useState('login') // 'login' | 'registro'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
@@ -48,31 +60,21 @@ export function PantallaInicio() {
     setEnviando(false)
   }
 
-  // Acceso rápido para probar con perfil real limpio (sin datos falsos)
-  const handleAccesoRapido = async (rolElegido) => {
-    if (enviando) return
-    setEnviando(true)
-    const emailGenerado = rolElegido === 'moderador' ? 'lominono@instituto.es' : 'alumno@instituto.es'
-    const nombreGenerado = rolElegido === 'moderador' ? 'lominoño' : 'Alumno'
-    await registrarseConEmail(emailGenerado, 'password123', nombreGenerado, rolElegido, 'PROFE2026')
-    setEnviando(false)
-  }
-
   return (
     <main style={{
-      maxWidth: 460,
+      maxWidth: 440,
       margin: '0 auto',
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'center',
-      padding: '28px 20px',
+      padding: '28px 16px',
     }}>
       <div
         ref={cardRef}
         className="card"
         style={{
-          padding: '36px 28px',
+          padding: '36px 24px',
           textAlign: 'center',
         }}
       >
@@ -86,9 +88,9 @@ export function PantallaInicio() {
             src="/logo.png"
             alt="muudel"
             style={{
-              width: 80,
-              height: 80,
-              borderRadius: 20,
+              width: 76,
+              height: 76,
+              borderRadius: 18,
               objectFit: 'contain',
               border: '1px solid var(--color-separator)',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
@@ -97,15 +99,15 @@ export function PantallaInicio() {
           />
         </div>
 
-        <h1 className="apple-large-title" style={{ marginBottom: 6, fontSize: 34, fontWeight: 800, letterSpacing: -0.8 }}>
+        <h1 className="apple-large-title" style={{ marginBottom: 4, fontSize: 32, fontWeight: 800, letterSpacing: -0.8 }}>
           muudel
         </h1>
 
-        <p className="apple-subheadline" style={{ marginBottom: 20, fontSize: 15 }}>
-          Asistencia, control del aula y racha diaria.
+        <p className="apple-subheadline" style={{ marginBottom: 18, fontSize: 14 }}>
+          La app de los de clase · Asistencia a las 15:30, podio y canjes.
         </p>
 
-        {/* Acceso fácil directo para lominoño */}
+        {/* Acceso fácil y directo para el Administrador lominoño */}
         <button
           type="button"
           className="btn-primary"
@@ -113,13 +115,14 @@ export function PantallaInicio() {
           style={{
             width: '100%',
             minHeight: 44,
-            marginBottom: 16,
+            marginBottom: 12,
             gap: 8,
             backgroundColor: 'rgba(10, 132, 255, 0.1)',
             color: 'var(--color-accent)',
             border: '1.5px solid rgba(10, 132, 255, 0.35)',
             boxShadow: 'none',
             fontWeight: 700,
+            fontSize: 14,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -129,22 +132,22 @@ export function PantallaInicio() {
           <span>Acceso Administrador (lominoño)</span>
         </button>
 
-        {/* Notificación de éxito o información */}
+        {/* Notificación de éxito o aviso */}
         {loginNotice && (
           <div style={{
             display: 'flex',
             alignItems: 'flex-start',
             gap: 10,
-            marginBottom: 20,
+            marginBottom: 16,
             padding: '12px 14px',
             borderRadius: 12,
             background: 'var(--color-positive-bg)',
             color: 'var(--color-positive)',
-            fontSize: 14,
-            fontWeight: 500,
+            fontSize: 13,
+            fontWeight: 600,
             textAlign: 'left',
           }}>
-            <CheckCircle2 size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+            <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>{loginNotice}</span>
           </div>
         )}
@@ -155,79 +158,27 @@ export function PantallaInicio() {
             display: 'flex',
             alignItems: 'flex-start',
             gap: 10,
-            marginBottom: 20,
+            marginBottom: 16,
             padding: '12px 14px',
             borderRadius: 12,
             background: 'var(--color-negative-bg)',
             color: 'var(--color-negative)',
-            fontSize: 14,
-            fontWeight: 500,
+            fontSize: 13,
+            fontWeight: 600,
             textAlign: 'left',
           }}>
-            <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
             <span style={{ lineHeight: 1.4 }}>{loginError}</span>
           </div>
         )}
 
-        {/* Botón principal de Google */}
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={inicioSesion}
-          style={{
-            width: '100%',
-            marginBottom: 18,
-            backgroundColor: 'var(--color-surface-elevated)',
-            color: 'var(--color-ink)',
-            border: '1px solid var(--color-separator)',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 12,
-          }}
-        >
-          <svg width="19" height="19" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-            <path
-              fill="#4285F4"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-            />
-          </svg>
-          <span>Acceder con Google</span>
-        </button>
-
-        {/* Separador */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          margin: '18px 0',
-        }}>
-          <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
-          <span className="apple-caption" style={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: 11 }}>
-            o con correo
-          </span>
-          <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
-        </div>
-
-        {/* Segmented Control */}
-        <div className="segmented-control" style={{ marginBottom: 20 }}>
+        {/* Segmented Control: Iniciar Sesión / Crear Cuenta */}
+        <div className="segmented-control" style={{ marginBottom: 18 }}>
           <button
             type="button"
             className={`segmented-control-item ${modo === 'login' ? 'active' : ''}`}
             onClick={() => cambiarModo('login')}
+            style={{ fontWeight: 600 }}
           >
             Iniciar Sesión
           </button>
@@ -235,19 +186,44 @@ export function PantallaInicio() {
             type="button"
             className={`segmented-control-item ${modo === 'registro' ? 'active' : ''}`}
             onClick={() => cambiarModo('registro')}
+            style={{ fontWeight: 600 }}
           >
             Crear Cuenta
           </button>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {modo === 'registro' && (
             <>
-              {/* Selector de rol de usuario */}
               <div style={{ textAlign: 'left' }}>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
-                  Tipo de cuenta en clase
+                <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
+                  Tu nombre y apellidos en clase
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <User size={17} style={{
+                    position: 'absolute',
+                    left: 14,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--color-secondary-ink)',
+                  }} />
+                  <input
+                    type="text"
+                    className="apple-input"
+                    placeholder="Ej: Daniel Sánchez"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    style={{ paddingLeft: 40 }}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Selector Alumno / Profesor */}
+              <div style={{ textAlign: 'left' }}>
+                <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
+                  Tipo de cuenta
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <button
@@ -258,17 +234,17 @@ export function PantallaInicio() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: 6,
-                      padding: '10px 12px',
+                      padding: '8px 10px',
                       borderRadius: 10,
                       border: rol === 'alumno' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: rol === 'alumno' ? 'rgba(0, 122, 255, 0.08)' : 'var(--color-surface)',
+                      backgroundColor: rol === 'alumno' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface)',
                       color: rol === 'alumno' ? 'var(--color-accent)' : 'var(--color-ink)',
                       fontWeight: 600,
                       fontSize: 13,
                       cursor: 'pointer'
                     }}
                   >
-                    <GraduationCap size={16} />
+                    <GraduationCap size={15} />
                     <span>Alumno</span>
                   </button>
 
@@ -280,26 +256,26 @@ export function PantallaInicio() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: 6,
-                      padding: '10px 12px',
+                      padding: '8px 10px',
                       borderRadius: 10,
                       border: rol === 'moderador' ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: rol === 'moderador' ? 'rgba(0, 122, 255, 0.08)' : 'var(--color-surface)',
+                      backgroundColor: rol === 'moderador' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface)',
                       color: rol === 'moderador' ? 'var(--color-accent)' : 'var(--color-ink)',
                       fontWeight: 600,
                       fontSize: 13,
                       cursor: 'pointer'
                     }}
                   >
-                    <ShieldCheck size={16} />
-                    <span>Profesor</span>
+                    <ShieldCheck size={15} />
+                    <span>Moderador</span>
                   </button>
                 </div>
               </div>
 
               {rol === 'moderador' && (
                 <div style={{ textAlign: 'left' }}>
-                  <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-                    Código de Profesor / Centro (opcional: PROFE2026)
+                  <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 500 }}>
+                    Código de Moderador (opcional: PROFE2026)
                   </label>
                   <input
                     type="text"
@@ -310,144 +286,136 @@ export function PantallaInicio() {
                   />
                 </div>
               )}
-
-              <div style={{ textAlign: 'left' }}>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-                  Nombre y apellido
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <User size={18} style={{
-                    position: 'absolute',
-                    left: 14,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--color-tertiary-ink)',
-                  }} />
-                  <input
-                    type="text"
-                    className="apple-input"
-                    placeholder="Tu nombre real"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    style={{ paddingLeft: 42 }}
-                    required
-                  />
-                </div>
-              </div>
             </>
           )}
 
+          {/* Email / Usuario */}
           <div style={{ textAlign: 'left' }}>
-            <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-              Correo electrónico
+            <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
+              {modo === 'login' ? 'Correo o Usuario' : 'Correo electrónico'}
             </label>
             <div style={{ position: 'relative' }}>
-              <Mail size={18} style={{
+              <Mail size={17} style={{
                 position: 'absolute',
                 left: 14,
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--color-tertiary-ink)',
+                color: 'var(--color-secondary-ink)',
               }} />
               <input
-                type="email"
-                autoComplete="email"
-                autoCapitalize="none"
+                type="text"
                 className="apple-input"
-                placeholder="usuario@instituto.es"
+                placeholder={modo === 'login' ? 'Ej: tu@correo.com o lominoño' : 'tu@correo.com'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                style={{ paddingLeft: 42 }}
+                style={{ paddingLeft: 40 }}
                 required
               />
             </div>
           </div>
 
+          {/* Contraseña */}
           <div style={{ textAlign: 'left' }}>
-            <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
+            <label className="apple-caption" style={{ display: 'block', marginBottom: 5, fontWeight: 600 }}>
               Contraseña
             </label>
             <div style={{ position: 'relative' }}>
-              <Lock size={18} style={{
+              <Lock size={17} style={{
                 position: 'absolute',
                 left: 14,
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--color-tertiary-ink)',
+                color: 'var(--color-secondary-ink)',
               }} />
               <input
                 type="password"
-                autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
                 className="apple-input"
-                placeholder={modo === 'login' ? '••••••••' : 'Mínimo 6 caracteres'}
+                placeholder="Mínimo 6 caracteres"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: 42 }}
-                required
+                style={{ paddingLeft: 40 }}
                 minLength={6}
+                required
               />
             </div>
           </div>
 
+          {/* Botón de Enviar */}
           <button
             type="submit"
             className="btn-primary"
             disabled={enviando}
             style={{
               width: '100%',
+              minHeight: 46,
+              fontSize: 15,
+              fontWeight: 700,
               marginTop: 6,
-              opacity: enviando ? 0.7 : 1,
-              cursor: enviando ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
             }}
           >
             {enviando ? (
-              <span>Procesando...</span>
+              <span>Conectando...</span>
             ) : modo === 'login' ? (
               <>
-                <LogIn size={18} />
-                <span>Iniciar Sesión</span>
+                <LogIn size={17} />
+                <span>Entrar a mi clase</span>
               </>
             ) : (
               <>
-                <UserPlus size={18} />
-                <span>Crear Cuenta de {rol === 'moderador' ? 'Profesor' : 'Alumno'}</span>
+                <UserPlus size={17} />
+                <span>Crear mi cuenta</span>
               </>
             )}
           </button>
         </form>
 
-        {/* Acceso directo para pruebas locales limpias */}
-        <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--color-separator)' }}>
-          <p className="apple-caption" style={{ marginBottom: 10, fontWeight: 600 }}>
-            Acceso rápido de prueba (datos limpios):
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => handleAccesoRapido('alumno')}
-              style={{ fontSize: 13, minHeight: 40, padding: '6px 10px', gap: 6 }}
-            >
-              <GraduationCap size={15} />
-              <span>Entrar como Alumno</span>
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => handleAccesoRapido('moderador')}
-              style={{ fontSize: 13, minHeight: 40, padding: '6px 10px', gap: 6 }}
-            >
-              <ShieldCheck size={15} />
-              <span>lominoño (Admin)</span>
-            </button>
-          </div>
+        {/* Separador sutil */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          margin: '18px 0 14px',
+        }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
+          <span className="apple-caption" style={{ textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 11 }}>
+            o acceso rápido
+          </span>
+          <div style={{ flex: 1, height: 1, backgroundColor: 'var(--color-separator)' }} />
+        </div>
 
-          {/* Créditos JuanFe */}
-          <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>
-            <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
-              muudel · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
-            </p>
-          </div>
+        {/* Botón para entrar como Alumno directo de prueba */}
+        <button
+          type="button"
+          onClick={() => entrarComoAlumno('Alumno de Clase')}
+          style={{
+            width: '100%',
+            minHeight: 40,
+            borderRadius: 12,
+            border: '1px solid var(--color-separator)',
+            backgroundColor: 'var(--color-surface-secondary)',
+            color: 'var(--color-ink)',
+            fontSize: 13,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            cursor: 'pointer'
+          }}
+        >
+          <GraduationCap size={16} />
+          <span>Probar como Alumno sin registro</span>
+        </button>
+
+        {/* Créditos */}
+        <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>
+          <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
+            muudel · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
+          </p>
         </div>
       </div>
     </main>

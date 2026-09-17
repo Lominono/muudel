@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../utils/supabase'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
+import { sound, triggerConfetti } from '../utils/haptics'
 import {
   ShieldCheck,
   Calendar,
@@ -15,42 +16,94 @@ import {
   Award,
   Search,
   AlertCircle,
-  Sparkles
+  Lock,
+  Unlock,
+  ShoppingBag,
+  ShieldAlert,
+  FileText,
+  CheckCheck,
+  MessageCircleQuestion,
+  HelpCircle,
+  ChevronRight
 } from 'lucide-react'
+
+const PIN_ADMIN_CORRECTO = '2026'
 
 export function PantallaAdmin() {
   const { perfil } = useAuth()
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'alumnos' | 'retos'
+  // 1. Estado de Seguridad por PIN de Moderador
+  const [desbloqueado, setDesbloqueado] = useState(() => {
+    return sessionStorage.getItem('muudel_admin_desbloqueado') === 'true'
+  })
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [intentosFallidos, setIntentosFallidos] = useState(0)
+
+  // 2. Navegación entre pestañas del Panel
+  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'canjes' | 'alumnos' | 'retos' | 'seguridad'
   const [cargando, setCargando] = useState(true)
 
-  // Datos de asistencia de hoy
+  // Datos de asistencia y solicitudes de las 15:30
   const [checkinsHoy, setCheckinsHoy] = useState([])
+  const [solicitudesHoy, setSolicitudesHoy] = useState([])
   const [todosAlumnos, setTodosAlumnos] = useState([])
 
-  // Registro manual
-  const [alumnoManualId, setAlumnoManualId] = useState('')
-  const [esTardeManual, setEsTardeManual] = useState(false)
-  const [guardandoCheckin, setGuardandoCheckin] = useState(false)
+  // Canjes de puntos pedidos por alumnos
+  const [canjesPedidos, setCanjesPedidos] = useState([])
 
-  // Búsqueda de alumnos
+  // Auditoría
+  const [logsAuditoria, setLogsAuditoria] = useState([])
+
+  // Búsqueda y acciones
   const [busqueda, setBusqueda] = useState('')
   const [accionEnCurso, setAccionEnCurso] = useState(null)
   const [notificacion, setNotificacion] = useState(null)
 
-  // Nuevo Reto
+  // Modal de confirmación para acciones críticas
+  const [modalConfirmacion, setModalConfirmacion] = useState(null)
+
+  // Nuevo Reto y Pregunta Flash
   const [nuevoRetoTitulo, setNuevoRetoTitulo] = useState('')
   const [nuevoRetoDesc, setNuevoRetoDesc] = useState('')
   const [nuevoRetoPuntos, setNuevoRetoPuntos] = useState(25)
   const [retosActivos, setRetosActivos] = useState([])
   const [guardandoReto, setGuardandoReto] = useState(false)
 
+  // Pregunta Flash custom
+  const [nuevaPreguntaTexto, setNuevaPreguntaTexto] = useState('')
+  const [opcionesFlash, setOpcionesFlash] = useState(['', '', ''])
+
   const fechaHoy = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    cargarDatos()
-  }, [tab])
+    if (desbloqueado) {
+      cargarDatos()
+    }
+  }, [tab, desbloqueado])
+
+  const avisar = (msg, tipo = 'exito') => {
+    setNotificacion({ msg, tipo })
+    setTimeout(() => setNotificacion(null), 3500)
+  }
+
+  const registrarAuditoria = (accion, detalle) => {
+    const nuevoLog = {
+      id: 'aud-' + Date.now(),
+      fecha: new Date().toLocaleDateString('es-ES'),
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      autor: perfil?.nombre || 'lominoño',
+      accion,
+      detalle
+    }
+    try {
+      const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
+      const actualizados = [nuevoLog, ...logs].slice(0, 80)
+      localStorage.setItem('muudel_audit_log', JSON.stringify(actualizados))
+      setLogsAuditoria(actualizados)
+    } catch (e) {}
+  }
 
   const cargarDatos = async () => {
     setCargando(true)
@@ -63,16 +116,52 @@ export function PantallaAdmin() {
 
       setTodosAlumnos(alumnosData || [])
 
-      // 2. Cargar checkins de hoy con datos de perfil
+      // 2. Cargar checkins confirmados de hoy
       const { data: checkinsData } = await supabase
         .from('checkins')
         .select('*, profiles(nombre, color_acento)')
         .eq('fecha', fechaHoy)
         .order('hora', { ascending: true })
 
-      setCheckinsHoy(checkinsData || [])
+      const mapaRemoto = checkinsData || []
+      const localCheckins = localStorage.getItem('racha_checkins_' + fechaHoy)
+      let listaCombinada = [...mapaRemoto]
 
-      // 3. Cargar retos
+      if (localCheckins) {
+        try {
+          const parsed = JSON.parse(localCheckins)
+          Object.values(parsed).forEach(chk => {
+            if (!listaCombinada.find(c => c.user_id === chk.user_id)) {
+              listaCombinada.push(chk)
+            }
+          })
+        } catch (e) {}
+      }
+      setCheckinsHoy(listaCombinada)
+
+      // 3. Cargar solicitudes de confirmación de las 15:30
+      const solicitudesGuardadas = localStorage.getItem('muudel_solicitudes_' + fechaHoy)
+      if (solicitudesGuardadas) {
+        try {
+          setSolicitudesHoy(JSON.parse(solicitudesGuardadas))
+        } catch (e) {
+          setSolicitudesHoy([])
+        }
+      } else {
+        setSolicitudesHoy([])
+      }
+
+      // 4. Cargar canjes de puntos de alumnos
+      const canjesGuardados = localStorage.getItem('muudel_canjes_pedidos')
+      if (canjesGuardados) {
+        try {
+          setCanjesPedidos(JSON.parse(canjesGuardados))
+        } catch (e) {
+          setCanjesPedidos([])
+        }
+      }
+
+      // 5. Cargar retos
       const { data: retosData } = await supabase
         .from('retos')
         .select('*')
@@ -80,6 +169,10 @@ export function PantallaAdmin() {
         .limit(20)
 
       setRetosActivos(retosData || [])
+
+      // 6. Cargar registros de auditoría
+      const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
+      setLogsAuditoria(logs)
     } catch (err) {
       console.warn('Error al cargar datos administrativos:', err)
     } finally {
@@ -87,78 +180,149 @@ export function PantallaAdmin() {
     }
   }
 
-  const avisar = (msg) => {
-    setNotificacion(msg)
-    setTimeout(() => setNotificacion(null), 3500)
-  }
-
-  // Marcar asistencia manual
-  const handleRegistrarManual = async (e) => {
+  // Comprobar PIN de seguridad
+  const handleDesbloquearPin = (e) => {
     e.preventDefault()
-    if (!alumnoManualId) return
-    setGuardandoCheckin(true)
+    setPinError('')
 
-    const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    const puntos = esTardeManual ? 5 : 10
+    if (intentosFallidos >= 5) {
+      setPinError('Demasiados intentos fallidos. Espera 30 segundos.')
+      return
+    }
 
-    try {
-      const { error } = await supabase.from('checkins').insert({
-        user_id: alumnoManualId,
-        fecha: fechaHoy,
-        hora: horaActual,
-        es_tarde: esTardeManual,
-        puntos_ganados: puntos,
-      })
-
-      if (error) {
-        if (error.code === '23505') {
-          avisar('Este alumno ya tiene asistencia registrada para hoy.')
-        } else {
-          avisar('Error al registrar: ' + error.message)
-        }
-      } else {
-        avisar('Asistencia registrada correctamente.')
-        setAlumnoManualId('')
-        await cargarDatos()
-      }
-    } catch (err) {
-      avisar('Error al guardar asistencia.')
-    } finally {
-      setGuardandoCheckin(false)
+    if (pinInput.trim() === PIN_ADMIN_CORRECTO) {
+      sound.playPop()
+      setDesbloqueado(true)
+      sessionStorage.setItem('muudel_admin_desbloqueado', 'true')
+      setPinInput('')
+      setIntentosFallidos(0)
+      registrarAuditoria('Acceso al Panel', 'Desbloqueo seguro por PIN de moderador')
+    } else {
+      sound.playPop()
+      setIntentosFallidos(prev => prev + 1)
+      setPinError('PIN incorrecto. Revisa el código maestro de moderador.')
     }
   }
 
-  // Bonificar puntos a un alumno
-  const handleBonificarPuntos = async (alumnoId, puntosSumar) => {
-    setAccionEnCurso(alumnoId)
-    try {
-      const alumno = todosAlumnos.find((a) => a.id === alumnoId)
-      if (!alumno) return
+  const handleBloquear = () => {
+    sessionStorage.removeItem('muudel_admin_desbloqueado')
+    setDesbloqueado(false)
+    sound.playPop()
+  }
 
-      const nuevosPuntos = (alumno.puntos_total || 0) + puntosSumar
+  // Aprobar solicitud de confirmación de las 15:30
+  const handleAprobarSolicitud = async (solicitud) => {
+    setAccionEnCurso(solicitud.userId)
+    const puntos = solicitud.esTarde ? 5 : 10
+    const horaActual = solicitud.hora || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    const nuevoRecord = {
+      user_id: solicitud.userId,
+      fecha: fechaHoy,
+      hora: horaActual,
+      es_tarde: solicitud.esTarde,
+      puntos_ganados: puntos
+    }
+
+    // 1. Guardar checkin local
+    try {
+      const localCheckins = JSON.parse(localStorage.getItem('racha_checkins_' + fechaHoy) || '{}')
+      localCheckins[solicitud.userId] = nuevoRecord
+      localStorage.setItem('racha_checkins_' + fechaHoy, JSON.stringify(localCheckins))
+    } catch (e) {}
+
+    // 2. Sincronizar con Supabase
+    try {
+      await supabase.from('checkins').upsert(nuevoRecord, { onConflict: 'user_id, fecha' })
+    } catch (e) {}
+
+    // 3. Quitar de solicitudes pendientes
+    const restantes = solicitudesHoy.filter(s => s.userId !== solicitud.userId)
+    setSolicitudesHoy(restantes)
+    localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(restantes))
+
+    // 4. Actualizar lista de checkins hoy
+    setCheckinsHoy(prev => [nuevoRecord, ...prev.filter(c => c.user_id !== solicitud.userId)])
+
+    // 5. Auditar
+    registrarAuditoria(
+      'Aprobación de Asistencia 15:30',
+      `Confirmada presencia de ${solicitud.nombre} (${solicitud.esTarde ? 'Tarde +5 pts' : 'Puntual +10 pts'})`
+    )
+
+    sound.playStamp()
+    avisar(`Asistencia certificada para ${solicitud.nombre}`)
+    setAccionEnCurso(null)
+  }
+
+  // Aprobar todas las solicitudes pendientes de un solo clic
+  const handleAprobarTodas = async () => {
+    if (solicitudesHoy.length === 0) return
+    setAccionEnCurso('todas')
+
+    for (const sol of solicitudesHoy) {
+      await handleAprobarSolicitud(sol)
+    }
+
+    triggerConfetti()
+    avisar('Todas las solicitudes de las 15:30 han sido aprobadas.')
+    setAccionEnCurso(null)
+  }
+
+  // Marcar entrega de canje de puntos
+  const handleCompletarCanje = (canjeId) => {
+    const actualizados = canjesPedidos.map(c => c.id === canjeId ? { ...c, estado: 'entregado' } : c)
+    setCanjesPedidos(actualizados)
+    localStorage.setItem('muudel_canjes_pedidos', JSON.stringify(actualizados))
+    sound.playPop()
+    avisar('Recompensa marcada como entregada.')
+    registrarAuditoria('Entrega de Recompensa', `Canje #${canjeId} validado y entregado`)
+  }
+
+  // Bonificar puntos directos
+  const handleBonificarPuntos = async (alumnoId, puntosExtra, motivo = 'Participación en clase') => {
+    setAccionEnCurso(alumnoId)
+    const alumno = todosAlumnos.find((a) => a.id === alumnoId)
+    if (!alumno) return
+
+    const nuevosPuntos = (alumno.puntos_total || 0) + puntosExtra
+
+    try {
       const { error } = await supabase
         .from('profiles')
-        .update({ puntos_total: nuevosPuntos, updated_at: new Date().toISOString() })
+        .update({
+          puntos_total: nuevosPuntos,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', alumnoId)
 
       if (!error) {
-        avisar(`+${puntosSumar} puntos otorgados a ${alumno.nombre}.`)
+        sound.playPop()
+        avisar(`+${puntosExtra} pts asignados a ${alumno.nombre}.`)
         setTodosAlumnos((prev) =>
           prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
         )
-      } else {
-        avisar('No se pudo asignar puntos.')
+        registrarAuditoria('Bonificación de Puntos', `+${puntosExtra} pts a ${alumno.nombre} (${motivo})`)
       }
     } catch (err) {
-      avisar('Error al actualizar puntos.')
+      avisar('Error al actualizar puntos.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
   }
 
-  // Cambiar rol
-  const handleCambiarRol = async (alumnoId, nuevoRol) => {
+  // Cambiar rol con confirmación de seguridad
+  const solicitarCambioRol = (alumno, nuevoRol) => {
+    setModalConfirmacion({
+      titulo: `¿Cambiar rol a ${nuevoRol === 'moderador' ? 'Moderador' : 'Alumno'}?`,
+      mensaje: `Estás a punto de modificar los permisos de ${alumno.nombre}. Esta es una acción administrativa crítica.`,
+      accion: () => ejecutarCambioRol(alumno.id, nuevoRol)
+    })
+  }
+
+  const ejecutarCambioRol = async (alumnoId, nuevoRol) => {
     setAccionEnCurso(alumnoId)
+    setModalConfirmacion(null)
     try {
       const { error } = await supabase
         .from('profiles')
@@ -170,15 +334,16 @@ export function PantallaAdmin() {
         setTodosAlumnos((prev) =>
           prev.map((a) => (a.id === alumnoId ? { ...a, rol: nuevoRol } : a))
         )
+        registrarAuditoria('Cambio de Rol', `Usuario ${alumnoId} pasó a ${nuevoRol}`)
       }
     } catch (err) {
-      avisar('Error al modificar rol.')
+      avisar('Error al modificar rol.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
   }
 
-  // Crear Reto
+  // Publicar Nuevo Reto
   const handleCrearReto = async (e) => {
     e.preventDefault()
     if (!nuevoRetoTitulo.trim()) return
@@ -194,35 +359,147 @@ export function PantallaAdmin() {
       }).select().single()
 
       if (!error && data) {
+        sound.playStamp()
         avisar('Nuevo reto publicado con éxito.')
         setRetosActivos((prev) => [data, ...prev])
+        registrarAuditoria('Publicación de Reto', `Reto: ${nuevoRetoTitulo.trim()} (${nuevoRetoPuntos} pts)`)
         setNuevoRetoTitulo('')
         setNuevoRetoDesc('')
-      } else {
-        avisar(error?.message || 'Error al crear reto.')
       }
     } catch (err) {
-      avisar('Error al conectar con la base de datos.')
+      avisar('Error al crear reto.', 'error')
     } finally {
       setGuardandoReto(false)
     }
   }
 
-  // Restricción de acceso si no es moderador
+  // Publicar Pregunta Flash del día
+  const handleGuardarPreguntaFlash = (e) => {
+    e.preventDefault()
+    if (!nuevaPreguntaTexto.trim()) return
+
+    const opcionesValidas = opcionesFlash.filter(o => o.trim().length > 0)
+    if (opcionesValidas.length < 2) {
+      avisar('Añade al menos 2 opciones de respuesta.', 'error')
+      return
+    }
+
+    const nuevaPregunta = {
+      id: 'custom-' + Date.now(),
+      pregunta: nuevaPreguntaTexto.trim(),
+      opciones: opcionesValidas.map((txt, idx) => ({ id: String.fromCharCode(97 + idx), texto: txt.trim() })),
+      creadaPor: perfil?.nombre || 'lominoño'
+    }
+
+    localStorage.setItem('muudel_pregunta_custom_hoy', JSON.stringify(nuevaPregunta))
+    registrarAuditoria('Pregunta Flash', `Publicada pregunta: "${nuevaPreguntaTexto.trim()}"`)
+    sound.playStamp()
+    avisar('Pregunta Flash activada para la clase de hoy.')
+    setNuevaPreguntaTexto('')
+    setOpcionesFlash(['', '', ''])
+  }
+
+  // 1. RESTRICCIÓN DE ACCESO SI NO ES MODERADOR
   if (perfil && perfil.rol !== 'moderador') {
     return (
-      <main style={{ maxWidth: 480, margin: '60px auto', padding: '24px', textAlign: 'center' }}>
+      <main style={{ maxWidth: 460, margin: '80px auto', padding: '24px', textAlign: 'center' }}>
         <div className="card" style={{ padding: '36px 24px' }}>
-          <AlertCircle size={40} color="var(--color-warning)" style={{ margin: '0 auto 12px' }} />
-          <h2 className="apple-title-1" style={{ fontSize: 20, marginBottom: 8 }}>
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: 16,
+            backgroundColor: 'rgba(255, 59, 48, 0.12)',
+            color: 'var(--color-negative)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px'
+          }}>
+            <Lock size={26} />
+          </div>
+          <h2 className="apple-title-1" style={{ fontSize: 21, marginBottom: 8 }}>
             Acceso Reservado
           </h2>
-          <p className="apple-subheadline" style={{ marginBottom: 20 }}>
-            Este panel de control está destinado exclusivamente a profesores y moderadores de la clase.
+          <p className="apple-subheadline" style={{ marginBottom: 20, fontSize: 14 }}>
+            Este panel de gestión está restringido exclusivamente a lominoño y moderadores autorizados de muudel.
           </p>
           <button className="btn-primary" onClick={() => navigate('/')} style={{ width: '100%' }}>
             Volver a la vista principal
           </button>
+        </div>
+      </main>
+    )
+  }
+
+  // 2. PANTALLA DE BLOQUEO POR PIN DE SEGURIDAD
+  if (!desbloqueado) {
+    return (
+      <main style={{ maxWidth: 420, margin: '60px auto', padding: '20px 16px' }}>
+        <div className="card" style={{ padding: '36px 24px', textAlign: 'center' }}>
+          <div style={{
+            width: 56,
+            height: 56,
+            borderRadius: 18,
+            backgroundColor: 'rgba(10, 132, 255, 0.12)',
+            color: 'var(--color-accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 14px'
+          }}>
+            <Lock size={28} />
+          </div>
+
+          <h2 className="apple-large-title" style={{ fontSize: 24, marginBottom: 4 }}>
+            Panel Protegido
+          </h2>
+          <p className="apple-subheadline" style={{ fontSize: 14, marginBottom: 22 }}>
+            Introduce el PIN de seguridad de moderador para desbloquear las herramientas de clase:
+          </p>
+
+          <form onSubmit={handleDesbloquearPin} style={{ maxWidth: 280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="PIN Maestro"
+              value={pinInput}
+              onChange={(e) => {
+                setPinError('')
+                setPinInput(e.target.value.replace(/\D/g, ''))
+              }}
+              className="apple-input"
+              style={{
+                textAlign: 'center',
+                fontSize: 26,
+                letterSpacing: 10,
+                fontWeight: 700,
+                minHeight: 50
+              }}
+              autoFocus
+              required
+            />
+
+            {pinError && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--color-negative)', fontSize: 13, fontWeight: 600 }}>
+                <AlertCircle size={15} />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={pinInput.length < 4}
+              style={{ width: '100%', minHeight: 44, fontSize: 15, fontWeight: 700, marginTop: 4 }}
+            >
+              Desbloquear Gestión
+            </button>
+
+            <span className="apple-caption" style={{ color: 'var(--color-tertiary-ink)', marginTop: 4 }}>
+              PIN por defecto: <strong>2026</strong>
+            </span>
+          </form>
         </div>
       </main>
     )
@@ -236,427 +513,578 @@ export function PantallaAdmin() {
   const tardeCount = checkinsHoy.filter((c) => c.es_tarde).length
 
   return (
-    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 50px' }}>
       {/* Cabecera del Panel */}
       <header style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <ShieldCheck size={26} color="var(--color-accent)" />
-          <h1 className="apple-large-title" style={{ fontSize: 28 }}>
-            Panel de Gestión
-          </h1>
-        </div>
-        <p className="apple-subheadline">
-          Control de asistencia diaria, alumnos y retos académicos.
-        </p>
-      </header>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ShieldCheck size={26} color="var(--color-accent)" />
+            <h1 className="apple-large-title" style={{ fontSize: 26 }}>
+              Panel de lominoño
+            </h1>
+          </div>
 
-      {/* Notificación flotante / aviso */}
-      {notificacion && (
+          <button
+            onClick={handleBloquear}
+            title="Bloquear sesión de administración"
+            style={{
+              padding: '6px 12px',
+              borderRadius: 9999,
+              border: '1px solid var(--color-separator)',
+              backgroundColor: 'var(--color-surface-secondary)',
+              color: 'var(--color-secondary-ink)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <Lock size={13} />
+            <span>Bloquear</span>
+          </button>
+        </div>
+
+        <p className="apple-subheadline">
+          Asistencia de las 15:30, canjes de puntos, retos y auditoría de clase.
+        </p>
+
+        {/* Notificación flotante */}
+        {notificacion && (
+          <div style={{
+            marginTop: 12,
+            padding: '10px 14px',
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            backgroundColor: notificacion.tipo === 'error' ? 'rgba(255, 59, 48, 0.12)' : 'rgba(52, 199, 89, 0.12)',
+            color: notificacion.tipo === 'error' ? 'var(--color-negative)' : 'var(--color-positive)',
+            border: `1px solid ${notificacion.tipo === 'error' ? 'rgba(255, 59, 48, 0.3)' : 'rgba(52, 199, 89, 0.3)'}`
+          }}>
+            {notificacion.tipo === 'error' ? <AlertCircle size={16} /> : <Check size={16} />}
+            <span>{notificacion.msg}</span>
+          </div>
+        )}
+
+        {/* Selector de Pestañas con scroll suave */}
         <div style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderRadius: 12,
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-separator)',
-          boxShadow: 'var(--card-shadow)',
-          marginBottom: 16,
-          fontSize: 14,
-          fontWeight: 500,
-          color: 'var(--color-ink)',
+          gap: 6,
+          marginTop: 16,
+          overflowX: 'auto',
+          paddingBottom: 4,
+          scrollbarWidth: 'none'
         }}>
-          <Check size={16} color="var(--color-positive)" />
-          <span>{notificacion}</span>
+          {[
+            { id: 'asistencia', label: `Asistencia (${solicitudesHoy.length})`, icon: Calendar },
+            { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
+            { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
+            { id: 'retos', label: 'Retos & Flash', icon: Target },
+            { id: 'seguridad', label: 'Auditoría', icon: ShieldAlert }
+          ].map((t) => {
+            const Icono = t.icon
+            const activo = tab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 9999,
+                  border: 'none',
+                  backgroundColor: activo ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                  color: activo ? '#FFFFFF' : 'var(--color-ink)',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Icono size={14} />
+                <span>{t.label}</span>
+              </button>
+            )
+          })}
         </div>
-      )}
+      </header>
 
-      {/* Selector de Sección (Segmented Control) */}
-      <div className="segmented-control" style={{ marginBottom: 18 }}>
-        <button
-          type="button"
-          className={`segmented-control-item ${tab === 'asistencia' ? 'active' : ''}`}
-          onClick={() => setTab('asistencia')}
-        >
-          <Calendar size={15} style={{ marginRight: 6 }} />
-          Asistencia Hoy
-        </button>
-        <button
-          type="button"
-          className={`segmented-control-item ${tab === 'alumnos' ? 'active' : ''}`}
-          onClick={() => setTab('alumnos')}
-        >
-          <Users size={15} style={{ marginRight: 6 }} />
-          Alumnos ({todosAlumnos.length})
-        </button>
-        <button
-          type="button"
-          className={`segmented-control-item ${tab === 'retos' ? 'active' : ''}`}
-          onClick={() => setTab('retos')}
-        >
-          <Target size={15} style={{ marginRight: 6 }} />
-          Retos
-        </button>
-      </div>
-
-      {/* PESTAÑA 1: ASISTENCIA HOY */}
+      {/* PESTAÑA 1: ASISTENCIA Y SOLICITUDES DE LAS 15:30 */}
       {tab === 'asistencia' && (
         <div>
-          {/* Métricas del día */}
+          {/* Solicitudes de las 15:30 pendientes */}
+          <section className="card" style={{
+            marginBottom: 16,
+            border: solicitudesHoy.length > 0 ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock size={18} color="var(--color-accent)" />
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Solicitudes de las 15:30 ({solicitudesHoy.length})
+                </h3>
+              </div>
+
+              {solicitudesHoy.length > 0 && (
+                <button
+                  className="btn-primary"
+                  onClick={handleAprobarTodas}
+                  disabled={accionEnCurso === 'todas'}
+                  style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}
+                >
+                  <CheckCheck size={14} />
+                  <span>Aprobar Todas</span>
+                </button>
+              )}
+            </div>
+
+            {solicitudesHoy.length === 0 ? (
+              <p className="apple-subheadline" style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
+                No hay solicitudes pendientes en este momento. Conforme los alumnos pulsen a las 15:30, aparecerán aquí para tu visto bueno.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {solicitudesHoy.map((sol) => (
+                  <div
+                    key={sol.userId}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 12,
+                      backgroundColor: 'var(--color-surface-secondary)',
+                      border: '1px solid var(--color-separator)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
+                        {sol.nombre}
+                      </span>
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1 }}>
+                        Envió aviso a las {sol.hora} · {sol.esTarde ? 'Retraso (+5 pts)' : 'Puntual (+10 pts)'}
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn-primary"
+                      disabled={accionEnCurso === sol.userId}
+                      onClick={() => handleAprobarSolicitud(sol)}
+                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
+                    >
+                      Aprobar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Resumen del día */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
-            <div className="card" style={{ textAlign: 'center', padding: '14px 10px', margin: 0 }}>
-              <span className="apple-caption" style={{ fontWeight: 600 }}>Presentes</span>
-              <div className="tabular-nums" style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-ink)', marginTop: 2 }}>
+            <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+              <span className="apple-caption">Total Presentes</span>
+              <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 800, color: 'var(--color-accent)', marginTop: 2 }}>
                 {checkinsHoy.length}
               </div>
             </div>
-            <div className="card" style={{ textAlign: 'center', padding: '14px 10px', margin: 0 }}>
-              <span className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-positive)' }}>A tiempo</span>
-              <div className="tabular-nums" style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-positive)', marginTop: 2 }}>
+            <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+              <span className="apple-caption">A tiempo (15:30)</span>
+              <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 800, color: 'var(--color-positive)', marginTop: 2 }}>
                 {aTiempoCount}
               </div>
             </div>
-            <div className="card" style={{ textAlign: 'center', padding: '14px 10px', margin: 0 }}>
-              <span className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-warning)' }}>Tarde</span>
-              <div className="tabular-nums" style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-warning)', marginTop: 2 }}>
+            <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+              <span className="apple-caption">Con retraso</span>
+              <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 800, color: 'var(--color-warning)', marginTop: 2 }}>
                 {tardeCount}
               </div>
             </div>
           </div>
 
-          {/* Formulario de Asistencia Manual */}
-          <section className="card" style={{ marginBottom: 16 }}>
-            <h3 className="apple-headline" style={{ fontSize: 16, marginBottom: 10 }}>
-              Registrar Asistencia Manual
-            </h3>
-            <form onSubmit={handleRegistrarManual} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <select
-                className="apple-input"
-                value={alumnoManualId}
-                onChange={(e) => setAlumnoManualId(e.target.value)}
-                required
-                style={{ cursor: 'pointer' }}
-              >
-                <option value="">Selecciona un alumno...</option>
-                {todosAlumnos.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nombre} ({a.rol})
-                  </option>
-                ))}
-              </select>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
-                  <input
-                    type="radio"
-                    name="tipoLlegada"
-                    checked={!esTardeManual}
-                    onChange={() => setEsTardeManual(false)}
-                  />
-                  <span>A tiempo (+10 pts)</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
-                  <input
-                    type="radio"
-                    name="tipoLlegada"
-                    checked={esTardeManual}
-                    onChange={() => setEsTardeManual(true)}
-                  />
-                  <span>Tarde (+5 pts)</span>
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={guardandoCheckin || !alumnoManualId}
-                style={{ width: '100%', minHeight: 40, marginTop: 4 }}
-              >
-                {guardandoCheckin ? 'Guardando...' : 'Confirmar Registro'}
-              </button>
-            </form>
-          </section>
-
-          {/* Lista de Alumnos Presentes Hoy */}
+          {/* Lista de checkins confirmados hoy */}
           <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
               <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Registro de Asistencia del Día ({checkinsHoy.length})
+                Alumnos en Clase Hoy ({checkinsHoy.length})
               </h3>
             </div>
 
             {checkinsHoy.length === 0 ? (
-              <div style={{ padding: '36px 20px', textAlign: 'center' }}>
-                <Clock size={28} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 8px' }} />
+              <div style={{ padding: 32, textAlign: 'center' }}>
                 <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                  Aún ningún alumno ha marcado asistencia hoy.
+                  Aún no hay asistencias confirmadas hoy.
                 </p>
               </div>
             ) : (
-              <div>
-                {checkinsHoy.map((chk, i) => {
-                  const nombreAlumno = chk.profiles?.nombre || 'Alumno'
-                  const colorAlumno = chk.profiles?.color_acento || '#0A84FF'
-
-                  return (
-                    <div
-                      key={chk.id || i}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '12px 16px',
-                        borderBottom: i < checkinsHoy.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <InsigniaIniciales nombre={nombreAlumno} color={colorAlumno} size={36} fontSize={14} />
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-ink)' }}>
-                            {nombreAlumno}
-                          </div>
-                          <span className="apple-caption tabular-nums">
-                            Hora de registro: {chk.hora || '--:--'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <span className={`apple-badge ${chk.es_tarde ? 'apple-badge-flame' : 'apple-badge-positive'}`}>
-                        {chk.es_tarde ? 'Tarde (+5)' : 'A tiempo (+10)'}
-                      </span>
+              checkinsHoy.map((c, i) => (
+                <div
+                  key={c.id || i}
+                  style={{
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: i < checkinsHoy.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <InsigniaIniciales nombre={c.profiles?.nombre || 'Alumno'} color={c.profiles?.color_acento} size={34} />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.profiles?.nombre || 'Alumno'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>Llegó a las {c.hora}</div>
                     </div>
-                  )
-                })}
-              </div>
+                  </div>
+
+                  <span className={`apple-badge ${c.es_tarde ? 'apple-badge-warning' : 'apple-badge-positive'}`} style={{ fontSize: 12 }}>
+                    {c.es_tarde ? '+5 pts (Tarde)' : '+10 pts (A tiempo)'}
+                  </span>
+                </div>
+              ))
             )}
           </section>
         </div>
       )}
 
-      {/* PESTAÑA 2: COMUNIDAD DE ALUMNOS */}
+      {/* PESTAÑA 2: CANJES DE PUNTOS DE ALUMNOS (LA CANTINA) */}
+      {tab === 'canjes' && (
+        <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
+            <h3 className="apple-headline" style={{ fontSize: 16 }}>
+              Peticiones de Recompensas de Clase
+            </h3>
+            <p className="apple-caption" style={{ marginTop: 2 }}>
+              Ventajas que los alumnos han pedido canjeando sus puntos reales
+            </p>
+          </div>
+
+          {canjesPedidos.length === 0 ? (
+            <div style={{ padding: 36, textAlign: 'center' }}>
+              <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                No hay canjes solicitados por ahora.
+              </p>
+            </div>
+          ) : (
+            canjesPedidos.map((canje, i) => (
+              <div
+                key={canje.id || i}
+                style={{
+                  padding: '14px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: i < canjesPedidos.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
+                    {canje.nombre}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 600, marginTop: 2 }}>
+                    {canje.titulo} · <span style={{ color: 'var(--color-secondary-ink)', fontWeight: 400 }}>{canje.costo} pts</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginTop: 2 }}>
+                    Solicitado: {canje.fecha}
+                  </div>
+                </div>
+
+                {canje.estado === 'pendiente' ? (
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleCompletarCanje(canje.id)}
+                    style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
+                  >
+                    Validar Entrega
+                  </button>
+                ) : (
+                  <span className="apple-badge apple-badge-positive" style={{ fontSize: 12 }}>
+                    Entregado
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </section>
+      )}
+
+      {/* PESTAÑA 3: ALUMNOS Y COMUNIDAD */}
       {tab === 'alumnos' && (
         <div>
           {/* Buscador */}
           <div style={{ position: 'relative', marginBottom: 14 }}>
-            <Search size={18} style={{
-              position: 'absolute',
-              left: 14,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--color-tertiary-ink)',
-            }} />
+            <Search size={16} color="var(--color-secondary-ink)" style={{ position: 'absolute', left: 14, top: 12 }} />
             <input
               type="text"
               className="apple-input"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar alumno por nombre..."
-              style={{ paddingLeft: 42 }}
+              placeholder="Buscar por nombre de alumno..."
+              style={{ paddingLeft: 40 }}
             />
           </div>
 
           <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            {alumnosFiltrados.length === 0 ? (
-              <div style={{ padding: 36, textAlign: 'center' }}>
-                <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                  No se encontraron alumnos con ese nombre.
-                </p>
-              </div>
-            ) : (
-              alumnosFiltrados.map((alumno, i) => (
-                <div
-                  key={alumno.id}
-                  style={{
-                    padding: '14px 16px',
-                    borderBottom: i < alumnosFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento} size={40} fontSize={15} />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 15 }}>
-                          {alumno.nombre}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                          <span className={`apple-badge ${alumno.rol === 'moderador' ? 'apple-badge-accent' : ''}`} style={{ fontSize: 11 }}>
-                            {alumno.rol === 'moderador' ? 'Profesor' : 'Alumno'}
-                          </span>
-                          <span className="apple-caption" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <Flame size={12} color="var(--color-warning)" />
-                            Racha: {alumno.racha_actual || 0}d
-                          </span>
-                        </div>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Listado de Estudiantes ({alumnosFiltrados.length})
+              </h3>
+            </div>
+
+            {alumnosFiltrados.map((alumno, i) => (
+              <div
+                key={alumno.id}
+                style={{
+                  padding: '14px 16px',
+                  borderBottom: i < alumnosFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento} size={36} />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                        {alumno.puntos_total || 0} pts · {alumno.racha_actual || 0} días de racha
                       </div>
                     </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="tabular-nums" style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-accent)' }}>
-                        {alumno.puntos_total || 0}
-                      </span>
-                      <span className="apple-caption" style={{ marginLeft: 3 }}>pts</span>
-                    </div>
                   </div>
 
-                  {/* Acciones para profesores */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={accionEnCurso === alumno.id}
-                      onClick={() => handleBonificarPuntos(alumno.id, 5)}
-                      style={{ minHeight: 32, padding: '4px 10px', fontSize: 12 }}
-                    >
-                      +5 pts (Participación)
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={accionEnCurso === alumno.id}
-                      onClick={() => handleBonificarPuntos(alumno.id, 10)}
-                      style={{ minHeight: 32, padding: '4px 10px', fontSize: 12 }}
-                    >
-                      +10 pts (Aporte)
-                    </button>
-                    {alumno.rol !== 'moderador' ? (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={accionEnCurso === alumno.id}
-                        onClick={() => handleCambiarRol(alumno.id, 'moderador')}
-                        style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, color: 'var(--color-accent)' }}
-                      >
-                        Hacer Moderador
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={accionEnCurso === alumno.id}
-                        onClick={() => handleCambiarRol(alumno.id, 'alumno')}
-                        style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, color: 'var(--color-secondary-ink)' }}
-                      >
-                        Cambiar a Alumno
-                      </button>
-                    )}
-                  </div>
+                  <span className={`apple-badge ${alumno.rol === 'moderador' ? 'apple-badge-accent' : 'apple-badge-neutral'}`} style={{ fontSize: 11 }}>
+                    {alumno.rol === 'moderador' ? 'Moderador' : 'Alumno'}
+                  </span>
                 </div>
-              ))
-            )}
+
+                {/* Acciones de profesor */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                  <button
+                    className="btn-secondary"
+                    disabled={accionEnCurso === alumno.id}
+                    onClick={() => handleBonificarPuntos(alumno.id, 5, 'Participación en clase')}
+                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
+                  >
+                    +5 pts (Participar)
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    disabled={accionEnCurso === alumno.id}
+                    onClick={() => handleBonificarPuntos(alumno.id, 10, 'Aporte destacado')}
+                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
+                  >
+                    +10 pts (Aporte)
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    disabled={accionEnCurso === alumno.id}
+                    onClick={() => solicitarCambioRol(alumno, alumno.rol === 'moderador' ? 'alumno' : 'moderador')}
+                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: alumno.rol === 'moderador' ? 'var(--color-secondary-ink)' : 'var(--color-accent)' }}
+                  >
+                    {alumno.rol === 'moderador' ? 'Hacer Alumno' : 'Hacer Moderador'}
+                  </button>
+                </div>
+              </div>
+            ))}
           </section>
         </div>
       )}
 
-      {/* PESTAÑA 3: RETOS DE CLASE */}
+      {/* PESTAÑA 4: RETOS Y PREGUNTA FLASH */}
       {tab === 'retos' && (
-        <div>
-          {/* Formulario de Nuevo Reto */}
-          <section className="card" style={{ marginBottom: 16 }}>
-            <h3 className="apple-headline" style={{ fontSize: 16, marginBottom: 12 }}>
-              Crear Nuevo Reto de Clase
-            </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Pregunta Flash del día */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <MessageCircleQuestion size={18} color="var(--color-warning)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Lanzar Pregunta Flash para Hoy
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 14 }}>
+              Caducará a medianoche. Los alumnos recibirán +5 pts al responder y verán los votos de los demás.
+            </p>
 
-            <form onSubmit={handleCrearReto} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-                  Título del reto (5 - 100 caracteres)
-                </label>
-                <input
-                  type="text"
-                  className="apple-input"
-                  value={nuevoRetoTitulo}
-                  onChange={(e) => setNuevoRetoTitulo(e.target.value)}
-                  placeholder="Ej: Resolver problemas del tema 3 antes de las 18:00"
-                  minLength={5}
-                  maxLength={100}
-                  required
-                />
-              </div>
+            <form onSubmit={handleGuardarPreguntaFlash} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input
+                type="text"
+                className="apple-input"
+                placeholder="Pregunta para la clase (ej: ¿Qué ejercicio os cuesta más?)"
+                value={nuevaPreguntaTexto}
+                onChange={(e) => setNuevaPreguntaTexto(e.target.value)}
+                required
+              />
 
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-                  Descripción o instrucciones
-                </label>
-                <textarea
-                  className="apple-input"
-                  value={nuevoRetoDesc}
-                  onChange={(e) => setNuevoRetoDesc(e.target.value)}
-                  placeholder="Explica detalladamente en qué consiste el reto..."
-                  rows={3}
-                  style={{ resize: 'vertical' }}
-                />
-              </div>
-
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-                  Puntos de recompensa XP
-                </label>
-                <select
-                  className="apple-input"
-                  value={nuevoRetoPuntos}
-                  onChange={(e) => setNuevoRetoPuntos(Number(e.target.value))}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <option value={10}>10 puntos (Reto básico)</option>
-                  <option value={25}>25 puntos (Reto estándar)</option>
-                  <option value={50}>50 puntos (Reto avanzado)</option>
-                  <option value={100}>100 puntos (Gran desafío)</option>
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+                {opcionesFlash.map((op, idx) => (
+                  <input
+                    key={idx}
+                    type="text"
+                    className="apple-input"
+                    placeholder={`Opción ${idx + 1}`}
+                    value={op}
+                    onChange={(e) => {
+                      const copia = [...opcionesFlash]
+                      copia[idx] = e.target.value
+                      setOpcionesFlash(copia)
+                    }}
+                    style={{ minHeight: 36, fontSize: 13 }}
+                  />
+                ))}
               </div>
 
               <button
                 type="submit"
                 className="btn-primary"
+                disabled={!nuevaPreguntaTexto.trim()}
+                style={{ minHeight: 40, fontSize: 14, fontWeight: 700, marginTop: 4 }}
+              >
+                Activar Pregunta Flash Hoy
+              </button>
+            </form>
+          </section>
+
+          {/* Formulario de Reto */}
+          <section className="card">
+            <h3 className="apple-headline" style={{ fontSize: 16, marginBottom: 10 }}>
+              Publicar Reto de Clase
+            </h3>
+            <form onSubmit={handleCrearReto} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input
+                type="text"
+                className="apple-input"
+                placeholder="Título del reto (ej: Repasar tema 4 antes de las 20:00)"
+                value={nuevoRetoTitulo}
+                onChange={(e) => setNuevoRetoTitulo(e.target.value)}
+                required
+              />
+              <textarea
+                className="apple-input"
+                placeholder="Instrucciones o descripción..."
+                rows={2}
+                value={nuevoRetoDesc}
+                onChange={(e) => setNuevoRetoDesc(e.target.value)}
+              />
+              <select
+                className="apple-input"
+                value={nuevoRetoPuntos}
+                onChange={(e) => setNuevoRetoPuntos(Number(e.target.value))}
+              >
+                <option value={10}>10 puntos (Reto rápido)</option>
+                <option value={25}>25 puntos (Reto estándar)</option>
+                <option value={50}>50 puntos (Reto avanzado)</option>
+                <option value={100}>100 puntos (Gran desafío de clase)</option>
+              </select>
+
+              <button
+                type="submit"
+                className="btn-primary"
                 disabled={guardandoReto || !nuevoRetoTitulo.trim()}
-                style={{ width: '100%', minHeight: 42, marginTop: 4 }}
+                style={{ minHeight: 40, fontSize: 14, fontWeight: 700 }}
               >
                 {guardandoReto ? 'Publicando...' : 'Publicar Reto'}
               </button>
             </form>
           </section>
+        </div>
+      )}
 
-          {/* Listado de Retos Activos */}
-          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
+      {/* PESTAÑA 5: SEGURIDAD Y AUDITORÍA */}
+      {tab === 'seguridad' && (
+        <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ShieldAlert size={18} color="var(--color-accent)" />
               <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Retos Publicados ({retosActivos.length})
+                Registro de Seguridad y Auditoría
               </h3>
             </div>
+            <p className="apple-caption" style={{ marginTop: 2 }}>
+              Historial cronológico de acciones ejecutadas por moderadores
+            </p>
+          </div>
 
-            {retosActivos.length === 0 ? (
-              <div style={{ padding: 36, textAlign: 'center' }}>
-                <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                  No hay retos activos. Publica el primer reto arriba.
-                </p>
-              </div>
-            ) : (
-              retosActivos.map((r, i) => (
-                <div
-                  key={r.id || i}
-                  style={{
-                    padding: '14px 16px',
-                    borderBottom: i < retosActivos.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
-                        {r.titulo}
-                      </div>
-                      {r.descripcion && (
-                        <p className="apple-subheadline" style={{ fontSize: 13, marginBottom: 6 }}>
-                          {r.descripcion}
-                        </p>
-                      )}
-                    </div>
-                    <span className="apple-badge apple-badge-accent" style={{ flexShrink: 0 }}>
-                      +{r.puntos} XP
-                    </span>
-                  </div>
+          {logsAuditoria.length === 0 ? (
+            <div style={{ padding: 36, textAlign: 'center' }}>
+              <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                No hay registros de auditoría aún.
+              </p>
+            </div>
+          ) : (
+            logsAuditoria.map((log, i) => (
+              <div
+                key={log.id || i}
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: i < logsAuditoria.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--color-ink)' }}>
+                    {log.accion}
+                  </span>
+                  <span className="apple-caption" style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
+                    {log.hora} · {log.fecha}
+                  </span>
                 </div>
-              ))
-            )}
-          </section>
+                <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                  {log.detalle}
+                </p>
+                <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
+                  Autor: {log.autor}
+                </span>
+              </div>
+            ))
+          )}
+        </section>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN PARA ACCIONES CRÍTICAS */}
+      {modalConfirmacion && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 400, width: '100%', padding: '24px 20px', textAlign: 'center' }}>
+            <ShieldAlert size={36} color="var(--color-warning)" style={{ margin: '0 auto 12px' }} />
+            <h3 className="apple-headline" style={{ fontSize: 18, marginBottom: 6 }}>
+              {modalConfirmacion.titulo}
+            </h3>
+            <p className="apple-subheadline" style={{ fontSize: 14, marginBottom: 20 }}>
+              {modalConfirmacion.mensaje}
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                className="btn-primary"
+                onClick={modalConfirmacion.accion}
+                style={{ flex: 1, minHeight: 42, fontSize: 14 }}
+              >
+                Confirmar
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setModalConfirmacion(null)}
+                style={{ minHeight: 42, fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>

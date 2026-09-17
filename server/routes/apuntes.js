@@ -54,10 +54,6 @@ router.post('/subir', checkAuth, async (req, res) => {
       return res.status(400).json({ error: 'Faltan título y materia' })
     }
 
-    const supabase = getSupabaseClient()
-    const index = getPineconeIndex()
-    const embedding = await getEmbedding(`${titulo} ${texto || ''}`)
-
     const { data: apunte, error: dbError } = await supabase
       .from('apuntes')
       .insert({ titulo, materia, texto, user_id: userId })
@@ -66,18 +62,27 @@ router.post('/subir', checkAuth, async (req, res) => {
 
     if (dbError) throw dbError
 
-    await index.namespace('apuntes').upsert([
-      {
-        id: apunte.id,
-        values: embedding,
-        metadata: {
-          supabase_apunte_id: apunte.id,
-          materia,
-          autor: userId,
-          fecha: new Date().toISOString(),
-        },
-      },
-    ])
+    // Si existen claves configuradas de Pinecone, sincronizar de fondo de forma opcional
+    if (config.pineconeApiKey && process.env.OPENAI_API_KEY) {
+      try {
+        const index = getPineconeIndex()
+        const embedding = await getEmbedding(`${titulo} ${texto || ''}`)
+        await index.namespace('apuntes').upsert([
+          {
+            id: apunte.id,
+            values: embedding,
+            metadata: {
+              supabase_apunte_id: apunte.id,
+              materia,
+              autor: userId,
+              fecha: new Date().toISOString(),
+            },
+          },
+        ])
+      } catch (e) {
+        console.warn('Índice secundario no disponible:', e.message)
+      }
+    }
 
     res.json(apunte)
   } catch (err) {
@@ -93,21 +98,16 @@ router.get('/buscar', async (req, res) => {
     }
 
     const supabase = getSupabaseClient()
-    const index = getPineconeIndex()
-    const embedding = await getEmbedding(query)
-
-    const results = await index.namespace('apuntes').query({
-      vector: embedding,
-      topK: 5,
-      includeMetadata: true,
-    })
-
-    const apuntes = await supabase
+    const { data: apuntes, error } = await supabase
       .from('apuntes')
       .select('*')
-      .in('id', results.matches.map(m => m.id))
+      .or(`titulo.ilike.%${query}%,texto.ilike.%${query}%,materia.ilike.%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(20)
 
-    res.json({ resultados: results.matches, apuntes: apuntes.data })
+    if (error) throw error
+
+    res.json({ apuntes: apuntes || [] })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
