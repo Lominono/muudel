@@ -8,6 +8,7 @@ export function PantallaInicio() {
     inicioSesion,
     iniciarSesionConEmail,
     registrarseConEmail,
+    entrarComoAdminLominono,
     loginError,
     loginNotice,
     limpiarErrores,
@@ -51,8 +52,8 @@ export function PantallaInicio() {
   const handleAccesoRapido = async (rolElegido) => {
     if (enviando) return
     setEnviando(true)
-    const emailGenerado = rolElegido === 'moderador' ? 'profesor@instituto.es' : 'alumno@instituto.es'
-    const nombreGenerado = rolElegido === 'moderador' ? 'Profesor' : 'Alumno'
+    const emailGenerado = rolElegido === 'moderador' ? 'lominono@instituto.es' : 'alumno@instituto.es'
+    const nombreGenerado = rolElegido === 'moderador' ? 'lominoño' : 'Alumno'
     await registrarseConEmail(emailGenerado, 'password123', nombreGenerado, rolElegido, 'PROFE2026')
     setEnviando(false)
   }
@@ -83,7 +84,7 @@ export function PantallaInicio() {
         }}>
           <img
             src="/logo.png"
-            alt="Racha de Clase"
+            alt="muudel"
             style={{
               width: 80,
               height: 80,
@@ -96,13 +97,37 @@ export function PantallaInicio() {
           />
         </div>
 
-        <h1 className="apple-large-title" style={{ marginBottom: 6, fontSize: 28 }}>
-          Racha de Clase
+        <h1 className="apple-large-title" style={{ marginBottom: 6, fontSize: 34, fontWeight: 800, letterSpacing: -0.8 }}>
+          muudel
         </h1>
 
-        <p className="apple-subheadline" style={{ marginBottom: 22, fontSize: 15 }}>
-          Registro de asistencia, control del aula y racha semanal.
+        <p className="apple-subheadline" style={{ marginBottom: 20, fontSize: 15 }}>
+          Asistencia, control del aula y racha diaria.
         </p>
+
+        {/* Acceso fácil directo para lominoño */}
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={entrarComoAdminLominono}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            marginBottom: 16,
+            gap: 8,
+            backgroundColor: 'rgba(10, 132, 255, 0.1)',
+            color: 'var(--color-accent)',
+            border: '1.5px solid rgba(10, 132, 255, 0.35)',
+            boxShadow: 'none',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <ShieldCheck size={18} />
+          <span>Acceso Administrador (lominoño)</span>
+        </button>
 
         {/* Notificación de éxito o información */}
         {loginNotice && (
@@ -413,14 +438,14 @@ export function PantallaInicio() {
               style={{ fontSize: 13, minHeight: 40, padding: '6px 10px', gap: 6 }}
             >
               <ShieldCheck size={15} />
-              <span>Entrar como Profesor</span>
+              <span>lominoño (Admin)</span>
             </button>
           </div>
 
           {/* Créditos JuanFe */}
           <div style={{ marginTop: 22, paddingTop: 14, borderTop: '0.5px solid var(--color-separator)' }}>
             <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
-              Racha de Clase · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
+              muudel · Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
             </p>
           </div>
         </div>

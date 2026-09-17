@@ -27,7 +27,7 @@ function ContenidoApp() {
       }}>
         <EmblemaRacha size={46} className="flame-animada" />
         <p className="apple-caption" style={{ fontWeight: 500, letterSpacing: 0.2 }}>
-          Cargando Racha de Clase...
+          Cargando muudel...
         </p>
       </div>
     )

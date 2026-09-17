@@ -1,4 +1,4 @@
-# Racha de Clase
+# muudel
 
 Web para tu clase: check-in diario, rachas, puntos, ranking y chat. Sin IA de por medio, diseño Apple.
 

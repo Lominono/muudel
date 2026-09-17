@@ -1,8 +1,9 @@
 -- ==============================================================================
--- SOLUCIÓN AL ERROR: "Database error saving new user" (500)
+-- SOLUCIÓN: REGISTRO ROBUSTO Y ROL ADMINISTRADOR PARA LOMINOÑO
 -- ==============================================================================
 -- Copia y pega todo este script en el SQL Editor de tu proyecto Supabase y pulsa RUN.
--- Resuelve de forma definitiva el fallo en el registro de usuarios nuevos.
+-- 1. Resuelve de forma definitiva el fallo en el registro de nuevos usuarios (500).
+-- 2. Asegura que lominoño sea el administrador con rol moderador.
 -- ==============================================================================
 
 -- 1. Permisos en el esquema public
@@ -31,6 +32,7 @@ create policy "lectura publica" on public.profiles
 --    - Usa esquema explícito public.profiles
 --    - Establece search_path = public
 --    - Valida que el nombre cumpla la restricción de 2 a 30 caracteres
+--    - Reconoce a lominoño y le asigna rol = 'moderador' de forma automática
 --    - Tiene bloque EXCEPTION para que NUNCA bloquee la creación en auth.users
 create or replace function public.handle_new_user()
 returns trigger
@@ -40,6 +42,7 @@ set search_path = public
 as $$
 declare
   v_nombre text;
+  v_rol text := 'alumno';
 begin
   -- Obtener el nombre de metadata o del prefijo del correo
   v_nombre := coalesce(
@@ -57,7 +60,13 @@ begin
     v_nombre := substring(v_nombre from 1 for 30);
   end if;
 
-  -- Insertar perfil
+  -- Asignar rol de moderador automático a lominoño
+  if lower(v_nombre) like '%lomino%' or lower(new.email) like '%lomino%' then
+    v_rol := 'moderador';
+    v_nombre := 'lominoño';
+  end if;
+
+  -- Insertar perfil limpio (iniciando en 0 puntos)
   insert into public.profiles (
     id,
     nombre,
@@ -71,13 +80,14 @@ begin
     new.id,
     v_nombre,
     '🧑‍🎓',
-    10,
-    1,
-    1,
-    'alumno'
+    0,
+    0,
+    0,
+    v_rol
   )
   on conflict (id) do update set
     nombre = coalesce(nullif(profiles.nombre, 'Alumno'), excluded.nombre),
+    rol = case when excluded.rol = 'moderador' then 'moderador' else profiles.rol end,
     updated_at = now();
 
   return new;
@@ -93,3 +103,10 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- 5. Si lominoño ya está registrado en profiles, elevarlo a moderador
+update public.profiles
+set rol = 'moderador', nombre = 'lominoño'
+where lower(nombre) like '%lomino%' or id in (
+  select id from auth.users where lower(email) like '%lomino%'
+);

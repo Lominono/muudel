@@ -41,7 +41,7 @@ export function SelloPresente({ esTarde = false, hora = '' }) {
         textTransform: 'uppercase',
       }}>
         <span>★</span>
-        <span>RACHA DE CLASE</span>
+        <span>MUUDEL</span>
         <span>★</span>
       </div>
 

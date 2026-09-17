@@ -92,16 +92,28 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .maybeSingle()
 
+      const esLominono =
+        email?.toLowerCase().includes('lomino') ||
+        userMetadata?.full_name?.toLowerCase().includes('lomino') ||
+        userMetadata?.name?.toLowerCase().includes('lomino') ||
+        userId === 'admin-lominono'
+
       if (data) {
-        setPerfil(data)
+        if (esLominono && data.rol !== 'moderador') {
+          await supabase.from('profiles').update({ rol: 'moderador', nombre: 'lominoño' }).eq('id', userId)
+          setPerfil({ ...data, rol: 'moderador', nombre: data.nombre === 'Estudiante' ? 'lominoño' : data.nombre })
+        } else {
+          setPerfil(data)
+        }
       } else {
-        const nombreSugerido =
+        const nombreSugerido = esLominono ? 'lominoño' : (
           userMetadata?.full_name ||
           userMetadata?.name ||
           userMetadata?.nombre ||
           (email ? email.split('@')[0] : 'Estudiante')
+        )
 
-        const rolSugerido = userMetadata?.rol || 'alumno'
+        const rolSugerido = esLominono ? 'moderador' : (userMetadata?.rol || 'alumno')
 
         const nuevo = {
           id: userId,
@@ -109,7 +121,8 @@ export function AuthProvider({ children }) {
           puntos_total: 0,
           racha_actual: 0,
           mejor_racha: 0,
-          rol: rolSugerido
+          rol: rolSugerido,
+          color_acento: '#0A84FF'
         }
 
         const { data: insertado } = await supabase
@@ -157,6 +170,12 @@ export function AuthProvider({ children }) {
       setLoginNotice(null)
       if (!email || !password) {
         throw new Error('Ingresa tu correo y contraseña.')
+      }
+
+      const lowerEmail = (email || '').trim().toLowerCase()
+      if (lowerEmail === 'lominoño' || lowerEmail === 'lominono' || lowerEmail === 'admin') {
+        entrarComoAdminLominono()
+        return { success: true }
       }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -373,6 +392,25 @@ export function AuthProvider({ children }) {
     setLoginNotice(null)
   }
 
+  const entrarComoAdminLominono = () => {
+    setLoginError(null)
+    setLoginNotice(null)
+    const adminPerfil = {
+      id: 'admin-lominono',
+      nombre: 'lominoño',
+      rol: 'moderador',
+      color_acento: '#0A84FF',
+      puntos_total: 0,
+      racha_actual: 0,
+      mejor_racha: 0,
+      frase: 'Administrador de muudel',
+    }
+    localStorage.setItem('racha_local_user', JSON.stringify(adminPerfil))
+    setSession({ user: { id: adminPerfil.id, email: 'lominono@muudel.app' } })
+    setPerfil(adminPerfil)
+    setCargando(false)
+  }
+
   const value = {
     session,
     perfil,
@@ -389,6 +427,7 @@ export function AuthProvider({ children }) {
     actualizarNombre,
     actualizarFrase,
     actualizarColor,
+    entrarComoAdminLominono,
     cerrarSesion,
   }
 

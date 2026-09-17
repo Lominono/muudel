@@ -348,8 +348,8 @@ export function PantallaPerfil() {
 
         {/* Créditos de JuanFe */}
         <div style={{ marginTop: 24, textAlign: 'center', paddingBottom: 16 }}>
-          <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-            Racha de Clase
+          <p className="apple-caption" style={{ fontSize: 12, color: 'var(--color-secondary-ink)', fontWeight: 600 }}>
+            muudel
           </p>
           <p className="apple-caption" style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginTop: 2 }}>
             Diseñado y desarrollado por <strong style={{ color: 'var(--color-secondary-ink)', fontWeight: 600 }}>JuanFe</strong>
