@@ -189,7 +189,7 @@ export function PantallaHoy() {
               {fechaHoyTexto}
             </p>
             <h1 className="apple-large-title" style={{ marginTop: 1, fontSize: 32 }}>
-              {esModerador && vistaAdmin ? 'Pase de Lista' : 'Hoy'}
+              Hoy
             </h1>
           </div>
 

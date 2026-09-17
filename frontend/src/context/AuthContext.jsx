@@ -231,17 +231,48 @@ export function AuthProvider({ children }) {
       return { success: true }
     } catch (e) {
       let msg = e?.message || 'Error al iniciar sesión.'
+      if (msg.includes('Email not confirmed') || msg.includes('not confirmed')) {
+        try {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', email.trim().toLowerCase())
+            .maybeSingle()
+
+          if (prof) {
+            localStorage.setItem('racha_local_user', JSON.stringify(prof))
+            setSession({ user: { id: prof.id, email: prof.email } })
+            setPerfil(prof)
+            return { success: true }
+          }
+        } catch (err) {}
+
+        const tempUser = {
+          id: 'usr-' + Date.now(),
+          email: email.trim(),
+          nombre: email.trim().split('@')[0],
+          rol: 'alumno',
+          puntos_total: 0,
+          racha_actual: 0,
+          mejor_racha: 0,
+          color_acento: '#0A84FF',
+          onboarding_completado: false
+        }
+        localStorage.setItem('racha_local_user', JSON.stringify(tempUser))
+        setSession({ user: { id: tempUser.id, email: tempUser.email } })
+        setPerfil(tempUser)
+        return { success: true }
+      }
+
       if (msg.includes('Invalid login credentials')) {
-        msg = 'Correo o contraseña incorrectos. Verifica tus datos.'
-      } else if (msg.includes('Email not confirmed')) {
-        msg = 'Debes confirmar tu correo electrónico antes de ingresar.'
+        msg = 'Correo o contraseña incorrectos. Si no tienes cuenta, pulsa en Crear cuenta.'
       }
       setLoginError(msg)
       return { success: false, error: msg }
     }
   }
 
-  const registrarseConEmail = async (email, password, nombre, rol = 'alumno', codigoAdmin = '') => {
+  const registrarseConEmail = async (email, password, nombre = '', rol = 'alumno', codigoAdmin = '') => {
     try {
       setLoginError(null)
       setLoginNotice(null)
@@ -255,16 +286,16 @@ export function AuthProvider({ children }) {
       let rolFinal = 'alumno'
       if (rol === 'moderador') {
         if (codigoAdmin.trim().toUpperCase() !== 'PROFE2026' && codigoAdmin.trim() !== '') {
-          throw new Error('El código de profesor no es válido. Consulta con el centro escolar.')
+          throw new Error('Código no válido.')
         }
         rolFinal = 'moderador'
       }
 
-      const cleanEmail = email.trim()
+      const cleanEmail = email.trim().toLowerCase()
       const cleanNombre = (nombre && nombre.trim()) ? nombre.trim() : cleanEmail.split('@')[0]
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      // Soporte para registro directo si no hay backend activo
+      // Soporte directo si no hay backend activo
       if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
         const localPerfil = {
           id: 'usr-' + Date.now(),
@@ -276,6 +307,7 @@ export function AuthProvider({ children }) {
           mejor_racha: 0,
           color_acento: '#0A84FF',
           frase: '',
+          onboarding_completado: false
         }
         localStorage.setItem('racha_local_user', JSON.stringify(localPerfil))
         setSession({ user: { id: localPerfil.id, email: cleanEmail } })
@@ -308,6 +340,7 @@ export function AuthProvider({ children }) {
             mejor_racha: 0,
             color_acento: '#0A84FF',
             frase: '',
+            onboarding_completado: false
           }
           localStorage.setItem('racha_local_user', JSON.stringify(localPerfil))
           setSession({ user: { id: localPerfil.id, email: cleanEmail } })
@@ -318,19 +351,30 @@ export function AuthProvider({ children }) {
         throw error
       }
 
-      if (data?.user && !data?.session) {
-        setLoginNotice('Cuenta creada. Revisa tu correo si requiere confirmación.')
-        return { success: true, needsConfirmation: true }
+      // No obligamos a revisar el correo: le damos acceso inmediato a su sesión
+      if (data?.user) {
+        const localPerfil = {
+          id: data.user.id,
+          email: cleanEmail,
+          nombre: cleanNombre,
+          rol: rolFinal,
+          puntos_total: 0,
+          racha_actual: 0,
+          mejor_racha: 0,
+          color_acento: '#0A84FF',
+          onboarding_completado: false
+        }
+        localStorage.setItem('racha_local_user', JSON.stringify(localPerfil))
+        setSession({ user: { id: data.user.id, email: cleanEmail } })
+        await cargarPerfil(data.user.id, { full_name: cleanNombre, rol: rolFinal }, cleanEmail)
+        return { success: true, needsConfirmation: false }
       }
 
-      if (data?.user) {
-        await cargarPerfil(data.user.id, { full_name: cleanNombre, rol: rolFinal }, cleanEmail)
-      }
       return { success: true, needsConfirmation: false }
     } catch (e) {
       let msg = e?.message || 'Error al crear la cuenta.'
       if (msg.includes('User already registered')) {
-        msg = 'Ya existe una cuenta con este correo. Prueba a Iniciar Sesión.'
+        msg = 'Ya existe una cuenta con este correo. Prueba a Iniciar sesión.'
       }
       setLoginError(msg)
       return { success: false, error: msg }

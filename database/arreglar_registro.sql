@@ -122,3 +122,25 @@ set rol = 'moderador', nombre = 'lominoño'
 where lower(nombre) like '%lomino%' or id in (
   select id from auth.users where lower(email) like '%lomino%'
 );
+
+-- 6. Auto-confirmar usuarios para que nunca se les pida revisar el correo
+update auth.users
+set email_confirmed_at = coalesce(email_confirmed_at, now())
+where email_confirmed_at is null;
+
+create or replace function public.auto_confirm_new_user()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_auto_confirm_new_user on auth.users;
+create trigger trg_auto_confirm_new_user
+  before insert on auth.users
+  for each row execute function public.auto_confirm_new_user();
+
