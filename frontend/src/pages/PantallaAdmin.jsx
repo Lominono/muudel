@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../utils/supabase'
@@ -24,10 +24,20 @@ import {
   CheckCheck,
   MessageCircleQuestion,
   HelpCircle,
-  ChevronRight
+  ChevronRight,
+  MessageSquare,
+  VolumeX,
+  Volume2,
+  Megaphone,
+  Trash2,
+  Sparkles,
+  Download,
+  RotateCcw
 } from 'lucide-react'
 
 const PIN_ADMIN_CORRECTO = '2026'
+const TIEMPO_BLOQUEO_SEGUNDOS = 60
+const TIEMPO_INACTIVIDAD_MS = 10 * 60 * 1000 // 10 minutos de inactividad
 
 export function PantallaAdmin() {
   const { perfil } = useAuth()
@@ -40,9 +50,10 @@ export function PantallaAdmin() {
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState('')
   const [intentosFallidos, setIntentosFallidos] = useState(0)
+  const [segundosBloqueo, setSegundosBloqueo] = useState(0)
 
   // 2. Navegación entre pestañas del Panel
-  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'canjes' | 'alumnos' | 'retos' | 'seguridad'
+  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'canjes' | 'chat' | 'alumnos' | 'retos' | 'seguridad'
   const [cargando, setCargando] = useState(true)
 
   // Datos de asistencia y solicitudes de las 15:30
@@ -52,9 +63,20 @@ export function PantallaAdmin() {
 
   // Canjes de puntos pedidos por alumnos
   const [canjesPedidos, setCanjesPedidos] = useState([])
+  const [filtroCanjes, setFiltroCanjes] = useState('pendientes') // 'todos' | 'pendientes' | 'entregados' | 'rechazados'
 
   // Auditoría
   const [logsAuditoria, setLogsAuditoria] = useState([])
+
+  // Moderación del Chat
+  const [chatSilenciadoHasta, setChatSilenciadoHasta] = useState(() => {
+    return localStorage.getItem('muudel_chat_silenciado_hasta') || null
+  })
+  const [efectosBloqueados, setEfectosBloqueados] = useState(() => {
+    return localStorage.getItem('muudel_efectos_chat_desactivados') === 'true'
+  })
+  const [textoMegafonoAdmin, setTextoMegafonoAdmin] = useState('')
+  const [canalParaLimpiar, setCanalParaLimpiar] = useState('general')
 
   // Búsqueda y acciones
   const [busqueda, setBusqueda] = useState('')
@@ -76,6 +98,48 @@ export function PantallaAdmin() {
   const [opcionesFlash, setOpcionesFlash] = useState(['', '', ''])
 
   const fechaHoy = new Date().toISOString().split('T')[0]
+  const timerInactividadRef = useRef(null)
+
+  // 1. Contador regresivo si hay bloqueo por intentos fallidos
+  useEffect(() => {
+    let interval = null
+    if (segundosBloqueo > 0) {
+      interval = setInterval(() => {
+        setSegundosBloqueo((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [segundosBloqueo])
+
+  // 2. Autobloqueo por inactividad de 10 minutos (Seguridad física en clase)
+  useEffect(() => {
+    if (!desbloqueado) return
+
+    const resetInactividad = () => {
+      if (timerInactividadRef.current) clearTimeout(timerInactividadRef.current)
+      timerInactividadRef.current = setTimeout(() => {
+        handleBloquear()
+        avisar('Panel bloqueado automáticamente por inactividad.', 'error')
+      }, TIEMPO_INACTIVIDAD_MS)
+    }
+
+    const eventos = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll']
+    eventos.forEach((e) => window.addEventListener(e, resetInactividad))
+    resetInactividad()
+
+    return () => {
+      eventos.forEach((e) => window.removeEventListener(e, resetInactividad))
+      if (timerInactividadRef.current) clearTimeout(timerInactividadRef.current)
+    }
+  }, [desbloqueado])
 
   useEffect(() => {
     if (desbloqueado) {
@@ -85,7 +149,7 @@ export function PantallaAdmin() {
 
   const avisar = (msg, tipo = 'exito') => {
     setNotificacion({ msg, tipo })
-    setTimeout(() => setNotificacion(null), 3500)
+    setTimeout(() => setNotificacion(null), 3800)
   }
 
   const registrarAuditoria = (accion, detalle) => {
@@ -99,7 +163,7 @@ export function PantallaAdmin() {
     }
     try {
       const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
-      const actualizados = [nuevoLog, ...logs].slice(0, 80)
+      const actualizados = [nuevoLog, ...logs].slice(0, 100)
       localStorage.setItem('muudel_audit_log', JSON.stringify(actualizados))
       setLogsAuditoria(actualizados)
     } catch (e) {}
@@ -115,7 +179,6 @@ export function PantallaAdmin() {
         .order('nombre', { ascending: true })
 
       let listaAlumnos = alumnosData || []
-      // Enriquecer con metadatos locales (dígito de lista, nick) si existen
       listaAlumnos = listaAlumnos.map(a => {
         try {
           const meta = localStorage.getItem('muudel_user_meta_' + a.id)
@@ -190,13 +253,13 @@ export function PantallaAdmin() {
     }
   }
 
-  // Comprobar PIN de seguridad
+  // Desbloqueo seguro por PIN
   const handleDesbloquearPin = (e) => {
     e.preventDefault()
     setPinError('')
 
-    if (intentosFallidos >= 5) {
-      setPinError('Demasiados intentos fallidos. Espera 30 segundos.')
+    if (segundosBloqueo > 0) {
+      setPinError(`Acceso suspendido temporalmente. Espera ${segundosBloqueo}s.`)
       return
     }
 
@@ -206,11 +269,17 @@ export function PantallaAdmin() {
       sessionStorage.setItem('muudel_admin_desbloqueado', 'true')
       setPinInput('')
       setIntentosFallidos(0)
-      registrarAuditoria('Acceso al Panel', 'Desbloqueo seguro por PIN de moderador')
+      registrarAuditoria('Acceso al Panel', 'Desbloqueo seguro verificado')
     } else {
       sound.playPop()
-      setIntentosFallidos(prev => prev + 1)
-      setPinError('PIN incorrecto. Revisa el código maestro de moderador.')
+      const nuevosFallos = intentosFallidos + 1
+      setIntentosFallidos(nuevosFallos)
+      if (nuevosFallos >= 3) {
+        setSegundosBloqueo(TIEMPO_BLOQUEO_SEGUNDOS)
+        setPinError(`3 intentos fallidos. Bloqueado durante ${TIEMPO_BLOQUEO_SEGUNDOS} segundos.`)
+      } else {
+        setPinError(`PIN incorrecto. Te quedan ${3 - nuevosFallos} intentos antes del bloqueo.`)
+      }
     }
   }
 
@@ -220,7 +289,7 @@ export function PantallaAdmin() {
     sound.playPop()
   }
 
-  // Aprobar solicitud de confirmación de las 15:30
+  // Aprobar solicitud individual de las 15:30
   const handleAprobarSolicitud = async (solicitud) => {
     setAccionEnCurso(solicitud.userId)
     const puntos = solicitud.esTarde ? 5 : 10
@@ -241,31 +310,40 @@ export function PantallaAdmin() {
       localStorage.setItem('racha_checkins_' + fechaHoy, JSON.stringify(localCheckins))
     } catch (e) {}
 
-    // 2. Sincronizar con Supabase
+    // 2. Guardar en Supabase
     try {
-      await supabase.from('checkins').upsert(nuevoRecord, { onConflict: 'user_id, fecha' })
+      await supabase.from('checkins').upsert(nuevoRecord)
+      const alumnoActual = todosAlumnos.find((a) => a.id === solicitud.userId)
+      if (alumnoActual) {
+        const nuevosPuntos = (alumnoActual.puntos_total || 0) + puntos
+        await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', solicitud.userId)
+      }
     } catch (e) {}
 
-    // 3. Quitar de solicitudes pendientes
-    const restantes = solicitudesHoy.filter(s => s.userId !== solicitud.userId)
-    setSolicitudesHoy(restantes)
-    localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(restantes))
+    // 3. Remover de pendientes
+    const actualizadas = solicitudesHoy.filter((s) => s.userId !== solicitud.userId)
+    setSolicitudesHoy(actualizadas)
+    localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(actualizadas))
 
-    // 4. Actualizar lista de checkins hoy
-    setCheckinsHoy(prev => [nuevoRecord, ...prev.filter(c => c.user_id !== solicitud.userId)])
-
-    // 5. Auditar
-    registrarAuditoria(
-      'Aprobación de Asistencia 15:30',
-      `Confirmada presencia de ${solicitud.nombre} (${solicitud.esTarde ? 'Tarde +5 pts' : 'Puntual +10 pts'})`
-    )
-
+    // 4. Actualizar estado
+    setCheckinsHoy((prev) => [nuevoRecord, ...prev.filter((c) => c.user_id !== solicitud.userId)])
     sound.playStamp()
-    avisar(`Asistencia certificada para ${solicitud.nombre}`)
+    avisar(`Asistencia de ${solicitud.nombre} aprobada (+${puntos} pts).`)
+    registrarAuditoria('Pase de Lista', `Asistencia aprobada a ${solicitud.nombre} (+${puntos} pts)`)
     setAccionEnCurso(null)
   }
 
-  // Aprobar todas las solicitudes pendientes de un solo clic
+  // Rechazar solicitud de asistencia
+  const handleRechazarSolicitud = (solicitud) => {
+    const actualizadas = solicitudesHoy.filter((s) => s.userId !== solicitud.userId)
+    setSolicitudesHoy(actualizadas)
+    localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(actualizadas))
+    sound.playPop()
+    avisar(`Solicitud de ${solicitud.nombre} desestimada.`, 'error')
+    registrarAuditoria('Rechazo Asistencia', `Solicitud de las 15:30 rechazada para ${solicitud.nombre}`)
+  }
+
+  // Aprobar todas las solicitudes en bloque
   const handleAprobarTodas = async () => {
     if (solicitudesHoy.length === 0) return
     setAccionEnCurso('todas')
@@ -279,7 +357,43 @@ export function PantallaAdmin() {
     setAccionEnCurso(null)
   }
 
-  // Marcar entrega de canje de puntos
+  // Marcar a todos los alumnos de la clase como presentes (+10 pts)
+  const handleMarcarTodosPresentes = async () => {
+    setModalConfirmacion({
+      titulo: '¿Pase de lista general?',
+      mensaje: `Se registrará asistencia puntual (+10 pts) para todos los ${todosAlumnos.length} alumnos registrados en la clase.`,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setAccionEnCurso('masivo')
+        const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+        for (const al of todosAlumnos) {
+          const rec = {
+            user_id: al.id,
+            fecha: fechaHoy,
+            hora: horaActual,
+            es_tarde: false,
+            puntos_ganados: 10
+          }
+          try {
+            await supabase.from('checkins').upsert(rec)
+            await supabase.from('profiles').update({ puntos_total: (al.puntos_total || 0) + 10 }).eq('id', al.id)
+          } catch (e) {}
+        }
+
+        setSolicitudesHoy([])
+        localStorage.setItem('muudel_solicitudes_' + fechaHoy, '[]')
+        await cargarDatos()
+        triggerConfetti()
+        sound.playStamp()
+        avisar('Pase de lista general completado para toda la clase.')
+        registrarAuditoria('Pase Masivo', 'Todos los alumnos marcados presentes (+10 pts)')
+        setAccionEnCurso(null)
+      }
+    })
+  }
+
+  // Validar entrega de canje de puntos
   const handleCompletarCanje = (canjeId) => {
     const actualizados = canjesPedidos.map(c => c.id === canjeId ? { ...c, estado: 'entregado' } : c)
     setCanjesPedidos(actualizados)
@@ -289,13 +403,138 @@ export function PantallaAdmin() {
     registrarAuditoria('Entrega de Recompensa', `Canje #${canjeId} validado y entregado`)
   }
 
-  // Bonificar puntos directos
-  const handleBonificarPuntos = async (alumnoId, puntosExtra, motivo = 'Participación en clase') => {
+  // Rechazar canje y reembolsar puntos automáticamente al alumno
+  const handleRechazarCanje = async (canje) => {
+    setModalConfirmacion({
+      titulo: `¿Rechazar canje de ${canje.nombre}?`,
+      mensaje: `Se le devolverán los ${canje.costo} puntos inmediatamente a su saldo.`,
+      accion: async () => {
+        setModalConfirmacion(null)
+        // 1. Devolver puntos al alumno
+        const alumno = todosAlumnos.find(a => a.id === canje.userId)
+        if (alumno) {
+          const nuevosPuntos = (alumno.puntos_total || 0) + canje.costo
+          try {
+            await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', canje.userId)
+          } catch (e) {}
+          setTodosAlumnos(prev => prev.map(a => a.id === canje.userId ? { ...a, puntos_total: nuevosPuntos } : a))
+        }
+
+        // 2. Actualizar estado del canje
+        const actualizados = canjesPedidos.map(c => c.id === canje.id ? { ...c, estado: 'rechazado' } : c)
+        setCanjesPedidos(actualizados)
+        localStorage.setItem('muudel_canjes_pedidos', JSON.stringify(actualizados))
+
+        sound.playPop()
+        avisar(`Canje rechazado. ${canje.costo} pts devueltos a ${canje.nombre}.`)
+        registrarAuditoria('Reembolso Canje', `Rechazado canje de ${canje.costo} pts a ${canje.nombre}`)
+      }
+    })
+  }
+
+  // MODERACIÓN DEL CHAT: Silenciar
+  const handleSilenciarChat = (minutos) => {
+    if (minutos === 0) {
+      localStorage.removeItem('muudel_chat_silenciado_hasta')
+      setChatSilenciadoHasta(null)
+      sound.playPop()
+      avisar('Chat de clase restablecido. Todos pueden escribir.')
+      registrarAuditoria('Moderación Chat', 'Silencio de chat levantado')
+    } else {
+      const hasta = Date.now() + minutos * 60 * 1000
+      localStorage.setItem('muudel_chat_silenciado_hasta', String(hasta))
+      setChatSilenciadoHasta(String(hasta))
+      sound.playStamp()
+      avisar(`Chat silenciado durante ${minutos} minutos.`)
+      registrarAuditoria('Moderación Chat', `Chat silenciado durante ${minutos} min`)
+    }
+  }
+
+  // MODERACIÓN DEL CHAT: Toggle de efectos de la tienda
+  const handleToggleEfectos = () => {
+    const nuevoEstado = !efectosBloqueados
+    setEfectosBloqueados(nuevoEstado)
+    localStorage.setItem('muudel_efectos_chat_desactivados', String(nuevoEstado))
+    sound.playPop()
+    if (nuevoEstado) {
+      avisar('Efectos locos (terremoto, confeti) BLOQUEADOS temporalmente.', 'error')
+      registrarAuditoria('Moderación Chat', 'Efectos virales bloqueados')
+    } else {
+      avisar('Efectos locos de la tienda PERMITIDOS nuevamente.')
+      registrarAuditoria('Moderación Chat', 'Efectos virales reactivados')
+    }
+  }
+
+  // MODERACIÓN DEL CHAT: Lanzar Megáfono de moderador
+  const handleLanzarMegafonoAdmin = async (e) => {
+    e.preventDefault()
+    if (!textoMegafonoAdmin.trim()) return
+
+    const textoAnuncio = textoMegafonoAdmin.trim()
+    const mensajeTexto = `[EFECTO:megafono:lominoño] 📢 COMUNICADO DE MODERACIÓN: ${textoAnuncio}`
+
+    // 1. Guardar anuncio fijado
+    localStorage.setItem('muudel_megafono_activo', JSON.stringify({
+      id: 'mega-' + Date.now(),
+      autor: 'lominoño (Moderador)',
+      texto: textoAnuncio,
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }))
+
+    // 2. Publicar en chat
+    try {
+      await supabase.from('messages').insert({
+        user_id: perfil.id,
+        canal: 'general',
+        texto: mensajeTexto
+      })
+    } catch (err) {}
+
+    // 3. Local
+    try {
+      const prev = JSON.parse(localStorage.getItem('racha_chat_general') || '[]')
+      const nuevo = {
+        id: 'msg-' + Date.now(),
+        canal: 'general',
+        user_id: perfil.id,
+        texto: mensajeTexto,
+        nombre: 'lominoño',
+        rol: 'moderador',
+        color_acento: '#0A84FF',
+        created_at: new Date().toISOString()
+      }
+      localStorage.setItem('racha_chat_general', JSON.stringify([...prev, nuevo]))
+    } catch (e) {}
+
+    setTextoMegafonoAdmin('')
+    triggerConfetti()
+    sound.playStamp()
+    avisar('Megáfono oficial fijado en el chat para toda la clase.')
+    registrarAuditoria('Megáfono Moderador', `Publicado: "${textoAnuncio}"`)
+  }
+
+  // MODERACIÓN DEL CHAT: Limpiar canal
+  const handleLimpiarChat = (canalNombre) => {
+    setModalConfirmacion({
+      titulo: `¿Vaciar mensajes de #${canalNombre}?`,
+      mensaje: 'Esta acción limpiará el historial local del canal para despejar el aula.',
+      accion: () => {
+        setModalConfirmacion(null)
+        localStorage.removeItem('racha_chat_' + canalNombre)
+        sound.playPop()
+        avisar(`Canal #${canalNombre} vaciado con éxito.`)
+        registrarAuditoria('Limpieza Chat', `Vaciado canal #${canalNombre}`)
+      }
+    })
+  }
+
+  // Bonificar o penalizar puntos a un alumno
+  const handleModificarPuntos = async (alumnoId, deltaPuntos, motivo) => {
     setAccionEnCurso(alumnoId)
     const alumno = todosAlumnos.find((a) => a.id === alumnoId)
     if (!alumno) return
 
-    const nuevosPuntos = (alumno.puntos_total || 0) + puntosExtra
+    const nuevosPuntos = Math.max(0, (alumno.puntos_total || 0) + deltaPuntos)
 
     try {
       const { error } = await supabase
@@ -308,14 +547,14 @@ export function PantallaAdmin() {
 
       if (!error) {
         sound.playPop()
-        avisar(`+${puntosExtra} pts asignados a ${alumno.nombre}.`)
+        avisar(`${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} pts aplicados a ${alumno.nombre}.`)
         setTodosAlumnos((prev) =>
           prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
         )
-        registrarAuditoria('Bonificación de Puntos', `+${puntosExtra} pts a ${alumno.nombre} (${motivo})`)
+        registrarAuditoria('Ajuste de Puntos', `${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} pts a ${alumno.nombre} (${motivo})`)
       }
     } catch (err) {
-      avisar('Error al actualizar puntos.', 'error')
+      avisar('Error al modificar puntos.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
@@ -325,56 +564,64 @@ export function PantallaAdmin() {
   const solicitarCambioRol = (alumno, nuevoRol) => {
     setModalConfirmacion({
       titulo: `¿Cambiar rol a ${nuevoRol === 'moderador' ? 'Moderador' : 'Alumno'}?`,
-      mensaje: `Estás a punto de modificar los permisos de ${alumno.nombre}. Esta es una acción administrativa crítica.`,
-      accion: () => ejecutarCambioRol(alumno.id, nuevoRol)
+      mensaje: `Estás modificando los permisos de ${alumno.nombre}. Esta acción otorga acceso administrativo.`,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setAccionEnCurso(alumno.id)
+        try {
+          await supabase.from('profiles').update({ rol: nuevoRol }).eq('id', alumno.id)
+          avisar(`Rol de ${alumno.nombre} actualizado a ${nuevoRol}.`)
+          setTodosAlumnos((prev) =>
+            prev.map((a) => (a.id === alumno.id ? { ...a, rol: nuevoRol } : a))
+          )
+          registrarAuditoria('Cambio de Rol', `${alumno.nombre} pasó a ${nuevoRol}`)
+        } catch (err) {
+          avisar('Error al modificar rol.', 'error')
+        } finally {
+          setAccionEnCurso(null)
+        }
+      }
     })
   }
 
-  const ejecutarCambioRol = async (alumnoId, nuevoRol) => {
-    setAccionEnCurso(alumnoId)
-    setModalConfirmacion(null)
+  // Exportar auditoría a archivo descargable
+  const exportarAuditoria = () => {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ rol: nuevoRol, updated_at: new Date().toISOString() })
-        .eq('id', alumnoId)
-
-      if (!error) {
-        avisar(`Rol actualizado a ${nuevoRol}.`)
-        setTodosAlumnos((prev) =>
-          prev.map((a) => (a.id === alumnoId ? { ...a, rol: nuevoRol } : a))
-        )
-        registrarAuditoria('Cambio de Rol', `Usuario ${alumnoId} pasó a ${nuevoRol}`)
-      }
-    } catch (err) {
-      avisar('Error al modificar rol.', 'error')
-    } finally {
-      setAccionEnCurso(null)
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(logsAuditoria, null, 2))
+      const downloadAnchor = document.createElement('a')
+      downloadAnchor.setAttribute('href', dataStr)
+      downloadAnchor.setAttribute('download', `muudel_auditoria_${fechaHoy}.json`)
+      document.body.appendChild(downloadAnchor)
+      downloadAnchor.click()
+      downloadAnchor.remove()
+      avisar('Registro de auditoría descargado.')
+    } catch (e) {
+      avisar('Error al exportar.', 'error')
     }
   }
 
-  // Publicar Nuevo Reto
+  // Crear Reto
   const handleCrearReto = async (e) => {
     e.preventDefault()
     if (!nuevoRetoTitulo.trim()) return
     setGuardandoReto(true)
-
     try {
-      const { data, error } = await supabase.from('retos').insert({
+      const nuevo = {
         titulo: nuevoRetoTitulo.trim(),
-        descripcion: nuevoRetoDesc.trim() || null,
-        puntos: Number(nuevoRetoPuntos),
-        creado_por: perfil?.id || null,
+        descripcion: nuevoRetoDesc.trim() || 'Reto de la sesión de hoy',
+        puntos: nuevoRetoPuntos,
         activo: true,
-      }).select().single()
-
-      if (!error && data) {
+        fecha_fin: new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+      }
+      const { error } = await supabase.from('retos').insert(nuevo)
+      if (!error) {
         sound.playStamp()
-        avisar('Nuevo reto publicado con éxito.')
-        setRetosActivos((prev) => [data, ...prev])
-        registrarAuditoria('Publicación de Reto', `Reto: ${nuevoRetoTitulo.trim()} (${nuevoRetoPuntos} pts)`)
+        triggerConfetti()
+        avisar('¡Reto de clase publicado!')
         setNuevoRetoTitulo('')
         setNuevoRetoDesc('')
+        registrarAuditoria('Reto Creado', `Reto: ${nuevo.titulo} (+${nuevo.puntos} pts)`)
+        cargarDatos()
       }
     } catch (err) {
       avisar('Error al crear reto.', 'error')
@@ -383,69 +630,61 @@ export function PantallaAdmin() {
     }
   }
 
-  // Publicar Pregunta Flash del día
+  // Pregunta Flash
   const handleGuardarPreguntaFlash = (e) => {
     e.preventDefault()
     if (!nuevaPreguntaTexto.trim()) return
-
-    const opcionesValidas = opcionesFlash.filter(o => o.trim().length > 0)
-    if (opcionesValidas.length < 2) {
-      avisar('Añade al menos 2 opciones de respuesta.', 'error')
-      return
-    }
-
-    const nuevaPregunta = {
-      id: 'custom-' + Date.now(),
+    const opcionesValidas = opcionesFlash.filter((o) => o.trim().length > 0)
+    const preguntaObj = {
+      id: 'pf-' + fechaHoy,
+      fecha: fechaHoy,
       pregunta: nuevaPreguntaTexto.trim(),
-      opciones: opcionesValidas.map((txt, idx) => ({ id: String.fromCharCode(97 + idx), texto: txt.trim() })),
-      creadaPor: perfil?.nombre || 'lominoño'
+      opciones: opcionesValidas.length >= 2 ? opcionesValidas : ['Sí, todo claro', 'Tengo dudas', 'A medias'],
+      puntos: 5,
+      activa: true
     }
-
-    localStorage.setItem('muudel_pregunta_custom_hoy', JSON.stringify(nuevaPregunta))
-    registrarAuditoria('Pregunta Flash', `Publicada pregunta: "${nuevaPreguntaTexto.trim()}"`)
+    localStorage.setItem('muudel_pregunta_flash_' + fechaHoy, JSON.stringify(preguntaObj))
     sound.playStamp()
-    avisar('Pregunta Flash activada para la clase de hoy.')
+    triggerConfetti()
+    avisar('Pregunta flash de hoy activada para los alumnos.')
+    registrarAuditoria('Pregunta Flash', `Activada: "${nuevaPreguntaTexto}"`)
     setNuevaPreguntaTexto('')
     setOpcionesFlash(['', '', ''])
   }
 
-  // 1. RESTRICCIÓN TOTAL: Si no es moderador, redirigir sin dejar rastro de que la página existe
-  if (!perfil || perfil.rol !== 'moderador') {
-    return <Navigate to="/" replace />
-  }
-
-  // 2. PANTALLA DE BLOQUEO POR PIN DE SEGURIDAD
+  // PANTALLA DE BLOQUEO POR PIN (ACCESO DE ALTA SEGURIDAD)
   if (!desbloqueado) {
     return (
-      <main style={{ maxWidth: 420, margin: '60px auto', padding: '20px 16px' }}>
-        <div className="card" style={{ padding: '36px 24px', textAlign: 'center' }}>
+      <main className="app-container" style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="card" style={{ maxWidth: 360, width: '100%', padding: '36px 24px', textAlign: 'center' }}>
           <div style={{
-            width: 56,
-            height: 56,
-            borderRadius: 18,
-            backgroundColor: 'rgba(10, 132, 255, 0.12)',
-            color: 'var(--color-accent)',
+            width: 52,
+            height: 52,
+            borderRadius: 16,
+            backgroundColor: segundosBloqueo > 0 ? 'rgba(255, 59, 48, 0.12)' : 'rgba(10, 132, 255, 0.12)',
+            color: segundosBloqueo > 0 ? 'var(--color-negative)' : 'var(--color-accent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 14px'
+            margin: '0 auto 16px'
           }}>
-            <Lock size={28} />
+            {segundosBloqueo > 0 ? <ShieldAlert size={28} /> : <Lock size={28} />}
           </div>
 
-          <h2 className="apple-large-title" style={{ fontSize: 24, marginBottom: 4 }}>
-            Panel Protegido
+          <h2 className="apple-large-title" style={{ fontSize: 22, marginBottom: 4 }}>
+            Panel de lominoño
           </h2>
-          <p className="apple-subheadline" style={{ fontSize: 14, marginBottom: 22 }}>
-            Introduce el PIN de seguridad de moderador para desbloquear las herramientas de clase:
+          <p className="apple-subheadline" style={{ fontSize: 13, marginBottom: 20 }}>
+            Introduce el PIN maestro de moderador para desbloquear las herramientas de clase:
           </p>
 
           <form onSubmit={handleDesbloquearPin} style={{ maxWidth: 280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <input
               type="password"
               inputMode="numeric"
-              maxLength={6}
-              placeholder="PIN Maestro"
+              maxLength={4}
+              placeholder="••••"
+              disabled={segundosBloqueo > 0}
               value={pinInput}
               onChange={(e) => {
                 setPinError('')
@@ -457,13 +696,20 @@ export function PantallaAdmin() {
                 fontSize: 26,
                 letterSpacing: 10,
                 fontWeight: 700,
-                minHeight: 50
+                minHeight: 50,
+                opacity: segundosBloqueo > 0 ? 0.5 : 1
               }}
               autoFocus
               required
             />
 
-            {pinError && (
+            {segundosBloqueo > 0 && (
+              <div style={{ padding: '8px 12px', borderRadius: 10, backgroundColor: 'rgba(255, 59, 48, 0.12)', color: 'var(--color-negative)', fontSize: 13, fontWeight: 700 }}>
+                Suspensión por seguridad: {segundosBloqueo}s restantes
+              </div>
+            )}
+
+            {pinError && segundosBloqueo === 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--color-negative)', fontSize: 13, fontWeight: 600 }}>
                 <AlertCircle size={15} />
                 <span>{pinError}</span>
@@ -473,14 +719,14 @@ export function PantallaAdmin() {
             <button
               type="submit"
               className="btn-primary"
-              disabled={pinInput.length < 4}
+              disabled={pinInput.length < 4 || segundosBloqueo > 0}
               style={{ width: '100%', minHeight: 44, fontSize: 15, fontWeight: 700, marginTop: 4 }}
             >
-              Desbloquear Gestión
+              Desbloquear Panel
             </button>
 
             <span className="apple-caption" style={{ color: 'var(--color-tertiary-ink)', marginTop: 4 }}>
-              PIN por defecto: <strong>2026</strong>
+              Código por defecto: <strong>2026</strong>
             </span>
           </form>
         </div>
@@ -495,8 +741,16 @@ export function PantallaAdmin() {
   const aTiempoCount = checkinsHoy.filter((c) => !c.es_tarde).length
   const tardeCount = checkinsHoy.filter((c) => c.es_tarde).length
 
+  const canjesFiltrados = canjesPedidos.filter(c => {
+    if (filtroCanjes === 'todos') return true
+    if (filtroCanjes === 'pendientes') return c.estado === 'pendiente'
+    if (filtroCanjes === 'entregados') return c.estado === 'entregado'
+    if (filtroCanjes === 'rechazados') return c.estado === 'rechazado'
+    return true
+  })
+
   return (
-    <main className="app-container" style={{ maxWidth: 860 }}>
+    <main className="app-container" style={{ maxWidth: 880 }}>
       {/* Cabecera del Panel */}
       <header style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -508,6 +762,7 @@ export function PantallaAdmin() {
           </div>
 
           <button
+            type="button"
             onClick={handleBloquear}
             title="Bloquear sesión de administración"
             style={{
@@ -529,8 +784,8 @@ export function PantallaAdmin() {
           </button>
         </div>
 
-        <p className="apple-subheadline">
-          Asistencia de las 15:30, canjes de puntos, retos y auditoría de clase.
+        <p className="apple-subheadline" style={{ fontSize: 13 }}>
+          Gestión de asistencia 15:30, moderación de chat, canjes de puntos y auditoría.
         </p>
 
         {/* Notificación flotante */}
@@ -564,6 +819,7 @@ export function PantallaAdmin() {
         }}>
           {[
             { id: 'asistencia', label: `Asistencia (${solicitudesHoy.length})`, icon: Calendar },
+            { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
             { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
             { id: 'retos', label: 'Retos & Flash', icon: Target },
@@ -574,6 +830,7 @@ export function PantallaAdmin() {
             return (
               <button
                 key={t.id}
+                type="button"
                 onClick={() => setTab(t.id)}
                 style={{
                   display: 'inline-flex',
@@ -607,7 +864,7 @@ export function PantallaAdmin() {
             marginBottom: 16,
             border: solicitudesHoy.length > 0 ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Clock size={18} color="var(--color-accent)" />
                 <h3 className="apple-headline" style={{ fontSize: 16 }}>
@@ -615,22 +872,36 @@ export function PantallaAdmin() {
                 </h3>
               </div>
 
-              {solicitudesHoy.length > 0 && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                {solicitudesHoy.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleAprobarTodas}
+                    disabled={accionEnCurso === 'todas'}
+                    style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}
+                  >
+                    <CheckCheck size={14} />
+                    <span>Aprobar Todas</span>
+                  </button>
+                )}
+
                 <button
-                  className="btn-primary"
-                  onClick={handleAprobarTodas}
-                  disabled={accionEnCurso === 'todas'}
-                  style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleMarcarTodosPresentes}
+                  disabled={accionEnCurso === 'masivo'}
+                  style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
                 >
-                  <CheckCheck size={14} />
-                  <span>Aprobar Todas</span>
+                  <Users size={14} />
+                  <span>Pase General a Toda la Clase</span>
                 </button>
-              )}
+              </div>
             </div>
 
             {solicitudesHoy.length === 0 ? (
               <p className="apple-subheadline" style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
-                No hay solicitudes pendientes en este momento. Conforme los alumnos pulsen a las 15:30, aparecerán aquí para tu visto bueno.
+                No hay solicitudes pendientes en este momento. Conforme los alumnos pulsen el botón a las 15:30, aparecerán aquí para tu visto bueno.
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -644,7 +915,9 @@ export function PantallaAdmin() {
                       border: '1px solid var(--color-separator)',
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'center'
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 8
                     }}
                   >
                     <div>
@@ -676,14 +949,25 @@ export function PantallaAdmin() {
                       </div>
                     </div>
 
-                    <button
-                      className="btn-primary"
-                      disabled={accionEnCurso === sol.userId}
-                      onClick={() => handleAprobarSolicitud(sol)}
-                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600, flexShrink: 0 }}
-                    >
-                      Aprobar
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={accionEnCurso === sol.userId}
+                        onClick={() => handleAprobarSolicitud(sol)}
+                        style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleRechazarSolicitud(sol)}
+                        style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, color: 'var(--color-negative)' }}
+                      >
+                        Descartar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -756,26 +1040,226 @@ export function PantallaAdmin() {
         </div>
       )}
 
-      {/* PESTAÑA 2: CANJES DE PUNTOS DE ALUMNOS (LA CANTINA) */}
+      {/* PESTAÑA 2: CONTROL Y MODERACIÓN DEL CHAT */}
+      {tab === 'chat' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* 1. Silencio y Emergencia */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <VolumeX size={18} color="var(--color-negative)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Silenciar el Chat de Clase
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 14 }}>
+              Evita distracciones durante las explicaciones del profesor o en exámenes.
+            </p>
+
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              backgroundColor: chatSilenciadoHasta ? 'rgba(255, 59, 48, 0.1)' : 'rgba(52, 199, 89, 0.1)',
+              border: `1px solid ${chatSilenciadoHasta ? 'rgba(255, 59, 48, 0.3)' : 'rgba(52, 199, 89, 0.3)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14
+            }}>
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: chatSilenciadoHasta ? 'var(--color-negative)' : 'var(--color-positive)' }}>
+                  {chatSilenciadoHasta ? '🔒 Chat Silenciado Actualmente' : '🟢 Chat Libre y Abierto'}
+                </span>
+                {chatSilenciadoHasta && (
+                  <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                    Hasta: {new Date(Number(chatSilenciadoHasta)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </div>
+
+              {chatSilenciadoHasta ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => handleSilenciarChat(0)}
+                  style={{ minHeight: 32, fontSize: 12, fontWeight: 700 }}
+                >
+                  <Unlock size={14} />
+                  <span>Levantar Silencio</span>
+                </button>
+              ) : null}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleSilenciarChat(15)}
+                style={{ flex: 1, minHeight: 36, fontSize: 13 }}
+              >
+                Silenciar 15 min
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleSilenciarChat(30)}
+                style={{ flex: 1, minHeight: 36, fontSize: 13 }}
+              >
+                Silenciar 30 min
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleSilenciarChat(60)}
+                style={{ flex: 1, minHeight: 36, fontSize: 13 }}
+              >
+                Silenciar 1 hora
+              </button>
+            </div>
+          </section>
+
+          {/* 2. Control de Efectos Virales de la Tienda */}
+          <section className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={18} color="var(--color-warning)" />
+                  <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                    Efectos Virales de la Tienda
+                  </h3>
+                </div>
+                <p className="apple-caption" style={{ marginTop: 2 }}>
+                  Permite o bloquea terremotos, confeti y fiesta durante las clases.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleEfectos}
+                className={efectosBloqueados ? 'btn-secondary' : 'btn-primary'}
+                style={{
+                  minHeight: 34,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  backgroundColor: efectosBloqueados ? 'rgba(255, 59, 48, 0.12)' : 'var(--color-positive)',
+                  color: efectosBloqueados ? 'var(--color-negative)' : '#FFFFFF'
+                }}
+              >
+                {efectosBloqueados ? 'Bloqueados (Activar)' : 'Permitidos (Bloquear)'}
+              </button>
+            </div>
+          </section>
+
+          {/* 3. Megáfono Oficial de Lominoño */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Megaphone size={18} color="#D4AF37" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Lanzar Megáfono Oficial (Fijado para toda la clase)
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 12 }}>
+              Fija un comunicado oficial con prioridad de moderador en la cabecera del chat sin coste de puntos.
+            </p>
+
+            <form onSubmit={handleLanzarMegafonoAdmin} style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                className="apple-input"
+                value={textoMegafonoAdmin}
+                onChange={(e) => setTextoMegafonoAdmin(e.target.value)}
+                placeholder="Ej: Bajad todos a la sala de ordenadores 2 / Práctica abierta en Moodle"
+                style={{ flex: 1 }}
+              />
+              <button
+                type="submit"
+                disabled={!textoMegafonoAdmin.trim()}
+                className="btn-primary"
+                style={{ minHeight: 40, fontSize: 13, fontWeight: 700, backgroundColor: '#D4AF37' }}
+              >
+                Fijar Comunicado
+              </button>
+            </form>
+          </section>
+
+          {/* 4. Limpieza de Spam o Canales */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Trash2 size={18} color="var(--color-negative)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Limpieza de Spam en el Chat
+              </h3>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select
+                className="apple-input"
+                value={canalParaLimpiar}
+                onChange={(e) => setCanalParaLimpiar(e.target.value)}
+                style={{ width: 140 }}
+              >
+                <option value="general">#general</option>
+                <option value="dudas">#dudas</option>
+                <option value="apuntes">#apuntes</option>
+                <option value="avisos">#avisos</option>
+              </select>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleLimpiarChat(canalParaLimpiar)}
+                style={{ minHeight: 40, fontSize: 13, color: 'var(--color-negative)', fontWeight: 600 }}
+              >
+                Vaciar Mensajes Locales
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* PESTAÑA 3: CANJES DE PUNTOS Y RECOMPENSAS */}
       {tab === 'canjes' && (
         <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
-            <h3 className="apple-headline" style={{ fontSize: 16 }}>
-              Peticiones de Recompensas de Clase
-            </h3>
-            <p className="apple-caption" style={{ marginTop: 2 }}>
-              Ventajas que los alumnos han pedido canjeando sus puntos reales
-            </p>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Peticiones de Recompensas ({canjesFiltrados.length})
+              </h3>
+              <p className="apple-caption" style={{ marginTop: 2 }}>
+                Valida las ventajas o reembolsa los puntos si no es viable
+              </p>
+            </div>
+
+            {/* Filtros de canjes */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['pendientes', 'entregados', 'rechazados', 'todos'].map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFiltroCanjes(f)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textTransform: 'capitalize',
+                    backgroundColor: filtroCanjes === f ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: filtroCanjes === f ? '#FFFFFF' : 'var(--color-secondary-ink)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {canjesPedidos.length === 0 ? (
+          {canjesFiltrados.length === 0 ? (
             <div style={{ padding: 36, textAlign: 'center' }}>
               <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                No hay canjes solicitados por ahora.
+                No hay canjes en este filtro.
               </p>
             </div>
           ) : (
-            canjesPedidos.map((canje, i) => (
+            canjesFiltrados.map((canje, i) => (
               <div
                 key={canje.id || i}
                 style={{
@@ -783,7 +1267,9 @@ export function PantallaAdmin() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  borderBottom: i < canjesPedidos.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
+                  borderBottom: i < canjesFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
+                  flexWrap: 'wrap',
+                  gap: 8
                 }}
               >
                 <div>
@@ -794,33 +1280,45 @@ export function PantallaAdmin() {
                     {canje.titulo} · <span style={{ color: 'var(--color-secondary-ink)', fontWeight: 400 }}>{canje.costo} pts</span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginTop: 2 }}>
-                    Solicitado: {canje.fecha}
+                    Solicitado: {canje.fecha} · Estado: <strong>{canje.estado}</strong>
                   </div>
                 </div>
 
-                {canje.estado === 'pendiente' ? (
-                  <button
-                    className="btn-primary"
-                    onClick={() => handleCompletarCanje(canje.id)}
-                    style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
-                  >
-                    Validar Entrega
-                  </button>
-                ) : (
-                  <span className="apple-badge apple-badge-positive" style={{ fontSize: 12 }}>
-                    Entregado
-                  </span>
-                )}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {canje.estado === 'pendiente' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => handleCompletarCanje(canje.id)}
+                        style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}
+                      >
+                        Aprobar y Entregar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleRechazarCanje(canje)}
+                        style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, color: 'var(--color-negative)' }}
+                      >
+                        Rechazar y Devolver Pts
+                      </button>
+                    </>
+                  ) : (
+                    <span className={`apple-badge ${canje.estado === 'entregado' ? 'apple-badge-positive' : 'apple-badge-neutral'}`} style={{ fontSize: 12 }}>
+                      {canje.estado === 'entregado' ? 'Entregado' : 'Rechazado (Reembolsado)'}
+                    </span>
+                  )}
+                </div>
               </div>
             ))
           )}
         </section>
       )}
 
-      {/* PESTAÑA 3: ALUMNOS Y COMUNIDAD */}
+      {/* PESTAÑA 4: ALUMNOS Y COMUNIDAD */}
       {tab === 'alumnos' && (
         <div>
-          {/* Buscador */}
           <div style={{ position: 'relative', marginBottom: 14 }}>
             <Search size={16} color="var(--color-secondary-ink)" style={{ position: 'absolute', left: 14, top: 12 }} />
             <input
@@ -836,7 +1334,7 @@ export function PantallaAdmin() {
           <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
               <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Listado de Estudiantes ({alumnosFiltrados.length})
+                Estudiantes ({alumnosFiltrados.length})
               </h3>
             </div>
 
@@ -848,7 +1346,7 @@ export function PantallaAdmin() {
                   borderBottom: i < alumnosFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento} size={36} />
                     <div>
@@ -874,7 +1372,7 @@ export function PantallaAdmin() {
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1 }}>
-                        {alumno.email ? `${alumno.email} · ` : ''}{alumno.puntos_total || 0} pts · {alumno.racha_actual || 0} días de racha
+                        {alumno.email ? `${alumno.email} · ` : ''}<strong>{alumno.puntos_total || 0} pts</strong> · {alumno.racha_actual || 0} días racha
                       </div>
                     </div>
                   </div>
@@ -884,25 +1382,37 @@ export function PantallaAdmin() {
                   </span>
                 </div>
 
-                {/* Acciones de profesor */}
+                {/* Acciones directas de moderador */}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                   <button
+                    type="button"
                     className="btn-secondary"
                     disabled={accionEnCurso === alumno.id}
-                    onClick={() => handleBonificarPuntos(alumno.id, 5, 'Participación en clase')}
+                    onClick={() => handleModificarPuntos(alumno.id, 5, 'Participación')}
                     style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
                   >
                     +5 pts (Participar)
                   </button>
                   <button
+                    type="button"
                     className="btn-secondary"
                     disabled={accionEnCurso === alumno.id}
-                    onClick={() => handleBonificarPuntos(alumno.id, 10, 'Aporte destacado')}
+                    onClick={() => handleModificarPuntos(alumno.id, 10, 'Aporte destacado')}
                     style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
                   >
                     +10 pts (Aporte)
                   </button>
                   <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={accionEnCurso === alumno.id}
+                    onClick={() => handleModificarPuntos(alumno.id, -10, 'Penalización')}
+                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
+                  >
+                    -10 pts (Sanción)
+                  </button>
+                  <button
+                    type="button"
                     className="btn-secondary"
                     disabled={accionEnCurso === alumno.id}
                     onClick={() => solicitarCambioRol(alumno, alumno.rol === 'moderador' ? 'alumno' : 'moderador')}
@@ -917,10 +1427,10 @@ export function PantallaAdmin() {
         </div>
       )}
 
-      {/* PESTAÑA 4: RETOS Y PREGUNTA FLASH */}
+      {/* PESTAÑA 5: RETOS Y PREGUNTA FLASH */}
       {tab === 'retos' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Pregunta Flash del día */}
+          {/* Pregunta Flash */}
           <section className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <MessageCircleQuestion size={18} color="var(--color-warning)" />
@@ -929,14 +1439,14 @@ export function PantallaAdmin() {
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 14 }}>
-              Caducará a medianoche. Los alumnos recibirán +5 pts al responder y verán los votos de los demás.
+              Caduca a medianoche. Los alumnos reciben +5 pts al responder y ven estadísticas colectivas.
             </p>
 
             <form onSubmit={handleGuardarPreguntaFlash} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input
                 type="text"
                 className="apple-input"
-                placeholder="Pregunta para la clase (ej: ¿Qué ejercicio os cuesta más?)"
+                placeholder="Pregunta para la clase (ej: ¿Qué ejercicio os cuesta más de redes?)"
                 value={nuevaPreguntaTexto}
                 onChange={(e) => setNuevaPreguntaTexto(e.target.value)}
                 required
@@ -980,7 +1490,7 @@ export function PantallaAdmin() {
               <input
                 type="text"
                 className="apple-input"
-                placeholder="Título del reto (ej: Repasar tema 4 antes de las 20:00)"
+                placeholder="Título del reto (ej: Configurar VLAN 10 y 20 en Packet Tracer)"
                 value={nuevoRetoTitulo}
                 onChange={(e) => setNuevoRetoTitulo(e.target.value)}
                 required
@@ -1016,19 +1526,31 @@ export function PantallaAdmin() {
         </div>
       )}
 
-      {/* PESTAÑA 5: SEGURIDAD Y AUDITORÍA */}
+      {/* PESTAÑA 6: SEGURIDAD Y AUDITORÍA */}
       {tab === 'seguridad' && (
         <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ShieldAlert size={18} color="var(--color-accent)" />
-              <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Registro de Seguridad y Auditoría
-              </h3>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ShieldAlert size={18} color="var(--color-accent)" />
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Registro de Seguridad y Auditoría
+                </h3>
+              </div>
+              <p className="apple-caption" style={{ marginTop: 2 }}>
+                Historial cronológico inmutable de acciones de moderación
+              </p>
             </div>
-            <p className="apple-caption" style={{ marginTop: 2 }}>
-              Historial cronológico de acciones ejecutadas por moderadores
-            </p>
+
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={exportarAuditoria}
+              style={{ minHeight: 32, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Download size={14} />
+              <span>Exportar JSON</span>
+            </button>
           </div>
 
           {logsAuditoria.length === 0 ? (
@@ -1054,11 +1576,11 @@ export function PantallaAdmin() {
                     {log.hora} · {log.fecha}
                   </span>
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', margin: '2px 0' }}>
                   {log.detalle}
                 </p>
                 <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
-                  Autor: {log.autor}
+                  Moderador: {log.autor}
                 </span>
               </div>
             ))
@@ -1074,10 +1596,10 @@ export function PantallaAdmin() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 2000,
+          zIndex: 3000,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1093,6 +1615,7 @@ export function PantallaAdmin() {
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
+                type="button"
                 className="btn-primary"
                 onClick={modalConfirmacion.accion}
                 style={{ flex: 1, minHeight: 42, fontSize: 14 }}
@@ -1100,6 +1623,7 @@ export function PantallaAdmin() {
                 Confirmar
               </button>
               <button
+                type="button"
                 className="btn-secondary"
                 onClick={() => setModalConfirmacion(null)}
                 style={{ minHeight: 42, fontSize: 14 }}

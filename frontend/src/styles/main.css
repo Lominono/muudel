@@ -505,5 +505,65 @@ h3.apple-headline {
   }
 }
 
+/* Efectos virales del Chat de Clase */
+@keyframes screenShake {
+  0% { transform: translate(0px, 0px) rotate(0deg); }
+  10% { transform: translate(-3px, -2px) rotate(-0.5deg); }
+  20% { transform: translate(4px, 2px) rotate(0.8deg); }
+  30% { transform: translate(-4px, 3px) rotate(-0.8deg); }
+  40% { transform: translate(3px, -2px) rotate(0.5deg); }
+  50% { transform: translate(-3px, 2px) rotate(-0.5deg); }
+  60% { transform: translate(4px, -1px) rotate(0.6deg); }
+  70% { transform: translate(-2px, -3px) rotate(-0.6deg); }
+  80% { transform: translate(2px, 3px) rotate(0.4deg); }
+  90% { transform: translate(-1px, 2px) rotate(-0.2deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
+}
+
+.chat-screen-shake {
+  animation: screenShake 0.4s infinite ease-in-out;
+}
+
+@keyframes partyGlow {
+  0% {
+    box-shadow: 0 0 16px rgba(255, 59, 48, 0.4), inset 0 0 12px rgba(255, 149, 0, 0.2);
+    border-color: rgba(255, 59, 48, 0.6) !important;
+  }
+  25% {
+    box-shadow: 0 0 22px rgba(10, 132, 255, 0.5), inset 0 0 14px rgba(48, 209, 88, 0.25);
+    border-color: rgba(10, 132, 255, 0.7) !important;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(175, 82, 222, 0.6), inset 0 0 16px rgba(255, 214, 10, 0.3);
+    border-color: rgba(175, 82, 222, 0.7) !important;
+  }
+  75% {
+    box-shadow: 0 0 20px rgba(52, 199, 89, 0.5), inset 0 0 12px rgba(10, 132, 255, 0.25);
+    border-color: rgba(52, 199, 89, 0.6) !important;
+  }
+  100% {
+    box-shadow: 0 0 16px rgba(255, 59, 48, 0.4), inset 0 0 12px rgba(255, 149, 0, 0.2);
+    border-color: rgba(255, 59, 48, 0.6) !important;
+  }
+}
+
+.chat-party-mode {
+  animation: partyGlow 1.2s infinite ease-in-out;
+}
+
+/* Tarjeta de Megáfono fijado en el Chat */
+.chat-megaphone-pinned {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background-color: rgba(255, 149, 0, 0.09);
+  border: 1px solid rgba(255, 149, 0, 0.35);
+  margin-bottom: 10px;
+  animation: fadeIn 0.25s ease;
+}
+
 
 
