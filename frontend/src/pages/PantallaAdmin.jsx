@@ -496,7 +496,7 @@ export function PantallaAdmin() {
   const tardeCount = checkinsHoy.filter((c) => c.es_tarde).length
 
   return (
-    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 50px' }}>
+    <main className="app-container" style={{ maxWidth: 860 }}>
       {/* Cabecera del Panel */}
       <header style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>

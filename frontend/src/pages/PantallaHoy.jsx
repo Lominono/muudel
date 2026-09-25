@@ -10,6 +10,8 @@ import { ContadorCierreLista } from '../components/ContadorCierreLista'
 import { MetaAsistenciaAula } from '../components/MetaAsistenciaAula'
 import { PreguntaFlashDia } from '../components/PreguntaFlashDia'
 import { TiendaRecompensas } from '../components/TiendaRecompensas'
+import { ModalHorario } from '../components/ModalHorario'
+import { getClaseActual } from '../utils/horarioData'
 import { supabase, NIVELES } from '../utils/supabase'
 import { sound, triggerConfetti } from '../utils/haptics'
 import {
@@ -18,7 +20,8 @@ import {
   Megaphone,
   ShoppingBag,
   Flame,
-  Zap
+  Zap,
+  Calendar
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
@@ -27,6 +30,7 @@ export function PantallaHoy() {
   const navigate = useNavigate()
   const [ranking, setRanking] = useState([])
   const [mostrarTienda, setMostrarTienda] = useState(false)
+  const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
 
   // Estado de asistencia 15:30
@@ -37,6 +41,7 @@ export function PantallaHoy() {
 
   const contentRef = useRef(null)
   const fechaHoy = new Date().toISOString().split('T')[0]
+  const claseActual = getClaseActual()
 
   useEffect(() => {
     // 1. Cargar aviso diario
@@ -180,7 +185,7 @@ export function PantallaHoy() {
   }
 
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 50px' }}>
+    <main className="app-container">
       {/* Cabecera */}
       <header style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -193,7 +198,7 @@ export function PantallaHoy() {
             </h1>
           </div>
 
-          {/* Botón de la Cantina de Recompensas */}
+          {/* Botones de acción rápida: Canjear puntos y Avatar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={() => setMostrarTienda(true)}
@@ -225,10 +230,86 @@ export function PantallaHoy() {
             />
           </div>
         </div>
-
       </header>
 
       <div ref={contentRef}>
+          {/* Widget de Horario / Clase SMR2 Tarde */}
+          <div className="card" style={{
+            padding: '12px 16px',
+            marginBottom: 16,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-separator)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: claseActual ? (claseActual.colorBg || 'rgba(10, 132, 255, 0.12)') : 'var(--color-fill-secondary)',
+                color: claseActual ? (claseActual.color || 'var(--color-accent)') : 'var(--color-secondary-ink)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Calendar size={18} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="apple-caption" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-secondary-ink)' }}>
+                    Horario SMR2 Tarde
+                  </span>
+                  {claseActual && !claseActual.esDescanso && (
+                    <span style={{
+                      fontSize: 10,
+                      padding: '1px 6px',
+                      borderRadius: 6,
+                      backgroundColor: claseActual.colorBg,
+                      color: claseActual.color,
+                      fontWeight: 800
+                    }}>
+                      EN DIRECTO
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)', marginTop: 1 }}>
+                  {claseActual ? (
+                    claseActual.esDescanso ? 'Descanso de clase (18:10 - 18:35)' : `${claseActual.codigo} · ${claseActual.nombre}`
+                  ) : (
+                    'Tarde 15:30 - 21:15'
+                  )}
+                </div>
+                {claseActual && claseActual.profesor && (
+                  <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                    {claseActual.profesor}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
+              style={{
+                padding: '7px 12px',
+                borderRadius: 10,
+                border: '1px solid var(--color-separator)',
+                backgroundColor: 'var(--color-surface-secondary)',
+                color: 'var(--color-accent)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Ver Horario
+            </button>
+          </div>
+
           {/* Tablón de avisos del profesor */}
           {avisoHoy && (
             <div className="card" style={{
@@ -266,7 +347,7 @@ export function PantallaHoy() {
             <CheckinCard
               userId={perfil.id}
               rol={perfil.rol}
-              onAbrirPanelAdmin={() => setVistaAdmin(true)}
+              onAbrirPanelAdmin={() => navigate('/admin')}
             />
           )}
 
@@ -370,6 +451,13 @@ export function PantallaHoy() {
       {mostrarTienda && (
         <TiendaRecompensas onClose={() => setMostrarTienda(false)} />
       )}
+
+      {/* MODAL DEL HORARIO OFICIAL SMR2 TARDE */}
+      <ModalHorario
+        abierto={mostrarModalHorario}
+        onCerrar={() => setMostrarModalHorario(false)}
+      />
     </main>
   )
 }
+

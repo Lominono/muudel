@@ -53,7 +53,7 @@ export function PantallaChat() {
   }
 
   return (
-    <main style={{ maxWidth: 540, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main className="app-container">
       <header style={{ marginBottom: 16 }}>
         <h1 className="apple-large-title">
           Chat de Clase

@@ -65,7 +65,7 @@ export function PantallaRanking() {
     : 0
 
   return (
-    <main style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 40px' }}>
+    <main className="app-container">
       <header style={{ marginBottom: 18 }}>
         <h1 className="apple-large-title">
           Ranking
