@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../App'
 import { supabase } from '../utils/supabase'
 import { sound, triggerConfetti } from '../utils/haptics'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import {
   Shield,
   Coffee,
@@ -18,12 +19,13 @@ import {
   X,
   ChevronRight,
   Stamp,
-  Award
+  Award,
+  Hourglass
 } from 'lucide-react'
 
-// CATÁLOGO ANTI-IA: Objetos y ventajas tangibles de clase SMR2
+// CATÁLOGO ANTI-IA: Objetos y ventajas con uso por tiempo real
 export const CATALOGO_RECOMPENSAS = [
-  // 1. VENTAJAS DE AULA REALES
+  // 1. VENTAJAS DE AULA CON TIEMPO DE EXPIRACIÓN
   {
     id: 'congelar_racha',
     categoria: 'aula',
@@ -32,6 +34,8 @@ export const CATALOGO_RECOMPENSAS = [
     costo: 45,
     icon: Shield,
     tipo: 'inmediato',
+    duracionMs: 24 * 3600 * 1000,
+    tiempoTexto: 'Duración: 24 horas',
     color: '#007AFF'
   },
   {
@@ -42,16 +46,20 @@ export const CATALOGO_RECOMPENSAS = [
     costo: 80,
     icon: MapPin,
     tipo: 'peticion',
+    duracionMs: 7 * 24 * 3600 * 1000,
+    tiempoTexto: 'Duración: 7 días lectivos',
     color: '#34C759'
   },
   {
     id: 'musica_descanso',
     categoria: 'aula',
     titulo: 'Conectar Altavoz en el Descanso',
-    desc: 'Pones tú la música por Bluetooth en el aula durante los 25 minutos del descanso (18:10).',
+    desc: 'Pones tú la música por Bluetooth en el aula durante el descanso de las 18:10.',
     costo: 60,
     icon: Music,
     tipo: 'peticion',
+    duracionMs: 45 * 60 * 1000,
+    tiempoTexto: 'Válido para el descanso de hoy',
     color: '#FF9500'
   },
   {
@@ -62,6 +70,8 @@ export const CATALOGO_RECOMPENSAS = [
     costo: 100,
     icon: HelpCircle,
     tipo: 'peticion',
+    duracionMs: 5 * 24 * 3600 * 1000,
+    tiempoTexto: 'Válido durante 5 días',
     color: '#FF3B30'
   },
   {
@@ -72,16 +82,20 @@ export const CATALOGO_RECOMPENSAS = [
     costo: 150,
     icon: Coffee,
     tipo: 'peticion',
+    duracionMs: 3 * 24 * 3600 * 1000,
+    tiempoTexto: '3 días para canjear',
     color: '#8E8E93'
   },
   {
     id: 'apodo_lista',
     categoria: 'aula',
     titulo: 'Apodo Oficial en la Lista de Clase',
-    desc: 'Añade tu apodo de clase en el ranking y en cada mensaje del chat.',
+    desc: 'Añade tu apodo de clase en el ranking y en cada mensaje del chat durante 3 días.',
     costo: 50,
     icon: Award,
     tipo: 'seleccionable',
+    duracionMs: 3 * 24 * 3600 * 1000,
+    tiempoTexto: 'Duración: 3 días',
     opciones: [
       'Puntual 15:30',
       'El del Fondo',
@@ -94,15 +108,17 @@ export const CATALOGO_RECOMPENSAS = [
     color: '#FF9500'
   },
 
-  // 2. EFECTOS Y SELLOS FÍSICOS DE CHAT
+  // 2. EFECTOS Y SELLOS CON COOLDOWN (TIEMPO DE RECARGA)
   {
     id: 'sello_tinta_chat',
     categoria: 'chat',
     titulo: 'Estampar Sello de Tinta en el Chat',
-    desc: 'Estampa un sello físico oficial con tampón de tinta [PRESENTE], [VISTO], [DESCANSO] o [APROBADO].',
+    desc: 'Estampa un sello físico oficial [PRESENTE], [VISTO], [DESCANSO] o [APROBADO].',
     costo: 15,
     icon: Stamp,
     tipo: 'selector_sello',
+    cooldownMs: 90 * 1000,
+    tiempoTexto: 'Recarga: 90 segundos',
     color: '#FF3B30'
   },
   {
@@ -114,6 +130,8 @@ export const CATALOGO_RECOMPENSAS = [
     icon: Zap,
     tipo: 'efecto_chat',
     efecto: 'terremoto',
+    cooldownMs: 5 * 60 * 1000,
+    tiempoTexto: 'Recarga: 5 minutos',
     color: '#FF3B30'
   },
   {
@@ -125,17 +143,21 @@ export const CATALOGO_RECOMPENSAS = [
     icon: Sparkles,
     tipo: 'efecto_chat',
     efecto: 'confeti',
+    cooldownMs: 3 * 60 * 1000,
+    tiempoTexto: 'Recarga: 3 minutos',
     color: '#FF9500'
   },
   {
     id: 'megafono_chat',
     categoria: 'chat',
     titulo: 'Aviso Fijado en Tablón de Clase',
-    desc: 'Fija un comunicado en texto plano en la cabecera del chat para que toda la clase lo lea.',
+    desc: 'Fija un comunicado en texto plano en la cabecera del chat visible durante 30 minutos.',
     costo: 35,
     icon: Megaphone,
     tipo: 'efecto_chat_texto',
     efecto: 'megafono',
+    duracionMs: 30 * 60 * 1000,
+    tiempoTexto: 'Fijado durante 30 minutos',
     color: '#007AFF'
   },
   {
@@ -147,6 +169,8 @@ export const CATALOGO_RECOMPENSAS = [
     icon: Clock,
     tipo: 'efecto_chat',
     efecto: 'descanso',
+    cooldownMs: 15 * 60 * 1000,
+    tiempoTexto: 'Recarga: 15 minutos',
     color: '#34C759'
   }
 ]
@@ -157,6 +181,24 @@ export const SELLOS_OFICIALES = [
   { id: 'DESCANSO', etiqueta: 'DESCANSO · 18:10', clase: 'sello-tinta-verde', desc: 'Llamada oficial a la cafetería' },
   { id: 'APROBADO', etiqueta: 'APROBADO SMR2', clase: 'sello-tinta-verde', desc: 'Práctica o reto completado' }
 ]
+
+// Función para calcular y formatear el tiempo restante en vivo
+export function formatearTiempoRestante(timestampExpiracion) {
+  if (!timestampExpiracion) return null
+  const diffMs = timestampExpiracion - Date.now()
+  if (diffMs <= 0) return 'Caducado'
+
+  const totalSegundos = Math.floor(diffMs / 1000)
+  const dias = Math.floor(totalSegundos / (3600 * 24))
+  const horas = Math.floor((totalSegundos % (3600 * 24)) / 3600)
+  const minutos = Math.floor((totalSegundos % 3600) / 60)
+  const segundos = totalSegundos % 60
+
+  if (dias > 0) return `${dias}d ${horas}h restantes`
+  if (horas > 0) return `${horas}h ${minutos}m restantes`
+  if (minutos > 0) return `${minutos}m ${segundos}s restantes`
+  return `${segundos}s restantes`
+}
 
 // Emisor de efectos y sellos de chat para sincronización en Supabase y local
 export async function emitirEfectoChat(tipoEfecto, autorPerfil, textoOpcional = '') {
@@ -172,6 +214,8 @@ export async function emitirEfectoChat(tipoEfecto, autorPerfil, textoOpcional = 
   } else if (tipoEfecto === 'sello') {
     mensajeTexto = `[SELLO:${textoOpcional || 'PRESENTE'}]`
   }
+
+  const expiraEn = Date.now() + 30 * 60 * 1000
 
   const nuevoMsg = {
     id: 'efecto-' + Date.now(),
@@ -192,16 +236,33 @@ export async function emitirEfectoChat(tipoEfecto, autorPerfil, textoOpcional = 
     localStorage.setItem('racha_chat_general', JSON.stringify([...prev, nuevoMsg].slice(-100)))
   } catch (e) {}
 
+  let megafonoObj = null
   if (tipoEfecto === 'megafono') {
+    megafonoObj = {
+      id: 'mega-' + Date.now(),
+      autor: autorPerfil.nombre,
+      texto: textoOpcional || 'Aviso para toda la clase',
+      expiraEn: expiraEn,
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
     try {
-      localStorage.setItem('muudel_megafono_activo', JSON.stringify({
-        id: 'mega-' + Date.now(),
-        autor: autorPerfil.nombre,
-        texto: textoOpcional || 'Aviso para toda la clase',
-        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }))
+      localStorage.setItem('muudel_megafono_activo', JSON.stringify(megafonoObj))
     } catch (e) {}
+    transmitirEvento('megafono_activo', megafonoObj)
   }
+
+  // Transmitir efecto visual en tiempo real por WebSocket a todos los usuarios
+  transmitirEvento('efecto_chat', {
+    tipo: tipoEfecto,
+    autor: autorPerfil.nombre,
+    texto: textoOpcional,
+    expiraEn,
+    color: autorPerfil.color_acento || '#007AFF',
+    timestamp: Date.now()
+  })
+
+  // Transmitir también como mensaje en el chat
+  transmitirEvento('nuevo_mensaje_chat', nuevoMsg)
 
   try {
     await supabase.from('messages').insert({
@@ -221,6 +282,7 @@ export function TiendaRecompensas({ onClose }) {
   const [canjes, setCanjes] = useState([])
   const [pestaña, setPestaña] = useState('aula') // 'aula' | 'chat' | 'tickets'
   const [canjeandoId, setCanjeandoId] = useState(null)
+  const [relojTick, setRelojTick] = useState(0)
   
   // Selector de apodo
   const [mostrarSelectorApodo, setMostrarSelectorApodo] = useState(false)
@@ -240,9 +302,22 @@ export function TiendaRecompensas({ onClose }) {
 
   const puntosActuales = perfil?.puntos_total || 0
 
+  // Tick cada segundo para actualizar cuentas regresivas en vivo
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRelojTick(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   useEffect(() => {
     cargarCanjes()
-  }, [])
+
+    const desuscribir = suscribirEvento('estado_canje', ({ canjeId, estado }) => {
+      setCanjes(prev => prev.map(c => c.id === canjeId ? { ...c, estado } : c))
+    })
+    return () => desuscribir()
+  }, [perfil?.id])
 
   const cargarCanjes = () => {
     try {
@@ -259,7 +334,28 @@ export function TiendaRecompensas({ onClose }) {
     setTimeout(() => setNotificacion(null), 3600)
   }
 
+  const obtenerCooldownRestante = (itemId) => {
+    try {
+      const hasta = Number(localStorage.getItem(`muudel_cooldown_${itemId}`) || 0)
+      if (hasta > Date.now()) {
+        return Math.ceil((hasta - Date.now()) / 1000)
+      }
+      return 0
+    } catch (e) {
+      return 0
+    }
+  }
+
   const iniciarCanje = (item) => {
+    // 1. Verificar cooldown de tiempo
+    const segsCooldown = obtenerCooldownRestante(item.id)
+    if (segsCooldown > 0) {
+      sound.playPop()
+      avisar(`Este objeto está en tiempo de recarga. Espera ${segsCooldown} segundos.`, 'error')
+      return
+    }
+
+    // 2. Verificar saldo de puntos
     if (puntosActuales < item.costo) {
       sound.playPop()
       avisar(`Te faltan ${item.costo - puntosActuales} puntos para este canje.`, 'error')
@@ -288,21 +384,41 @@ export function TiendaRecompensas({ onClose }) {
     setCanjeandoId(item.id)
     const nuevosPuntos = puntosActuales - item.costo
     const codigoTicket = `#SMR2-${Math.floor(100 + Math.random() * 900)}`
+    const duracionMs = item.duracionMs || (24 * 3600 * 1000)
+    const expiraEn = Date.now() + duracionMs
 
-    // 1. Actualizar perfil
+    // Si tiene cooldown, registrarlo
+    if (item.cooldownMs) {
+      localStorage.setItem(`muudel_cooldown_${item.id}`, String(Date.now() + item.cooldownMs))
+    }
+
+    // 1. Actualizar perfil y ventajas temporales
     const perfilActualizado = {
       ...perfil,
       puntos_total: nuevosPuntos,
-      ...(item.id === 'congelar_racha' ? { racha_congelada: true } : {}),
-      ...(item.id === 'apodo_lista' ? { frase: apodoElegido, titulo_vip: apodoElegido } : {})
+      ...(item.id === 'congelar_racha' ? { racha_congelada: true, racha_congelada_hasta: expiraEn } : {}),
+      ...(item.id === 'apodo_lista' ? { frase: apodoElegido, titulo_vip: apodoElegido, apodo_hasta: expiraEn } : {})
     }
 
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+    
+    // Guardar en perks activos con fecha de expiración
+    try {
+      const perks = JSON.parse(localStorage.getItem('muudel_perks_activos') || '{}')
+      perks[item.id] = { expiraEn, titulo: item.titulo, compradoEn: Date.now() }
+      localStorage.setItem('muudel_perks_activos', JSON.stringify(perks))
+    } catch (e) {}
+
     if (item.id === 'apodo_lista') {
       try {
         const meta = JSON.parse(localStorage.getItem('muudel_user_meta_' + perfil.id) || '{}')
-        localStorage.setItem('muudel_user_meta_' + perfil.id, JSON.stringify({ ...meta, titulo_vip: apodoElegido, frase: apodoElegido }))
+        localStorage.setItem('muudel_user_meta_' + perfil.id, JSON.stringify({
+          ...meta,
+          titulo_vip: apodoElegido,
+          frase: apodoElegido,
+          apodo_hasta: expiraEn
+        }))
       } catch (e) {}
     }
 
@@ -326,7 +442,7 @@ export function TiendaRecompensas({ onClose }) {
       if (item.efecto === 'confeti') triggerConfetti()
     }
 
-    // 3. Crear Ticket de Canje (Recibo físico)
+    // 3. Crear Ticket de Canje con tiempo de validez
     const nuevoTicket = {
       id: 'canje-' + Date.now(),
       codigo: codigoTicket,
@@ -337,7 +453,9 @@ export function TiendaRecompensas({ onClose }) {
       costo: item.costo,
       fecha: new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
       hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      estado: item.tipo === 'peticion' ? 'pendiente' : 'listo'
+      expiraEn: expiraEn,
+      tiempoTexto: item.tiempoTexto,
+      estado: item.tipo === 'peticion' ? 'pendiente' : 'activo'
     }
 
     try {
@@ -348,6 +466,9 @@ export function TiendaRecompensas({ onClose }) {
       setCanjes(actualizados.filter(c => c.userId === perfil?.id))
     } catch (e) {}
 
+    // Transmitir en tiempo real al panel admin y a la clase
+    transmitirEvento('nuevo_canje', nuevoTicket)
+
     // 4. Registro de auditoría
     try {
       const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
@@ -357,7 +478,7 @@ export function TiendaRecompensas({ onClose }) {
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         autor: perfil.nombre,
         accion: 'Canje de Puntos',
-        detalle: `${codigoTicket}: Canjeó ${item.costo} pts por "${item.titulo}"`
+        detalle: `${codigoTicket}: Canjeó ${item.costo} pts por "${item.titulo}" (${item.tiempoTexto})`
       })
       localStorage.setItem('muudel_audit_log', JSON.stringify(logs.slice(0, 80)))
     } catch (e) {}
@@ -370,7 +491,7 @@ export function TiendaRecompensas({ onClose }) {
     setTicketActivo(nuevoTicket)
 
     sound.playStamp()
-    avisar(`¡Canje completado! Tienes tu ticket ${codigoTicket} disponible.`)
+    avisar(`¡Canje completado! Válido por ${item.tiempoTexto}.`)
   }
 
   const itemsFiltrados = CATALOGO_RECOMPENSAS.filter(item => item.categoria === pestaña)
@@ -411,7 +532,7 @@ export function TiendaRecompensas({ onClose }) {
               La Cantina de SMR2
             </h2>
             <p className="apple-caption" style={{ marginTop: 2 }}>
-              Ventajas de aula, comodines y sellos de clase
+              Ventajas con duración temporal y sellos de clase
             </p>
           </div>
 
@@ -448,10 +569,10 @@ export function TiendaRecompensas({ onClose }) {
         }}>
           <div>
             <span className="apple-caption" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Saldo disponible de clase
+              Saldo de clase
             </span>
             <div className="tabular-nums" style={{ fontSize: 24, fontWeight: 800, color: 'var(--color-ink)', marginTop: 1 }}>
-              {puntosActuales} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-secondary-ink)' }}>puntos</span>
+              {puntosActuales} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-secondary-ink)' }}>pts</span>
             </div>
           </div>
 
@@ -518,7 +639,7 @@ export function TiendaRecompensas({ onClose }) {
             className={`segmented-control-item ${pestaña === 'tickets' ? 'active' : ''}`}
             onClick={() => setPestaña('tickets')}
           >
-            Historial
+            Historial con Tiempo
           </button>
         </div>
 
@@ -532,9 +653,14 @@ export function TiendaRecompensas({ onClose }) {
             marginBottom: 16,
             animation: 'fadeIn 0.2s ease'
           }}>
-            <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px', color: 'var(--color-ink)' }}>
-              Elige tu Apodo Oficial en la Lista:
-            </h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--color-ink)' }}>
+                Elige tu Apodo Oficial en la Lista:
+              </h4>
+              <span className="apple-badge apple-badge-warning" style={{ fontSize: 11 }}>
+                Duración: 3 días
+              </span>
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {CATALOGO_RECOMPENSAS.find(r => r.id === 'apodo_lista')?.opciones.map((ap) => (
                 <button
@@ -563,7 +689,7 @@ export function TiendaRecompensas({ onClose }) {
                 onClick={() => ejecutarTransaccion(CATALOGO_RECOMPENSAS.find(r => r.id === 'apodo_lista'))}
                 style={{ flex: 1, minHeight: 38, fontSize: 13 }}
               >
-                Confirmar Apodo (50 pts)
+                Activar por 3 días (50 pts)
               </button>
               <button
                 type="button"
@@ -591,7 +717,7 @@ export function TiendaRecompensas({ onClose }) {
               Elige el Sello Físico para el Chat:
             </h4>
             <p className="apple-caption" style={{ marginBottom: 12 }}>
-              Se estampará como sello de tinta visible para todos los que estén en el chat.
+              Se estampa en el chat y se activa un tiempo de recarga de 90 segundos.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
@@ -626,7 +752,7 @@ export function TiendaRecompensas({ onClose }) {
                 onClick={() => ejecutarTransaccion(CATALOGO_RECOMPENSAS.find(r => r.id === 'sello_tinta_chat'))}
                 style={{ flex: 1, minHeight: 38, fontSize: 13 }}
               >
-                Estampar en el Chat (15 pts)
+                Estampar Sello (15 pts)
               </button>
               <button
                 type="button"
@@ -650,9 +776,14 @@ export function TiendaRecompensas({ onClose }) {
             marginBottom: 16,
             animation: 'fadeIn 0.2s ease'
           }}>
-            <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 6px', color: 'var(--color-ink)' }}>
-              Escribe el comunicado para el tablón fijado:
-            </h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--color-ink)' }}>
+                Escribe tu comunicado para el tablón:
+              </h4>
+              <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
+                Fijado 30 min
+              </span>
+            </div>
             <textarea
               className="apple-input"
               value={textoMegafono}
@@ -670,7 +801,7 @@ export function TiendaRecompensas({ onClose }) {
                 onClick={() => ejecutarTransaccion(CATALOGO_RECOMPENSAS.find(r => r.id === 'megafono_chat'), textoMegafono.trim())}
                 style={{ flex: 1, minHeight: 38, fontSize: 13 }}
               >
-                Fijar Comunicado (35 pts)
+                Fijar Comunicado por 30 min (35 pts)
               </button>
               <button
                 type="button"
@@ -684,7 +815,7 @@ export function TiendaRecompensas({ onClose }) {
           </div>
         )}
 
-        {/* Detalle de Ticket Recibo si se ha generado uno */}
+        {/* Detalle de Ticket Recibo con tiempo de validez */}
         {ticketActivo && (
           <div className="ticket-canje" style={{ marginBottom: 16, animation: 'fadeIn 0.2s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -692,7 +823,7 @@ export function TiendaRecompensas({ onClose }) {
                 {ticketActivo.codigo}
               </span>
               <span className="apple-caption">
-                {ticketActivo.fecha} · {ticketActivo.hora}
+                Emisión: {ticketActivo.fecha} · {ticketActivo.hora}
               </span>
             </div>
 
@@ -700,13 +831,21 @@ export function TiendaRecompensas({ onClose }) {
               {ticketActivo.titulo}
             </div>
 
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Clock size={13} color="var(--color-accent)" />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-accent)' }}>
+                {ticketActivo.tiempoTexto || 'Duración temporal'}
+              </span>
+              <span className="apple-caption">· {formatearTiempoRestante(ticketActivo.expiraEn)}</span>
+            </div>
+
             <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', margin: '0 0 10px' }}>
-              Alumno: <strong>{ticketActivo.nombre}</strong> · Coste: {ticketActivo.costo} pts
+              Beneficiario: <strong>{ticketActivo.nombre}</strong> · Coste: {ticketActivo.costo} pts
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="sello-tinta sello-tinta-azul" style={{ fontSize: 11, padding: '3px 8px' }}>
-                {ticketActivo.estado === 'pendiente' ? 'PENDIENTE VALIDAR LOMINOÑO' : 'CANJE EMITIDO'}
+                {ticketActivo.estado === 'pendiente' ? 'PENDIENTE VALIDAR' : 'ACTIVO POR TIEMPO'}
               </div>
 
               <button
@@ -721,7 +860,7 @@ export function TiendaRecompensas({ onClose }) {
                   fontWeight: 600
                 }}
               >
-                Cerrar Recibo
+                Cerrar Ticket
               </button>
             </div>
           </div>
@@ -738,6 +877,8 @@ export function TiendaRecompensas({ onClose }) {
             {itemsFiltrados.map((item, idx) => {
               const Icono = item.icon
               const alcanzable = puntosActuales >= item.costo
+              const segsCooldown = obtenerCooldownRestante(item.id)
+              const bloqueadoPorTiempo = segsCooldown > 0
 
               return (
                 <div
@@ -748,7 +889,7 @@ export function TiendaRecompensas({ onClose }) {
                     alignItems: 'center',
                     gap: 12,
                     borderBottom: idx < itemsFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                    opacity: alcanzable ? 1 : 0.6
+                    opacity: alcanzable && !bloqueadoPorTiempo ? 1 : 0.6
                   }}
                 >
                   <div style={{
@@ -766,18 +907,28 @@ export function TiendaRecompensas({ onClose }) {
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)' }}>
-                      {item.titulo}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)' }}>
+                        {item.titulo}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1, lineHeight: 1.3 }}>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <Clock size={12} color="var(--color-secondary-ink)" />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>
+                        {item.tiempoTexto}
+                      </span>
+                    </div>
+
+                    <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2, lineHeight: 1.3 }}>
                       {item.desc}
-                    </div>
+                    </p>
                   </div>
 
                   <button
                     type="button"
                     className="btn-primary"
-                    disabled={!alcanzable || canjeandoId === item.id}
+                    disabled={!alcanzable || canjeandoId === item.id || bloqueadoPorTiempo}
                     onClick={() => iniciarCanje(item)}
                     style={{
                       flexShrink: 0,
@@ -785,58 +936,79 @@ export function TiendaRecompensas({ onClose }) {
                       padding: '4px 12px',
                       fontSize: 13,
                       fontWeight: 700,
-                      backgroundColor: alcanzable ? item.color : 'var(--color-fill-secondary)',
-                      color: alcanzable ? '#FFFFFF' : 'var(--color-tertiary-ink)',
+                      backgroundColor: bloqueadoPorTiempo
+                        ? 'var(--color-fill-secondary)'
+                        : alcanzable ? item.color : 'var(--color-fill-secondary)',
+                      color: bloqueadoPorTiempo
+                        ? 'var(--color-secondary-ink)'
+                        : alcanzable ? '#FFFFFF' : 'var(--color-tertiary-ink)',
                       boxShadow: 'none'
                     }}
                   >
-                    {item.costo} pts
+                    {bloqueadoPorTiempo ? `⏳ ${segsCooldown}s` : `${item.costo} pts`}
                   </button>
                 </div>
               )
             })}
           </div>
         ) : (
-          /* HISTORIAL DE TICKETS DE CANJE */
+          /* HISTORIAL DE TICKETS CON CUENTA REGRESIVA EN VIVO */
           <div>
             {canjes.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: 32 }}>
                 <Ticket size={28} color="var(--color-secondary-ink)" style={{ margin: '0 auto 8px' }} />
                 <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                  No tienes canjes realizados aún.
+                  No tienes canjes activos en este momento.
                 </p>
                 <p className="apple-caption" style={{ marginTop: 2 }}>
-                  Tus puntos de asistencia se pueden canjear en la pestaña Ventajas.
+                  Tus ventajas adquiridas aparecerán aquí con su tiempo de duración restante.
                 </p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {canjes.map((c) => (
-                  <div key={c.id} className="ticket-canje">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--color-accent)', letterSpacing: 0.5 }}>
-                        {c.codigo || '#SMR2-TICKET'}
-                      </span>
-                      <span className="apple-caption">
-                        {c.fecha} · {c.hora || ''}
-                      </span>
-                    </div>
+                {canjes.map((c) => {
+                  const tiempoRestante = formatearTiempoRestante(c.expiraEn)
+                  const yaCaducado = c.expiraEn && Date.now() >= c.expiraEn
 
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)', marginBottom: 2 }}>
-                      {c.titulo}
-                    </div>
+                  return (
+                    <div key={c.id} className="ticket-canje">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--color-accent)', letterSpacing: 0.5 }}>
+                          {c.codigo || '#SMR2-TICKET'}
+                        </span>
+                        <span className="apple-caption">
+                          {c.fecha} · {c.hora || ''}
+                        </span>
+                      </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                      <span className="apple-caption">
-                        Coste: <strong>{c.costo} pts</strong>
-                      </span>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)', marginBottom: 2 }}>
+                        {c.titulo}
+                      </div>
 
-                      <span className={`sello-tinta ${c.estado === 'entregado' || c.estado === 'listo' ? 'sello-tinta-verde' : c.estado === 'rechazado' ? 'sello-tinta-rojo' : 'sello-tinta-azul'}`} style={{ fontSize: 10, padding: '2px 8px' }}>
-                        {c.estado === 'entregado' ? 'VALIDADO LOMINOÑO' : c.estado === 'rechazado' ? 'RECHAZADO' : 'PENDIENTE VALIDAR'}
-                      </span>
+                      {/* Cuenta regresiva de expiración */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0 8px' }}>
+                        <Hourglass size={13} color={yaCaducado ? 'var(--color-tertiary-ink)' : 'var(--color-warning)'} />
+                        <span style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: yaCaducado ? 'var(--color-tertiary-ink)' : 'var(--color-warning)'
+                        }}>
+                          {tiempoRestante || c.tiempoTexto || 'Sin límite'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <span className="apple-caption">
+                          Coste: <strong>{c.costo} pts</strong>
+                        </span>
+
+                        <span className={`sello-tinta ${yaCaducado ? 'sello-tinta-rojo' : c.estado === 'activo' || c.estado === 'entregado' ? 'sello-tinta-verde' : 'sello-tinta-azul'}`} style={{ fontSize: 10, padding: '2px 8px' }}>
+                          {yaCaducado ? 'TIEMPO AGOTADO' : c.estado === 'activo' || c.estado === 'entregado' ? 'EN USO / ACTIVO' : 'PENDIENTE VALIDAR'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

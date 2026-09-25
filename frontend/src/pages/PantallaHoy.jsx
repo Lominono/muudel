@@ -21,9 +21,14 @@ import {
   ShoppingBag,
   Flame,
   Zap,
-  Calendar
+  Calendar,
+  Hourglass,
+  Clock,
+  Shield
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -32,6 +37,7 @@ export function PantallaHoy() {
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
+  const [relojTick, setRelojTick] = useState(0)
 
   // Estado de asistencia 15:30
   const [solicitudPendiente, setSolicitudPendiente] = useState(null)
@@ -43,19 +49,28 @@ export function PantallaHoy() {
   const fechaHoy = new Date().toISOString().split('T')[0]
   const claseActual = getClaseActual()
 
+  // 1. Tick cada segundo para actualizar cuentas regresivas y ventajas por tiempo
   useEffect(() => {
-    // 1. Cargar aviso diario
+    const timer = setInterval(() => {
+      setRelojTick(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // 2. Cargar datos iniciales y suscribirse a eventos de clase en tiempo real
+  useEffect(() => {
+    // Cargar aviso diario
     const avisoGuardado = localStorage.getItem('racha_aviso_hoy') || ''
     setAvisoHoy(avisoGuardado)
 
-    // 2. Comprobar solicitud pendiente del alumno hoy
+    // Comprobar solicitud pendiente del alumno hoy
     try {
       const solicitudes = JSON.parse(localStorage.getItem('muudel_solicitudes_' + fechaHoy) || '[]')
       const miSol = solicitudes.find(s => s.userId === perfil?.id)
       if (miSol) setSolicitudPendiente(miSol)
     } catch (e) {}
 
-    // 3. Comprobar asistencia confirmada del alumno hoy
+    // Comprobar asistencia confirmada del alumno hoy
     try {
       const localCheckins = JSON.parse(localStorage.getItem('racha_checkins_' + fechaHoy) || '{}')
       if (localCheckins[perfil?.id]) {
@@ -63,9 +78,56 @@ export function PantallaHoy() {
       }
     } catch (e) {}
 
-    // 4. Cargar datos de la clase y ranking
+    // Cargar datos de la clase y ranking
     cargarDatosClase()
-  }, [perfil, fechaHoy])
+
+    // SUSCRIPCIONES EN TIEMPO REAL PARA TODA LA CLASE
+    const desuscribirConfirmacion = suscribirEvento('asistencia_confirmada', (payload) => {
+      if (!payload) return
+      if (payload.userId === perfil?.id) {
+        setSolicitudPendiente(null)
+        setAsistenciaConfirmada(payload)
+        sound.playStamp()
+        triggerConfetti()
+      }
+      setAsistenciasHoyCount(prev => prev + 1)
+    })
+
+    const desuscribirMasiva = suscribirEvento('asistencia_masiva', () => {
+      setSolicitudPendiente(null)
+      setAsistenciaConfirmada({
+        fecha: fechaHoy,
+        hora: '15:30',
+        es_tarde: false,
+        puntos_ganados: 10
+      })
+      setAsistenciasHoyCount(prev => Math.max(prev, totalAlumnosClase))
+      sound.playStamp()
+      triggerConfetti()
+    })
+
+    const desuscribirSolicitud = suscribirEvento('solicitud_asistencia', () => {
+      // Al recibir una nueva solicitud de un compañero, actualizar contador
+      cargarDatosClase()
+    })
+
+    const desuscribirAviso = suscribirEvento('aviso_admin', ({ texto }) => {
+      setAvisoHoy(texto || '')
+      try { localStorage.setItem('racha_aviso_hoy', texto || '') } catch (e) {}
+    })
+
+    const desuscribirPuntos = suscribirEvento('puntos_actualizados', () => {
+      cargarDatosClase()
+    })
+
+    return () => {
+      desuscribirConfirmacion()
+      desuscribirMasiva()
+      desuscribirSolicitud()
+      desuscribirAviso()
+      desuscribirPuntos()
+    }
+  }, [perfil?.id, fechaHoy, totalAlumnosClase])
 
   useEffect(() => {
     if (contentRef.current) {
@@ -142,6 +204,9 @@ export function PantallaHoy() {
       setSolicitudPendiente(nuevaSolicitud)
     } catch (e) {}
 
+    // Transmitir solicitud en tiempo real al panel del profesor/admin y a la clase
+    transmitirEvento('solicitud_asistencia', nuevaSolicitud)
+
     triggerConfetti()
     sound.playStamp()
   }
@@ -152,6 +217,9 @@ export function PantallaHoy() {
     const updated = { ...perfil, puntos_total: nuevosPuntos }
     setPerfil(updated)
     localStorage.setItem('racha_local_user', JSON.stringify(updated))
+
+    // Transmitir actualización de puntos para rankings en tiempo real
+    transmitirEvento('puntos_actualizados', { userId: perfil.id, nuevosPuntos })
 
     try {
       supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
@@ -350,6 +418,75 @@ export function PantallaHoy() {
               onAbrirPanelAdmin={() => navigate('/admin')}
             />
           )}
+
+          {/* VENTAJAS ACTIVAS POR TIEMPO REAL */}
+          {(() => {
+            let activas = []
+            try {
+              const tickets = JSON.parse(localStorage.getItem('muudel_canjes_pedidos') || '[]')
+              activas = tickets.filter(t => t.userId === perfil?.id && t.expiraEn && t.expiraEn > Date.now())
+            } catch (e) {}
+
+            if (activas.length === 0) return null
+
+            return (
+              <div className="card" style={{
+                marginBottom: 16,
+                padding: '14px 16px',
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-separator)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Hourglass size={17} color="var(--color-warning)" />
+                    <h3 className="apple-headline" style={{ fontSize: 15 }}>
+                      Tus Ventajas Activas por Tiempo ({activas.length})
+                    </h3>
+                  </div>
+                  <span className="apple-badge apple-badge-warning" style={{ fontSize: 10, fontWeight: 800 }}>
+                    TIEMPO REAL
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {activas.map(v => (
+                    <div key={v.id} style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      backgroundColor: 'var(--color-surface-secondary)',
+                      border: '1px solid var(--color-separator)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 10
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-ink)' }}>
+                          {v.titulo}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                          {v.tiempoTexto}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                          color: 'var(--color-warning)'
+                        }}>
+                          ⏳ {formatearTiempoRestante(v.expiraEn)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* 2. TERMÓMETRO COLECTIVO DE LA PEÑA DE CLASE (FOMO GRUPAL) */}
           <MetaAsistenciaAula

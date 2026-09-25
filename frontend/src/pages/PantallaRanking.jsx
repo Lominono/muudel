@@ -3,12 +3,26 @@ import { supabase } from '../utils/supabase'
 import { useAuth } from '../App'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { Flame, ArrowUp, Trophy, Users } from 'lucide-react'
+import { suscribirEvento } from '../utils/realtimeHub'
 
 export function PantallaRanking() {
   const { perfil } = useAuth()
   const [lista, setLista] = useState([])
   const [filtro, setFiltro] = useState('total') // 'total' | 'semana'
   const [cargando, setCargando] = useState(true)
+
+  useEffect(() => {
+    const desuscribirPuntos = suscribirEvento('puntos_actualizados', () => {
+      cargar()
+    })
+    const desuscribirAsistencia = suscribirEvento('asistencia_confirmada', () => {
+      cargar()
+    })
+    return () => {
+      desuscribirPuntos()
+      desuscribirAsistencia()
+    }
+  }, [filtro])
 
   useEffect(() => {
     const cargar = async () => {

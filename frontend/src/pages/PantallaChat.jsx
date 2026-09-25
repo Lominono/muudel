@@ -21,7 +21,8 @@ import {
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
 import { AvatarUsuario } from '../components/AvatarUsuario'
-import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICIALES } from '../components/TiendaRecompensas'
+import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICIALES, formatearTiempoRestante } from '../components/TiendaRecompensas'
+import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
 
 const CANALES = [
   { id: 'general', label: 'General' },
@@ -51,6 +52,7 @@ export function PantallaChat() {
   // Estados de la Tienda y Efectos de Chat
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [mostrarMenuEfectos, setMostrarMenuEfectos] = useState(false)
+  const [relojTick, setRelojTick] = useState(0)
 
   // Efectos visuales activos en la pantalla
   const [temblorActivo, setTemblorActivo] = useState(false)
@@ -58,7 +60,15 @@ export function PantallaChat() {
   const [megafonoActivo, setMegafonoActivo] = useState(() => {
     try {
       const guardado = localStorage.getItem('muudel_megafono_activo')
-      return guardado ? JSON.parse(guardado) : null
+      if (guardado) {
+        const parsed = JSON.parse(guardado)
+        if (parsed.expiraEn && Date.now() >= parsed.expiraEn) {
+          localStorage.removeItem('muudel_megafono_activo')
+          return null
+        }
+        return parsed
+      }
+      return null
     } catch (e) {
       return null
     }
@@ -68,7 +78,29 @@ export function PantallaChat() {
   const [chatSilenciado, setChatSilenciado] = useState(false)
   const idUltimoEfectoProcesado = useRef(null)
 
-  // 1. Comprobar si el chat está silenciado por el moderador
+  // 1. Tick cada segundo para actualizar cuentas regresivas y verificar expiración del megáfono
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRelojTick(prev => prev + 1)
+      try {
+        const guardado = localStorage.getItem('muudel_megafono_activo')
+        if (guardado) {
+          const m = JSON.parse(guardado)
+          if (m.expiraEn && Date.now() >= m.expiraEn) {
+            localStorage.removeItem('muudel_megafono_activo')
+            setMegafonoActivo(null)
+          } else {
+            setMegafonoActivo(m)
+          }
+        } else {
+          setMegafonoActivo(null)
+        }
+      } catch (e) {}
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // 2. Comprobar si el chat está silenciado por el moderador
   useEffect(() => {
     const revisarSilencio = () => {
       try {
@@ -83,21 +115,52 @@ export function PantallaChat() {
       }
     }
     revisarSilencio()
-    const timer = setInterval(revisarSilencio, 5000)
+    const timer = setInterval(revisarSilencio, 3000)
     return () => clearInterval(timer)
   }, [])
 
-  // 2. Escuchar evento local de efecto de chat
-  useEffect(() => {
-    const handler = (e) => {
-      const { tipo, autor, texto: textoExtra } = e.detail || {}
-      ejecutarEfecto(tipo, autor, textoExtra)
+  // Helper para consultar tiempo de recarga (cooldown) restante en segundos
+  const obtenerCooldownRestante = (itemId) => {
+    try {
+      const hasta = Number(localStorage.getItem(`muudel_cooldown_${itemId}`) || 0)
+      if (hasta > Date.now()) {
+        return Math.ceil((hasta - Date.now()) / 1000)
+      }
+      return 0
+    } catch (e) {
+      return 0
     }
-    window.addEventListener('muudel-efecto-chat', handler)
-    return () => window.removeEventListener('muudel-efecto-chat', handler)
+  }
+
+  // 3. Escuchar efectos de chat, megáfono y moderación en tiempo real (WebSocket a toda la clase)
+  useEffect(() => {
+    const desuscribirEfectos = suscribirEvento('efecto_chat', (payload) => {
+      const { tipo, autor, texto: textoExtra } = payload || {}
+      if (tipo) ejecutarEfecto(tipo, autor, textoExtra)
+    })
+
+    const desuscribirMegafono = suscribirEvento('megafono_activo', (payload) => {
+      if (payload) {
+        setMegafonoActivo(payload)
+      }
+    })
+
+    const desuscribirSilencio = suscribirEvento('silencio_chat', ({ silenciadoHasta }) => {
+      if (silenciadoHasta && Number(silenciadoHasta) > Date.now()) {
+        setChatSilenciado(true)
+      } else {
+        setChatSilenciado(false)
+      }
+    })
+
+    return () => {
+      desuscribirEfectos()
+      desuscribirMegafono()
+      desuscribirSilencio()
+    }
   }, [])
 
-  // 3. Detectar efectos en los mensajes que llegan por Supabase
+  // 4. Detectar efectos en los mensajes que llegan por Supabase
   useEffect(() => {
     if (mensajes.length === 0) return
     const ultimo = mensajes[mensajes.length - 1]
@@ -134,9 +197,11 @@ export function PantallaChat() {
       triggerConfetti()
     } else if (tipo === 'megafono') {
       sound.playPop()
+      const expiraEn = Date.now() + 30 * 60 * 1000 // 30 minutos de duración
       const nuevoMegafono = {
         autor: autor || 'Compañero',
         texto: textoExtra || 'Aviso fijado de clase',
+        expiraEn: expiraEn,
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
       setMegafonoActivo(nuevoMegafono)
@@ -179,15 +244,28 @@ export function PantallaChat() {
     setTimeout(() => setLikedId(null), 300)
   }
 
-  // Lanzar efecto rápido descontando puntos
+  // Lanzar efecto rápido descontando puntos y aplicando tiempo de recarga
   const dispararEfectoRapido = async (itemEfecto) => {
     if (!perfil) return
-    const puntos = perfil.puntos_total || 0
 
+    // 1. Verificar cooldown de tiempo
+    const segsCooldown = obtenerCooldownRestante(itemEfecto.id)
+    if (segsCooldown > 0) {
+      sound.playPop()
+      alert(`Este efecto está en recarga. Espera ${segsCooldown} segundos.`)
+      return
+    }
+
+    const puntos = perfil.puntos_total || 0
     if (puntos < itemEfecto.costo) {
       sound.playPop()
       alert(`Te faltan ${itemEfecto.costo - puntos} pts para canjear "${itemEfecto.titulo}"`)
       return
+    }
+
+    // Registrar tiempo de recarga (cooldown)
+    if (itemEfecto.cooldownMs) {
+      localStorage.setItem(`muudel_cooldown_${itemEfecto.id}`, String(Date.now() + itemEfecto.cooldownMs))
     }
 
     setMostrarMenuEfectos(false)
@@ -198,7 +276,7 @@ export function PantallaChat() {
 
     try {
       await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-      emitirEfectoChat(itemEfecto.efecto, perfil)
+      await emitirEfectoChat(itemEfecto.efecto, perfil)
     } catch (e) {}
   }
 
@@ -302,10 +380,22 @@ export function PantallaChat() {
               <Megaphone size={16} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-accent)', textTransform: 'uppercase' }}>
                   Aviso Fijado ({megafonoActivo.autor})
                 </span>
+                {megafonoActivo.expiraEn && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                    color: 'var(--color-warning)'
+                  }}>
+                    ⏱️ {formatearTiempoRestante(megafonoActivo.expiraEn)}
+                  </span>
+                )}
                 {megafonoActivo.hora && (
                   <span style={{ fontSize: 10, color: 'var(--color-tertiary-ink)' }}>
                     {megafonoActivo.hora}
@@ -665,12 +755,14 @@ export function PantallaChat() {
               {CATALOGO_RECOMPENSAS.filter(r => r.categoria === 'chat').map((ef) => {
                 const IconoEf = ef.icon
                 const alcanzable = (perfil?.puntos_total || 0) >= ef.costo
+                const segsCooldown = obtenerCooldownRestante(ef.id)
+                const enCooldown = segsCooldown > 0
 
                 return (
                   <button
                     key={ef.id}
                     type="button"
-                    disabled={!alcanzable}
+                    disabled={!alcanzable || enCooldown}
                     onClick={() => {
                       if (ef.id === 'sello_tinta_chat') {
                         setMostrarMenuEfectos(false)
@@ -683,25 +775,27 @@ export function PantallaChat() {
                       padding: '8px 10px',
                       borderRadius: 10,
                       border: `1px solid var(--color-separator)`,
-                      backgroundColor: 'var(--color-surface-secondary)',
-                      color: alcanzable ? 'var(--color-ink)' : 'var(--color-tertiary-ink)',
+                      backgroundColor: enCooldown ? 'var(--color-fill-secondary)' : 'var(--color-surface-secondary)',
+                      color: enCooldown ? 'var(--color-secondary-ink)' : alcanzable ? 'var(--color-ink)' : 'var(--color-tertiary-ink)',
                       fontSize: 12,
                       fontWeight: 700,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: 6,
-                      cursor: alcanzable ? 'pointer' : 'not-allowed',
-                      opacity: alcanzable ? 1 : 0.5
+                      cursor: (alcanzable && !enCooldown) ? 'pointer' : 'not-allowed',
+                      opacity: (alcanzable && !enCooldown) ? 1 : 0.5
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                      <IconoEf size={14} style={{ flexShrink: 0, color: ef.color }} />
+                      <IconoEf size={14} style={{ flexShrink: 0, color: enCooldown ? 'var(--color-secondary-ink)' : ef.color }} />
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {ef.titulo.split(' ')[0]}
                       </span>
                     </div>
-                    <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>{ef.costo}p</span>
+                    <span style={{ fontSize: 11, color: enCooldown ? 'var(--color-warning)' : 'var(--color-secondary-ink)', fontWeight: enCooldown ? 800 : 500 }}>
+                      {enCooldown ? `⏳ ${segsCooldown}s` : `${ef.costo}p`}
+                    </span>
                   </button>
                 )
               })}

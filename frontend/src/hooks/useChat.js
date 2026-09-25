@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../utils/supabase'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 
 export function useChat(canal) {
   const [mensajes, setMensajes] = useState([])
@@ -11,7 +12,42 @@ export function useChat(canal) {
     if (!canal) return
     cargar()
     suscribirse()
+
+    // Escuchar mensajes entrantes en tiempo real por broadcast
+    const desuscribirMsg = suscribirEvento('nuevo_mensaje_chat', (msg) => {
+      if (msg && msg.canal === canal) {
+        setMensajes(prev => {
+          if (prev.some(m => m.id === msg.id || (m.texto === msg.texto && m.user_id === msg.user_id && Math.abs(new Date(m.created_at) - new Date(msg.created_at)) < 2000))) {
+            return prev
+          }
+          const actualizados = [...prev, msg]
+          try {
+            localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados.slice(-100)))
+          } catch (e) {}
+          return actualizados
+        })
+      }
+    })
+
+    // Escuchar likes en tiempo real
+    const desuscribirLikes = suscribirEvento('like_mensaje_chat', ({ messageId, canal: canalMsg }) => {
+      if (canalMsg === canal) {
+        setMensajes(prev => prev.map(m => m.id === messageId ? { ...m, likes_count: (m.likes_count || 0) + 1 } : m))
+      }
+    })
+
+    // Escuchar limpieza de canal
+    const desuscribirLimpieza = suscribirEvento('limpieza_canal', ({ canal: cLimpio }) => {
+      if (cLimpio === canal) {
+        setMensajes([])
+        try { localStorage.removeItem('racha_chat_' + canal) } catch (e) {}
+      }
+    })
+
     return () => {
+      desuscribirMsg()
+      desuscribirLikes()
+      desuscribirLimpieza()
       if (suscripcion.current) {
         try {
           supabase.removeChannel(suscripcion.current)
@@ -103,6 +139,9 @@ export function useChat(canal) {
       return actualizados
     })
 
+    // Transmitir en tiempo real a toda la clase por broadcast
+    transmitirEvento('nuevo_mensaje_chat', nuevoMensaje)
+
     try {
       const { data, error: err } = await supabase
         .from('messages')
@@ -132,6 +171,9 @@ export function useChat(canal) {
       localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
       return actualizados
     })
+
+    // Transmitir like a toda la clase
+    transmitirEvento('like_mensaje_chat', { messageId, canal })
 
     try {
       await supabase.rpc('increment_likes', { msg_id: messageId })

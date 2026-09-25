@@ -32,8 +32,11 @@ import {
   Trash2,
   Sparkles,
   Download,
-  RotateCcw
+  RotateCcw,
+  Hourglass
 } from 'lucide-react'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 
 const PIN_ADMIN_CORRECTO = '2026'
 const TIEMPO_BLOQUEO_SEGUNDOS = 60
@@ -42,6 +45,7 @@ const TIEMPO_INACTIVIDAD_MS = 10 * 60 * 1000 // 10 minutos de inactividad
 export function PantallaAdmin() {
   const { perfil } = useAuth()
   const navigate = useNavigate()
+  const [relojTick, setRelojTick] = useState(0)
 
   // 1. Estado de Seguridad por PIN de Moderador
   const [desbloqueado, setDesbloqueado] = useState(() => {
@@ -140,6 +144,60 @@ export function PantallaAdmin() {
       if (timerInactividadRef.current) clearTimeout(timerInactividadRef.current)
     }
   }, [desbloqueado])
+
+  // Tick cada segundo para actualizar cuentas regresivas y bloqueos
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRelojTick(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Suscripción a eventos en tiempo real (solicitudes 15:30, canjes de tienda, puntos)
+  useEffect(() => {
+    if (!desbloqueado) return
+
+    // 1. Escuchar solicitudes de presencia de las 15:30 en tiempo real
+    const desuscribirSol = suscribirEvento('solicitud_asistencia', (nuevaSol) => {
+      if (!nuevaSol) return
+      sound.playPop()
+      setSolicitudesHoy((prev) => {
+        const sinRepetir = prev.filter((s) => s.userId !== nuevaSol.userId)
+        const actualizadas = [nuevaSol, ...sinRepetir]
+        try {
+          localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(actualizadas))
+        } catch (e) {}
+        return actualizadas
+      })
+      avisar(`📢 ${nuevaSol.nombre} ha solicitado confirmar presencia (15:30)`)
+    })
+
+    // 2. Escuchar nuevos canjes de recompensas en tiempo real
+    const desuscribirCanjes = suscribirEvento('nuevo_canje', (nuevoTicket) => {
+      if (!nuevoTicket) return
+      sound.playStamp()
+      setCanjesPedidos((prev) => {
+        const sinRepetir = prev.filter((c) => c.id !== nuevoTicket.id)
+        const actualizados = [nuevoTicket, ...sinRepetir]
+        try {
+          localStorage.setItem('muudel_canjes_pedidos', JSON.stringify(actualizados))
+        } catch (e) {}
+        return actualizados
+      })
+      avisar(`🎟️ Nuevo canje de ${nuevoTicket.nombre}: "${nuevoTicket.titulo}"`)
+    })
+
+    // 3. Escuchar actualizaciones de puntos o checkins
+    const desuscribirPuntos = suscribirEvento('puntos_actualizados', () => {
+      cargarDatos()
+    })
+
+    return () => {
+      desuscribirSol()
+      desuscribirCanjes()
+      desuscribirPuntos()
+    }
+  }, [desbloqueado, fechaHoy])
 
   useEffect(() => {
     if (desbloqueado) {
@@ -330,6 +388,16 @@ export function PantallaAdmin() {
     sound.playStamp()
     avisar(`Asistencia de ${solicitud.nombre} aprobada (+${puntos} pts).`)
     registrarAuditoria('Pase de Lista', `Asistencia aprobada a ${solicitud.nombre} (+${puntos} pts)`)
+    
+    // Transmitir en tiempo real al alumno y a toda la clase
+    transmitirEvento('asistencia_confirmada', {
+      userId: solicitud.userId,
+      fecha: fechaHoy,
+      hora: horaActual,
+      esTarde: solicitud.esTarde,
+      puntos
+    })
+    
     setAccionEnCurso(null)
   }
 
@@ -352,6 +420,7 @@ export function PantallaAdmin() {
       await handleAprobarSolicitud(sol)
     }
 
+    transmitirEvento('asistencia_masiva', { fecha: fechaHoy })
     triggerConfetti()
     avisar('Todas las solicitudes de las 15:30 han sido aprobadas.')
     setAccionEnCurso(null)
@@ -384,6 +453,7 @@ export function PantallaAdmin() {
         setSolicitudesHoy([])
         localStorage.setItem('muudel_solicitudes_' + fechaHoy, '[]')
         await cargarDatos()
+        transmitirEvento('asistencia_masiva', { fecha: fechaHoy })
         triggerConfetti()
         sound.playStamp()
         avisar('Pase de lista general completado para toda la clase.')
@@ -398,6 +468,7 @@ export function PantallaAdmin() {
     const actualizados = canjesPedidos.map(c => c.id === canjeId ? { ...c, estado: 'entregado' } : c)
     setCanjesPedidos(actualizados)
     localStorage.setItem('muudel_canjes_pedidos', JSON.stringify(actualizados))
+    transmitirEvento('estado_canje', { canjeId, estado: 'entregado' })
     sound.playPop()
     avisar('Recompensa marcada como entregada.')
     registrarAuditoria('Entrega de Recompensa', `Canje #${canjeId} validado y entregado`)
@@ -425,6 +496,9 @@ export function PantallaAdmin() {
         setCanjesPedidos(actualizados)
         localStorage.setItem('muudel_canjes_pedidos', JSON.stringify(actualizados))
 
+        transmitirEvento('estado_canje', { canjeId: canje.id, estado: 'rechazado', userId: canje.userId, costo: canje.costo })
+        transmitirEvento('puntos_actualizados', { userId: canje.userId })
+
         sound.playPop()
         avisar(`Canje rechazado. ${canje.costo} pts devueltos a ${canje.nombre}.`)
         registrarAuditoria('Reembolso Canje', `Rechazado canje de ${canje.costo} pts a ${canje.nombre}`)
@@ -437,6 +511,7 @@ export function PantallaAdmin() {
     if (minutos === 0) {
       localStorage.removeItem('muudel_chat_silenciado_hasta')
       setChatSilenciadoHasta(null)
+      transmitirEvento('silencio_chat', { silenciadoHasta: null })
       sound.playPop()
       avisar('Chat de clase restablecido. Todos pueden escribir.')
       registrarAuditoria('Moderación Chat', 'Silencio de chat levantado')
@@ -444,6 +519,7 @@ export function PantallaAdmin() {
       const hasta = Date.now() + minutos * 60 * 1000
       localStorage.setItem('muudel_chat_silenciado_hasta', String(hasta))
       setChatSilenciadoHasta(String(hasta))
+      transmitirEvento('silencio_chat', { silenciadoHasta: String(hasta) })
       sound.playStamp()
       avisar(`Chat silenciado durante ${minutos} minutos.`)
       registrarAuditoria('Moderación Chat', `Chat silenciado durante ${minutos} min`)
@@ -455,6 +531,7 @@ export function PantallaAdmin() {
     const nuevoEstado = !efectosBloqueados
     setEfectosBloqueados(nuevoEstado)
     localStorage.setItem('muudel_efectos_chat_desactivados', String(nuevoEstado))
+    transmitirEvento('toggle_efectos', { efectosBloqueados: nuevoEstado })
     sound.playPop()
     if (nuevoEstado) {
       avisar('Efectos locos (terremoto, confeti) BLOQUEADOS temporalmente.', 'error')
@@ -472,14 +549,20 @@ export function PantallaAdmin() {
 
     const textoAnuncio = textoMegafonoAdmin.trim()
     const mensajeTexto = `[EFECTO:megafono:lominoño] 📢 COMUNICADO DE MODERACIÓN: ${textoAnuncio}`
+    const expiraEn = Date.now() + 60 * 60 * 1000 // 1 hora fijado
 
-    // 1. Guardar anuncio fijado
-    localStorage.setItem('muudel_megafono_activo', JSON.stringify({
+    const megaData = {
       id: 'mega-' + Date.now(),
       autor: 'lominoño (Moderador)',
       texto: textoAnuncio,
+      expiraEn,
       hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }))
+    }
+
+    // 1. Guardar anuncio fijado
+    localStorage.setItem('muudel_megafono_activo', JSON.stringify(megaData))
+    transmitirEvento('megafono_activo', megaData)
+    transmitirEvento('aviso_admin', { texto: textoAnuncio })
 
     // 2. Publicar en chat
     try {
@@ -504,6 +587,7 @@ export function PantallaAdmin() {
         created_at: new Date().toISOString()
       }
       localStorage.setItem('racha_chat_general', JSON.stringify([...prev, nuevo]))
+      transmitirEvento('nuevo_mensaje_chat', nuevo)
     } catch (e) {}
 
     setTextoMegafonoAdmin('')
@@ -521,6 +605,7 @@ export function PantallaAdmin() {
       accion: () => {
         setModalConfirmacion(null)
         localStorage.removeItem('racha_chat_' + canalNombre)
+        transmitirEvento('limpieza_canal', { canal: canalNombre })
         sound.playPop()
         avisar(`Canal #${canalNombre} vaciado con éxito.`)
         registrarAuditoria('Limpieza Chat', `Vaciado canal #${canalNombre}`)
@@ -551,6 +636,7 @@ export function PantallaAdmin() {
         setTodosAlumnos((prev) =>
           prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
         )
+        transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos })
         registrarAuditoria('Ajuste de Puntos', `${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} pts a ${alumno.nombre} (${motivo})`)
       }
     } catch (err) {
@@ -1273,14 +1359,33 @@ export function PantallaAdmin() {
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
-                    {canje.nombre}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
+                      {canje.nombre}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-accent)' }}>
+                      {canje.codigo || '#SMR2-TICKET'}
+                    </span>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 600, marginTop: 2 }}>
                     {canje.titulo} · <span style={{ color: 'var(--color-secondary-ink)', fontWeight: 400 }}>{canje.costo} pts</span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginTop: 2 }}>
-                    Solicitado: {canje.fecha} · Estado: <strong>{canje.estado}</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
+                      Solicitado: {canje.fecha} {canje.hora || ''}
+                    </span>
+                    {canje.expiraEn && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        backgroundColor: (canje.expiraEn <= Date.now()) ? 'rgba(255, 59, 48, 0.12)' : 'rgba(255, 149, 0, 0.12)',
+                        color: (canje.expiraEn <= Date.now()) ? 'var(--color-negative)' : 'var(--color-warning)'
+                      }}>
+                        ⏳ {formatearTiempoRestante(canje.expiraEn)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
