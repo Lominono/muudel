@@ -505,7 +505,7 @@ h3.apple-headline {
   }
 }
 
-/* Efectos virales del Chat de Clase */
+/* Efectos mecánicos del Chat de Clase (Anti-IA) */
 @keyframes screenShake {
   0% { transform: translate(0px, 0px) rotate(0deg); }
   10% { transform: translate(-3px, -2px) rotate(-0.5deg); }
@@ -521,37 +521,10 @@ h3.apple-headline {
 }
 
 .chat-screen-shake {
-  animation: screenShake 0.4s infinite ease-in-out;
+  animation: screenShake 0.35s infinite ease-in-out;
 }
 
-@keyframes partyGlow {
-  0% {
-    box-shadow: 0 0 16px rgba(255, 59, 48, 0.4), inset 0 0 12px rgba(255, 149, 0, 0.2);
-    border-color: rgba(255, 59, 48, 0.6) !important;
-  }
-  25% {
-    box-shadow: 0 0 22px rgba(10, 132, 255, 0.5), inset 0 0 14px rgba(48, 209, 88, 0.25);
-    border-color: rgba(10, 132, 255, 0.7) !important;
-  }
-  50% {
-    box-shadow: 0 0 24px rgba(175, 82, 222, 0.6), inset 0 0 16px rgba(255, 214, 10, 0.3);
-    border-color: rgba(175, 82, 222, 0.7) !important;
-  }
-  75% {
-    box-shadow: 0 0 20px rgba(52, 199, 89, 0.5), inset 0 0 12px rgba(10, 132, 255, 0.25);
-    border-color: rgba(52, 199, 89, 0.6) !important;
-  }
-  100% {
-    box-shadow: 0 0 16px rgba(255, 59, 48, 0.4), inset 0 0 12px rgba(255, 149, 0, 0.2);
-    border-color: rgba(255, 59, 48, 0.6) !important;
-  }
-}
-
-.chat-party-mode {
-  animation: partyGlow 1.2s infinite ease-in-out;
-}
-
-/* Tarjeta de Megáfono fijado en el Chat */
+/* Tarjeta de Megáfono fijado en el Chat - estilo tablón oficial */
 .chat-megaphone-pinned {
   display: flex;
   align-items: center;
@@ -559,11 +532,69 @@ h3.apple-headline {
   gap: 10px;
   padding: 10px 14px;
   border-radius: 12px;
-  background-color: rgba(255, 149, 0, 0.09);
+  background-color: var(--color-warning-bg);
   border: 1px solid rgba(255, 149, 0, 0.35);
   margin-bottom: 10px;
-  animation: fadeIn 0.25s ease;
+  animation: fadeIn 0.2s ease;
 }
+
+/* Sellos físicos estilo tampón de tinta - Anti-IA */
+.sello-tinta {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 8px;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.sello-tinta-rojo {
+  border: 2px double var(--color-negative);
+  color: var(--color-negative);
+  background-color: var(--color-negative-bg);
+  transform: rotate(-2.5deg);
+}
+
+.sello-tinta-azul {
+  border: 2px double var(--color-accent);
+  color: var(--color-accent);
+  background-color: rgba(0, 122, 255, 0.08);
+  transform: rotate(1.8deg);
+}
+
+.sello-tinta-verde {
+  border: 2px double var(--color-positive);
+  color: var(--color-positive);
+  background-color: var(--color-positive-bg);
+  transform: rotate(-1.2deg);
+}
+
+/* Ticket de papel para canjes de clase */
+.ticket-canje {
+  background-color: var(--color-surface);
+  border: 1px dashed var(--color-separator-opaque);
+  border-radius: 14px;
+  padding: 14px 16px;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.ticket-canje::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 20px;
+  right: 20px;
+  height: 2px;
+  background-color: var(--color-separator);
+}
+
 
 
 

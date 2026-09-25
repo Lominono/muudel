@@ -11,18 +11,17 @@ import {
   Zap,
   Sparkles,
   Megaphone,
-  Flame,
   Coffee,
   X,
-  Volume2,
   Lock,
   Unlock,
-  Radio
+  Radio,
+  Stamp
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
 import { AvatarUsuario } from '../components/AvatarUsuario'
-import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS } from '../components/TiendaRecompensas'
+import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICIALES } from '../components/TiendaRecompensas'
 
 const CANALES = [
   { id: 'general', label: 'General' },
@@ -32,12 +31,12 @@ const CANALES = [
 ]
 
 const RESPUESTAS_RAPIDAS = [
-  'Presente ✋',
-  '15:30 ⏰',
-  'Descanso ☕',
-  '¿En qué aula?',
-  'Apunte de SOR 📁',
-  'Top 1 🏆',
+  'Presente 15:30',
+  'Visto en clase',
+  'Descanso 18:10',
+  '¿Qué ejercicio es?',
+  'Duda resuelta',
+  'Apunte subido',
 ]
 
 export function PantallaChat() {
@@ -55,7 +54,6 @@ export function PantallaChat() {
 
   // Efectos visuales activos en la pantalla
   const [temblorActivo, setTemblorActivo] = useState(false)
-  const [fiestaActiva, setFiestaActiva] = useState(false)
   const [alertaDescanso, setAlertaDescanso] = useState(null)
   const [megafonoActivo, setMegafonoActivo] = useState(() => {
     try {
@@ -105,14 +103,19 @@ export function PantallaChat() {
     const ultimo = mensajes[mensajes.length - 1]
     if (!ultimo || !ultimo.texto) return
 
-    if (ultimo.id !== idUltimoEfectoProcesado.current && ultimo.texto.startsWith('[EFECTO:')) {
+    if (ultimo.id !== idUltimoEfectoProcesado.current) {
       idUltimoEfectoProcesado.current = ultimo.id
-      const match = ultimo.texto.match(/\[EFECTO:([a-z0-9_]+)(?::([^\]]+))?\]\s*(.*)/i)
-      if (match) {
-        const tipo = match[1]
-        const autor = match[2] || ultimo.nombre || 'Compañero'
-        const contenido = match[3] || ''
-        ejecutarEfecto(tipo, autor, contenido)
+
+      if (ultimo.texto.startsWith('[EFECTO:')) {
+        const match = ultimo.texto.match(/\[EFECTO:([a-z0-9_]+)(?::([^\]]+))?\]\s*(.*)/i)
+        if (match) {
+          const tipo = match[1]
+          const autor = match[2] || ultimo.nombre || 'Compañero'
+          const contenido = match[3] || ''
+          ejecutarEfecto(tipo, autor, contenido)
+        }
+      } else if (ultimo.texto.startsWith('[SELLO:')) {
+        sound.playStamp()
       }
     }
   }, [mensajes])
@@ -129,15 +132,11 @@ export function PantallaChat() {
     } else if (tipo === 'confeti') {
       sound.playStamp()
       triggerConfetti()
-    } else if (tipo === 'fiesta') {
-      sound.playPop()
-      setFiestaActiva(true)
-      setTimeout(() => setFiestaActiva(false), 6000)
     } else if (tipo === 'megafono') {
       sound.playPop()
       const nuevoMegafono = {
         autor: autor || 'Compañero',
-        texto: textoExtra || '¡Anuncio para toda la clase!',
+        texto: textoExtra || 'Aviso fijado de clase',
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
       setMegafonoActivo(nuevoMegafono)
@@ -145,6 +144,8 @@ export function PantallaChat() {
       sound.playPop()
       setAlertaDescanso(`¡${autor} avisa: Descanso de las 18:10!`)
       setTimeout(() => setAlertaDescanso(null), 5000)
+    } else if (tipo === 'sello') {
+      sound.playStamp()
     }
   }
 
@@ -185,7 +186,7 @@ export function PantallaChat() {
 
     if (puntos < itemEfecto.costo) {
       sound.playPop()
-      alert(`Te faltan ${itemEfecto.costo - puntos} pts para desatar ${itemEfecto.titulo}`)
+      alert(`Te faltan ${itemEfecto.costo - puntos} pts para canjear "${itemEfecto.titulo}"`)
       return
     }
 
@@ -196,6 +197,7 @@ export function PantallaChat() {
     localStorage.setItem('racha_local_user', JSON.stringify(updated))
 
     try {
+      await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
       emitirEfectoChat(itemEfecto.efecto, perfil)
     } catch (e) {}
   }
@@ -211,6 +213,14 @@ export function PantallaChat() {
     }
   }
 
+  const parsearSelloMensaje = (textoMsg) => {
+    if (!textoMsg.startsWith('[SELLO:')) return null
+    const match = textoMsg.match(/\[SELLO:([A-Z0-9_]+)\]/i)
+    if (!match) return null
+    const selloId = match[1].toUpperCase()
+    return SELLOS_OFICIALES.find(s => s.id === selloId) || SELLOS_OFICIALES[0]
+  }
+
   const estaBloqueadoEnvio = chatSilenciado && perfil?.rol !== 'moderador'
 
   return (
@@ -223,11 +233,11 @@ export function PantallaChat() {
               Chat de Clase
             </h1>
             <p className="apple-subheadline" style={{ marginTop: 1, fontSize: 13 }}>
-              SMR2 Tarde · Comunidad activa y efectos en vivo
+              SMR2 Tarde · Comunidad y sellos de asistencia
             </p>
           </div>
 
-          {/* Botón de la Cantina / Tienda con puntos en vivo */}
+          {/* Botón de la Cantina / Tienda */}
           <button
             type="button"
             onClick={() => setMostrarTienda(true)}
@@ -237,9 +247,9 @@ export function PantallaChat() {
               gap: 6,
               padding: '8px 14px',
               borderRadius: 9999,
-              backgroundColor: 'rgba(10, 132, 255, 0.1)',
-              color: 'var(--color-accent)',
-              border: '1px solid rgba(10, 132, 255, 0.25)',
+              backgroundColor: 'var(--color-fill-secondary)',
+              color: 'var(--color-ink)',
+              border: '1px solid var(--color-separator)',
               fontSize: 13,
               fontWeight: 700,
               cursor: 'pointer',
@@ -258,9 +268,9 @@ export function PantallaChat() {
         <div style={{
           padding: '10px 14px',
           borderRadius: 12,
-          backgroundColor: 'rgba(255, 149, 0, 0.14)',
-          border: '1px solid rgba(255, 149, 0, 0.35)',
-          color: 'var(--color-warning)',
+          backgroundColor: 'var(--color-positive-bg)',
+          border: '1px solid rgba(52, 199, 89, 0.35)',
+          color: 'var(--color-positive)',
           fontSize: 13,
           fontWeight: 700,
           display: 'flex',
@@ -282,7 +292,7 @@ export function PantallaChat() {
               width: 32,
               height: 32,
               borderRadius: 8,
-              backgroundColor: '#D4AF37',
+              backgroundColor: 'var(--color-accent)',
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
@@ -293,8 +303,8 @@ export function PantallaChat() {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: '#D4AF37', textTransform: 'uppercase' }}>
-                  Anuncio Fijado ({megafonoActivo.autor})
+                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-accent)', textTransform: 'uppercase' }}>
+                  Aviso Fijado ({megafonoActivo.autor})
                 </span>
                 {megafonoActivo.hora && (
                   <span style={{ fontSize: 10, color: 'var(--color-tertiary-ink)' }}>
@@ -367,7 +377,7 @@ export function PantallaChat() {
 
       {/* Ventana de mensajes del chat */}
       <div
-        className={`card ${fiestaActiva ? 'chat-party-mode' : ''}`}
+        className="card"
         style={{
           height: '56vh',
           minHeight: 400,
@@ -375,8 +385,7 @@ export function PantallaChat() {
           flexDirection: 'column',
           padding: 0,
           overflow: 'hidden',
-          marginBottom: 8,
-          transition: 'border 0.2s ease, box-shadow 0.2s ease'
+          marginBottom: 8
         }}
       >
         <div style={{
@@ -400,7 +409,7 @@ export function PantallaChat() {
                 No hay mensajes en #{canal}.
               </p>
               <p className="apple-caption" style={{ marginTop: 2 }}>
-                Escribe un mensaje o activa un efecto de la tienda.
+                Escribe un mensaje o estampa un sello de clase.
               </p>
             </div>
           ) : (
@@ -416,20 +425,49 @@ export function PantallaChat() {
               const autorColor = m.color_acento || m.profiles?.color_acento
               const autorDigito = m.digito_id || m.profiles?.digito_id
               
-              // Título VIP desbloqueado en la tienda
-              const autorTitulo = m.titulo_vip || (m.profiles?.frase?.startsWith('👑') ? m.profiles.frase : (esPropio && perfil?.frase?.startsWith('👑') ? perfil.frase : null))
+              // Apodo de clase desbloqueado
+              const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
 
+              // 1. Mensaje tipo SELLO FÍSICO DE TINTA
+              const selloDetectado = parsearSelloMensaje(m.texto)
+              if (selloDetectado) {
+                return (
+                  <div
+                    key={m.id || idx}
+                    ref={esUltimo ? ultimoMensajeRef : null}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: esPropio ? 'flex-end' : 'flex-start',
+                      margin: '4px 0'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
+                      {autorDigito && <span className="apple-caption">({autorDigito})</span>}
+                    </div>
+
+                    <div className={`sello-tinta ${selloDetectado.clase}`} style={{ fontSize: 14, padding: '8px 18px' }}>
+                      ★ {selloDetectado.etiqueta} ★
+                    </div>
+
+                    <span className="apple-caption" style={{ fontSize: 10, marginTop: 4 }}>
+                      {hora}
+                    </span>
+                  </div>
+                )
+              }
+
+              // 2. Mensaje tipo EFECTO DE CLASE
               const efectoInfo = parsearEfectoMensaje(m.texto)
-
-              // Si es un mensaje de efecto viral de chat, renderizar tarjeta especial
               if (efectoInfo) {
                 const configEfecto = {
-                  terremoto: { color: '#FF3B30', bg: 'rgba(255, 59, 48, 0.1)', icono: Zap, titulo: 'TERREMOTO EN CLASE' },
-                  confeti: { color: '#FF9500', bg: 'rgba(255, 149, 0, 0.1)', icono: Sparkles, titulo: 'LLUVIA DE CONFETI' },
-                  megafono: { color: '#D4AF37', bg: 'rgba(212, 175, 55, 0.12)', icono: Megaphone, titulo: 'MEGÁFONO DE CLASE' },
-                  fiesta: { color: '#AF52DE', bg: 'rgba(175, 82, 222, 0.12)', icono: Flame, titulo: 'MODO FIESTA / DISCO' },
-                  descanso: { color: '#0A84FF', bg: 'rgba(10, 132, 255, 0.1)', icono: Coffee, titulo: 'SIRENA DE DESCANSO' }
-                }[efectoInfo.tipo] || { color: '#0A84FF', bg: 'rgba(10, 132, 255, 0.1)', icono: Radio, titulo: 'AVISO EN DIRECTO' }
+                  terremoto: { color: '#FF3B30', bg: 'var(--color-negative-bg)', icono: Zap, titulo: 'SACUDIDA EN EL AULA' },
+                  confeti: { color: '#FF9500', bg: 'var(--color-warning-bg)', icono: Sparkles, titulo: 'LLUVIA DE CONFETI' },
+                  megafono: { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.08)', icono: Megaphone, titulo: 'TABLÓN DE AVISOS' },
+                  descanso: { color: '#34C759', bg: 'var(--color-positive-bg)', icono: Coffee, titulo: 'SILBATO 18:10' }
+                }[efectoInfo.tipo] || { color: '#007AFF', bg: 'var(--color-fill-secondary)', icono: Radio, titulo: 'AVISO EN DIRECTO' }
 
                 const IconoEfecto = configEfecto.icono
 
@@ -442,19 +480,19 @@ export function PantallaChat() {
                       padding: '12px 14px',
                       borderRadius: 14,
                       backgroundColor: configEfecto.bg,
-                      border: `1.5px solid ${configEfecto.color}40`,
+                      border: `1.5px solid ${configEfecto.color}35`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: 12,
-                      animation: 'fadeIn 0.25s ease'
+                      animation: 'fadeIn 0.2s ease'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
                       <div style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 10,
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
                         backgroundColor: configEfecto.color,
                         color: '#FFFFFF',
                         display: 'flex',
@@ -462,14 +500,14 @@ export function PantallaChat() {
                         justifyContent: 'center',
                         flexShrink: 0
                       }}>
-                        <IconoEfecto size={18} />
+                        <IconoEfecto size={16} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 11, fontWeight: 800, color: configEfecto.color, letterSpacing: 0.5 }}>
                             {configEfecto.titulo}
                           </span>
-                          <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
+                          <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
                             · {autorNombre}
                           </span>
                         </div>
@@ -486,6 +524,7 @@ export function PantallaChat() {
                 )
               }
 
+              // 3. Mensaje regular estilo iOS
               return (
                 <div
                   key={m.id || idx}
@@ -524,17 +563,17 @@ export function PantallaChat() {
                           {autorDigito}
                         </span>
                       )}
-                      {autorTitulo && (
+                      {autorApodo && (
                         <span style={{
                           fontSize: 10,
                           fontWeight: 700,
                           padding: '1px 6px',
-                          borderRadius: 9999,
-                          backgroundColor: 'rgba(255, 149, 0, 0.14)',
-                          color: 'var(--color-warning)',
-                          border: '1px solid rgba(255, 149, 0, 0.3)'
+                          borderRadius: 6,
+                          backgroundColor: 'rgba(0, 122, 255, 0.08)',
+                          color: 'var(--color-accent)',
+                          border: '1px solid rgba(0, 122, 255, 0.2)'
                         }}>
-                          {autorTitulo}
+                          {autorApodo}
                         </span>
                       )}
                     </div>
@@ -546,7 +585,8 @@ export function PantallaChat() {
                       borderRadius: 18,
                       borderBottomRightRadius: esPropio ? 4 : 18,
                       borderBottomLeftRadius: esPropio ? 18 : 4,
-                      backgroundColor: esPropio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                      backgroundColor: esPropio ? 'var(--color-accent)' : 'var(--color-surface)',
+                      border: esPropio ? 'none' : '1px solid var(--color-separator)',
                       color: esPropio ? '#FFFFFF' : 'var(--color-ink)',
                       fontSize: 15,
                       lineHeight: 1.35,
@@ -597,7 +637,7 @@ export function PantallaChat() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Menú flotante de Efectos Rápidos */}
+        {/* Menú de Acciones Rápidas y Sellos */}
         {mostrarMenuEfectos && (
           <div style={{
             padding: '10px 14px',
@@ -610,7 +650,7 @@ export function PantallaChat() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="apple-caption" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-ink)' }}>
-                💥 Desatar Efecto en el Chat (Toda la clase lo ve)
+                Sellos y Efectos de Clase
               </span>
               <button
                 type="button"
@@ -631,13 +671,20 @@ export function PantallaChat() {
                     key={ef.id}
                     type="button"
                     disabled={!alcanzable}
-                    onClick={() => dispararEfectoRapido(ef)}
+                    onClick={() => {
+                      if (ef.id === 'sello_tinta_chat') {
+                        setMostrarMenuEfectos(false)
+                        setMostrarTienda(true)
+                      } else {
+                        dispararEfectoRapido(ef)
+                      }
+                    }}
                     style={{
                       padding: '8px 10px',
                       borderRadius: 10,
-                      border: `1px solid ${ef.color}35`,
-                      backgroundColor: `${ef.color}10`,
-                      color: ef.color,
+                      border: `1px solid var(--color-separator)`,
+                      backgroundColor: 'var(--color-surface-secondary)',
+                      color: alcanzable ? 'var(--color-ink)' : 'var(--color-tertiary-ink)',
                       fontSize: 12,
                       fontWeight: 700,
                       display: 'flex',
@@ -649,12 +696,12 @@ export function PantallaChat() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                      <IconoEf size={14} style={{ flexShrink: 0 }} />
+                      <IconoEf size={14} style={{ flexShrink: 0, color: ef.color }} />
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {ef.titulo.split(' ')[0]}
                       </span>
                     </div>
-                    <span style={{ fontSize: 11, opacity: 0.9 }}>{ef.costo}p</span>
+                    <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>{ef.costo}p</span>
                   </button>
                 )
               })}
@@ -706,18 +753,18 @@ export function PantallaChat() {
             gap: 8,
           }}
         >
-          {/* Botón de Efectos de Chat Rápidos */}
+          {/* Botón de Sellos y Efectos Rápidos */}
           <button
             type="button"
             onClick={() => setMostrarMenuEfectos(!mostrarMenuEfectos)}
-            title="Desatar Efecto Viral de Chat"
+            title="Acceso a sellos y efectos"
             style={{
               width: 36,
               height: 36,
               borderRadius: 9999,
-              backgroundColor: mostrarMenuEfectos ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-              color: mostrarMenuEfectos ? '#FFFFFF' : 'var(--color-accent)',
-              border: 'none',
+              backgroundColor: mostrarMenuEfectos ? 'var(--color-fill-secondary)' : 'transparent',
+              color: 'var(--color-ink)',
+              border: '1px solid var(--color-separator)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -725,7 +772,7 @@ export function PantallaChat() {
               flexShrink: 0
             }}
           >
-            <Sparkles size={17} />
+            <Stamp size={17} />
           </button>
 
           <input
@@ -770,7 +817,7 @@ export function PantallaChat() {
         </form>
       </div>
 
-      {/* MODAL DE LA TIENDA DE RECOMPENSAS */}
+      {/* MODAL DE LA CANTINA / TIENDA DE RECOMPENSAS */}
       {mostrarTienda && (
         <TiendaRecompensas onClose={() => setMostrarTienda(false)} />
       )}
