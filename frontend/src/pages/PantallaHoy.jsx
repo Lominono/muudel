@@ -44,98 +44,7 @@ import { animarEscalonado } from '../utils/animations'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 
-// Semilla inicial de respuestas auténticas de SMR2
-const RESPUESTAS_SEMILLA = [
-  {
-    id: 'resp-seed-1',
-    userId: 'user-seed-1',
-    nombre: 'Marc Rovira',
-    username: 'mrovira',
-    color: '#007AFF',
-    retoTitulo: 'Topología VLAN & Subredes 15:30',
-    hora: '16:05',
-    fecha: 'Hoy',
-    evidencia: `Switch(config)# vlan 20
-Switch(config-vlan)# name VENTAS_SMR2
-Switch(config)# interface range fa0/1 - 5
-Switch(config-if-range)# switchport mode access
-Switch(config-if-range)# switchport access vlan 20`,
-    estado: 'aprobado',
-    feedback: '¡Impecable! Rango de puertos configurado según la norma.',
-    likes: 4
-  },
-  {
-    id: 'resp-seed-2',
-    userId: 'user-seed-2',
-    nombre: 'Laura Sanz',
-    username: 'lsanz',
-    color: '#34C759',
-    retoTitulo: 'Desafío Yoshi: Supera 100m en el Recreo',
-    hora: '17:22',
-    fecha: 'Hoy',
-    evidencia: 'Récord de 142m conseguido esquivando las bombas Bob-omb y tuberías piraña.',
-    estado: 'aprobado',
-    feedback: 'Verificado por el motor del juego (+30 pts acreditados)',
-    likes: 7
-  },
-  {
-    id: 'resp-seed-3',
-    userId: 'user-seed-3',
-    nombre: 'Carlos Díaz',
-    username: 'cdiaz',
-    color: '#FF9500',
-    retoTitulo: 'Topología VLAN & Subredes 15:30',
-    hora: '18:35',
-    fecha: 'Hoy',
-    evidencia: 'He subido la captura de Packet Tracer con el ping exitoso entre los hosts en la misma VLAN.',
-    estado: 'pendiente',
-    feedback: null,
-    likes: 2
-  }
-]
-
-// Semilla inicial de posts de la clase
-const POSTS_SEMILLA = [
-  {
-    id: 'post-seed-1',
-    userId: 'profe-1',
-    autor: 'lominoño',
-    username: 'profe',
-    color: '#FF3B30',
-    rol: 'moderador',
-    categoria: 'Aviso',
-    titulo: '📌 Repaso clave para el control de enrutamiento estático',
-    contenido: 'Recordad que la sintaxis en Cisco es `ip route <red_destino> <máscara> <ip_siguiente_salto>`. No olvidéis levantar las interfaces antes con `no shutdown`.',
-    fecha: 'Hoy 15:45',
-    likes: 12
-  },
-  {
-    id: 'post-seed-2',
-    userId: 'user-seed-4',
-    autor: 'Adrián Gómez',
-    username: 'agomez',
-    color: '#007AFF',
-    rol: 'alumno',
-    categoria: 'Truco',
-    titulo: '💡 Chuleta rápida para calcular subredes /24 a /30',
-    contenido: 'Para calcular saltos de IP rápido: /25 salta de 128 en 128, /26 de 64 en 64, /27 de 32 en 32, /28 de 16 en 16 y /30 de 4 en 4. ¡Ahorra un montón de tiempo en las prácticas!',
-    fecha: 'Hoy 16:30',
-    likes: 9
-  },
-  {
-    id: 'post-seed-3',
-    userId: 'user-seed-5',
-    autor: 'Elena Martín',
-    username: 'emartin',
-    color: '#AF52DE',
-    rol: 'alumno',
-    categoria: 'Linux',
-    titulo: '🐧 Comando útil para ver puertos abiertos en Debian',
-    contenido: 'Usad `ss -tulpn` en vez del viejo `netstat`. Muestra los procesos exactos con PID escuchando en cada puerto TCP/UDP.',
-    fecha: 'Hoy 17:10',
-    likes: 6
-  }
-]
+// Sin datos semilla ficticios — todo viene de Supabase
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -149,27 +58,12 @@ export function PantallaHoy() {
   // Filtro del feed: 'todos' | 'respuestas' | 'posts'
   const [filtroFeed, setFiltroFeed] = useState('todos')
 
-  // Respuestas de alumnos a retos
-  const [respuestasFeed, setRespuestasFeed] = useState(() => {
-    try {
-      const guardadas = JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
-      if (guardadas && guardadas.length > 0) {
-        return [...guardadas, ...RESPUESTAS_SEMILLA.filter(s => !guardadas.some(g => g.id === s.id))]
-      }
-    } catch (e) {}
-    return RESPUESTAS_SEMILLA
-  })
+  // Respuestas de alumnos a retos (solo las guardadas localmente por tiempo real)
+  const [respuestasFeed, setRespuestasFeed] = useState([])
 
-  // Posts y tips de la comunidad
-  const [postsFeed, setPostsFeed] = useState(() => {
-    try {
-      const guardados = JSON.parse(localStorage.getItem('muudel_feed_posts') || '[]')
-      if (guardados && guardados.length > 0) {
-        return [...guardados, ...POSTS_SEMILLA.filter(s => !guardados.some(g => g.id === s.id))]
-      }
-    } catch (e) {}
-    return POSTS_SEMILLA
-  })
+  // Posts del feed — cargados desde Supabase tabla feed_posts
+  const [postsFeed, setPostsFeed] = useState([])
+  const [cargandoPosts, setCargandoPosts] = useState(true)
 
   // Modal para crear nuevo post
   const [mostrarModalCrearPost, setMostrarModalCrearPost] = useState(false)
@@ -233,11 +127,7 @@ export function PantallaHoy() {
       if (entrega) {
         setRespuestasFeed(prev => {
           const filtradas = prev.filter(r => r.id !== entrega.id)
-          const actualizadas = [entrega, ...filtradas]
-          try {
-            localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizadas))
-          } catch (e) {}
-          return actualizadas
+          return [entrega, ...filtradas]
         })
       }
     })
@@ -247,11 +137,7 @@ export function PantallaHoy() {
       if (post) {
         setPostsFeed(prev => {
           const filtrados = prev.filter(p => p.id !== post.id)
-          const actualizados = [post, ...filtrados]
-          try {
-            localStorage.setItem('muudel_feed_posts', JSON.stringify(actualizados))
-          } catch (e) {}
-          return actualizados
+          return [post, ...filtrados]
         })
       }
     })
@@ -314,6 +200,7 @@ export function PantallaHoy() {
 
   const cargarDatosClase = async () => {
     try {
+      // Cargar alumnos y ranking
       const { data: alumnosData } = await supabase
         .from('profiles')
         .select('*')
@@ -327,6 +214,7 @@ export function PantallaHoy() {
         setRanking([perfil])
       }
 
+      // Cargar checkins de hoy
       const { data: chkData } = await supabase
         .from('checkins')
         .select('user_id')
@@ -350,7 +238,55 @@ export function PantallaHoy() {
           setSolicitudPendiente(null)
         }
       }
-    } catch (e) {}
+
+      // Cargar posts del feed desde Supabase (tabla feed_posts)
+      setCargandoPosts(true)
+      const { data: postsData } = await supabase
+        .from('feed_posts')
+        .select(`
+          id, categoria, titulo, contenido, likes_count, created_at,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .eq('soft_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      if (postsData) {
+        // Si el usuario está logueado, cargar sus likes
+        let likedSet = {}
+        if (perfil) {
+          const { data: misLikes } = await supabase
+            .from('feed_post_likes')
+            .select('post_id')
+            .eq('user_id', perfil.id)
+          if (misLikes) {
+            misLikes.forEach(l => { likedSet[l.post_id] = true })
+          }
+        }
+        setLikesDados(likedSet)
+
+        const postsMapeados = postsData.map(p => ({
+          id: p.id,
+          userId: p.profiles?.id,
+          autor: p.profiles?.nombre || 'Desconocido',
+          username: p.profiles?.username || '',
+          color: p.profiles?.color_acento || '#007AFF',
+          rol: p.profiles?.rol || 'alumno',
+          avatarEmoji: p.profiles?.avatar_emoji || '🧑',
+          categoria: p.categoria,
+          titulo: p.titulo,
+          contenido: p.contenido,
+          fecha: new Date(p.created_at).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
+          likes: p.likes_count || 0,
+          liked: Boolean(likedSet[p.id])
+        }))
+        setPostsFeed(postsMapeados)
+      }
+    } catch (e) {
+      console.error('Error cargando datos:', e)
+    } finally {
+      setCargandoPosts(false)
+    }
   }
 
   // Enviar solicitud de asistencia a las 15:30
@@ -396,90 +332,98 @@ export function PantallaHoy() {
     } catch (e) {}
   }
 
-  // Dar like a una respuesta o post
-  const handleToggleLike = (id, esPost = false) => {
+  // Dar like a un post del feed (via Supabase RPC)
+  const handleToggleLike = async (id, esPost = false) => {
+    if (!perfil) return
     sound.playPop()
     const yaLeDi = Boolean(likesDados[id])
-    const nuevoEstado = !yaLeDi
 
+    // Actualizar UI optimistamente
     const nuevosLikesDados = { ...likesDados }
-    if (nuevoEstado) {
+    if (!yaLeDi) {
       nuevosLikesDados[id] = true
     } else {
       delete nuevosLikesDados[id]
     }
     setLikesDados(nuevosLikesDados)
-    try {
-      localStorage.setItem(`muudel_feed_likes_${perfil?.id}`, JSON.stringify(nuevosLikesDados))
-    } catch (e) {}
 
-    let nuevoCount = 0
     if (esPost) {
-      setPostsFeed(prev => {
-        const actualizados = prev.map(p => {
-          if (p.id === id) {
-            nuevoCount = Math.max(0, (p.likes || 0) + (nuevoEstado ? 1 : -1))
-            return { ...p, likes: nuevoCount }
-          }
-          return p
-        })
-        try { localStorage.setItem('muudel_feed_posts', JSON.stringify(actualizados)) } catch (e) {}
-        return actualizados
-      })
+      // Usar RPC de Supabase para toggle atómico
+      try {
+        const { data: nuevoCount } = await supabase
+          .rpc('toggle_feed_like', { p_post_id: id, p_user_id: perfil.id })
+        setPostsFeed(prev => prev.map(p => p.id === id ? { ...p, likes: nuevoCount ?? p.likes, liked: !yaLeDi } : p))
+        transmitirEvento('like_feed_item', { itemId: id, nuevoCount })
+      } catch (e) {
+        // Revertir si falla
+        setLikesDados(likesDados)
+      }
     } else {
-      setRespuestasFeed(prev => {
-        const actualizados = prev.map(r => {
-          if (r.id === id) {
-            nuevoCount = Math.max(0, (r.likes || 0) + (nuevoEstado ? 1 : -1))
-            return { ...r, likes: nuevoCount }
-          }
-          return r
-        })
-        try { localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizados)) } catch (e) {}
-        return actualizados
-      })
+      // Para respuestas de retos (locales)
+      setRespuestasFeed(prev => prev.map(r => {
+        if (r.id === id) {
+          const nuevoCount = Math.max(0, (r.likes || 0) + (!yaLeDi ? 1 : -1))
+          transmitirEvento('like_feed_item', { itemId: id, nuevoCount })
+          return { ...r, likes: nuevoCount, liked: !yaLeDi }
+        }
+        return r
+      }))
     }
-
-    transmitirEvento('like_feed_item', { itemId: id, nuevoCount })
   }
 
-  // Crear nuevo post para el feed
-  const handleCrearNuevoPost = (e) => {
+  // Crear nuevo post para el feed (guardado en Supabase)
+  const handleCrearNuevoPost = async (e) => {
     e.preventDefault()
-    if (!nuevoPostTitulo.trim() || !nuevoPostContenido.trim()) return
+    if (!nuevoPostTitulo.trim() || !nuevoPostContenido.trim() || !perfil) return
 
     setPublicandoPost(true)
-    const nuevo = {
-      id: 'post-' + Date.now(),
-      userId: perfil.id,
-      autor: perfil.nombre,
-      username: perfil.username || '',
-      color: perfil.color_acento || '#007AFF',
-      rol: perfil.rol || 'alumno',
-      categoria: nuevoPostCategoria,
-      titulo: nuevoPostTitulo.trim(),
-      contenido: nuevoPostContenido.trim(),
-      fecha: 'Hoy ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      likes: 1
+    try {
+      const { data: postCreado, error } = await supabase
+        .from('feed_posts')
+        .insert({
+          user_id: perfil.id,
+          categoria: nuevoPostCategoria,
+          titulo: nuevoPostTitulo.trim(),
+          contenido: nuevoPostContenido.trim()
+        })
+        .select(`
+          id, categoria, titulo, contenido, likes_count, created_at,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .single()
+
+      if (!error && postCreado) {
+        const nuevoPost = {
+          id: postCreado.id,
+          userId: perfil.id,
+          autor: perfil.nombre,
+          username: perfil.username || '',
+          color: perfil.color_acento || '#007AFF',
+          rol: perfil.rol || 'alumno',
+          avatarEmoji: perfil.avatar_emoji || '🧑',
+          categoria: postCreado.categoria,
+          titulo: postCreado.titulo,
+          contenido: postCreado.contenido,
+          fecha: 'Ahora',
+          likes: 0,
+          liked: false
+        }
+        setPostsFeed(prev => [nuevoPost, ...prev])
+        transmitirEvento('nuevo_feed_post', nuevoPost)
+        sound.playStamp()
+        triggerConfetti()
+
+        // +5 pts por aportar al aula
+        sumarPuntos(5)
+      }
+    } catch (err) {
+      console.error('Error al publicar:', err)
+    } finally {
+      setNuevoPostTitulo('')
+      setNuevoPostContenido('')
+      setPublicandoPost(false)
+      setMostrarModalCrearPost(false)
     }
-
-    setPostsFeed(prev => {
-      const actualizados = [nuevo, ...prev]
-      try { localStorage.setItem('muudel_feed_posts', JSON.stringify(actualizados)) } catch (e) {}
-      return actualizados
-    })
-
-    transmitirEvento('nuevo_feed_post', nuevo)
-    sound.playStamp()
-    triggerConfetti()
-
-    setNuevoPostTitulo('')
-    setNuevoPostContenido('')
-    setPublicandoPost(false)
-    setMostrarModalCrearPost(false)
-
-    // Recompensar con +5 pts por aportar al aula
-    sumarPuntos(5)
   }
 
   if (!perfil) return null
