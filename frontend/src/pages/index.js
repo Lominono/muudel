@@ -1,5 +1,5 @@
 export { PantallaInicio } from './PantallaInicio'
-export { PantallaHoy } from './PantallaHoy'
+export { PantallaHoy, PantallaFeed } from './PantallaHoy'
 export { PantallaRanking } from './PantallaRanking'
 export { PantallaJuegos } from './PantallaJuegos'
 export { PantallaChat } from './PantallaChat'

@@ -175,6 +175,25 @@ class RetroAudio {
     } catch (e) {}
   }
 
+  playPowerDown() {
+    if (this.muted) return
+    this.init()
+    if (!this.ctx) return
+    try {
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(520, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(140, this.ctx.currentTime + 0.18)
+      gain.gain.setValueAtTime(0.16, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18)
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.18)
+    } catch (e) {}
+  }
+
   playGameOver() {
     if (this.muted) return
     this.init()
@@ -235,6 +254,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     combo: 1,
     comboTimer: 0,
     feverTime: 0,
+    feverElapsed: 0,
+    feverUnstable: false,
     frameCount: 0,
     alerts: [], // [{ id, tipo, y, timer, maxTimer, icon, label, color }]
     yoshi: {
@@ -305,6 +326,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     state.combo = 1
     state.comboTimer = 0
     state.feverTime = 0
+    state.feverElapsed = 0
+    state.feverUnstable = false
     state.frameCount = 0
     state.alerts = []
     state.yoshi = {
@@ -447,11 +470,61 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           state.speed += 0.0016
         }
 
-        // Gestión de Modo Fiebre (Fever Time)
+        // Gestión de Modo Fiebre con desactivación aleatoria (Mínimo 1.5s = 90 frames, Máximo 6.0s = 360 frames)
         if (state.feverTime > 0) {
+          state.feverElapsed++
           state.feverTime--
-          if (state.feverTime === 0) {
-            setFeverActivo(false)
+
+          // Periodo seguro garantizado: los primeros 1.5s (90 frames) son 100% seguros
+          if (state.feverElapsed >= 90) {
+            state.feverUnstable = true
+
+            // Partículas de advertencia e inestabilidad
+            if (state.frameCount % 4 === 0) {
+              state.particles.push({
+                x: yoshi.x + Math.random() * yoshi.w,
+                y: yoshi.y + Math.random() * yoshi.h,
+                vx: (Math.random() - 0.5) * 3,
+                vy: -Math.random() * 2,
+                color: Math.random() > 0.5 ? '#FF3B30' : '#FBBF24',
+                size: 3,
+                life: 12,
+                maxLife: 12
+              })
+            }
+
+            // Probabilidad dinámica creciente de desconexión en cada frame
+            // Entre 90 y 360 frames: probabilidad sube gradualmente
+            const progresoInestable = (state.feverElapsed - 90) / (360 - 90)
+            const chanceDesconexion = 0.005 + Math.pow(progresoInestable, 1.8) * 0.06
+
+            // Desactivación aleatoria o al alcanzar el límite absoluto de 6s
+            if (Math.random() < chanceDesconexion || state.feverTime <= 0) {
+              state.feverTime = 0
+              state.feverUnstable = false
+              setFeverActivo(false)
+              retroAudio.playPowerDown()
+              state.floatingTexts.push({
+                text: '⚡ ¡AURA AGOTADA! ⚡',
+                x: yoshi.x + 20,
+                y: yoshi.y - 14,
+                vy: -1.3,
+                color: '#EF4444',
+                opacity: 1
+              })
+              for (let p = 0; p < 12; p++) {
+                state.particles.push({
+                  x: yoshi.x + yoshi.w / 2,
+                  y: yoshi.y + yoshi.h / 2,
+                  vx: (Math.random() - 0.5) * 6,
+                  vy: (Math.random() - 0.5) * 6,
+                  color: '#9CA3AF',
+                  size: 3.5,
+                  life: 16,
+                  maxLife: 16
+                })
+              }
+            }
           }
         }
 
@@ -735,13 +808,15 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             setMonedasPartida(state.coins)
 
             if (item.tipo === 'superBerry') {
-              // Activar Modo Fiebre
-              state.feverTime = 360 // 6 segundos
+              // Activar Modo Fiebre con duración aleatoria (mín 1.5s, máx 6.0s)
+              state.feverTime = 360 // Límite máximo 6s (360 frames a 60 FPS)
+              state.feverElapsed = 0
+              state.feverUnstable = false
               setFeverActivo(true)
               retroAudio.playFever()
               triggerConfetti()
               state.floatingTexts.push({
-                text: '★ ¡FIEBRE YOSHI! ★',
+                text: '★ ¡FIEBRE IMPREDECIBLE! ★',
                 x: yoshi.x + 20,
                 y: yoshi.y - 12,
                 vy: -1.2,
@@ -1142,11 +1217,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       yoshiSprite = step === 0 ? spritesRef.current.yoshiRun1 : spritesRef.current.yoshiRun2
     }
 
-    // Aura dorada si está en Modo Fiebre
+    // Aura dorada / parpadeante si está en Modo Fiebre
     if (state.feverTime > 0) {
       ctx.save()
-      ctx.shadowColor = '#FBBF24'
-      ctx.shadowBlur = 14
+      const parpadeo = state.feverUnstable && Math.floor(state.frameCount / 3) % 2 === 0
+      ctx.shadowColor = parpadeo ? '#FF3B30' : '#FBBF24'
+      ctx.shadowBlur = state.feverUnstable ? 18 : 14
       if (yoshiSprite) {
         ctx.drawImage(yoshiSprite, yoshi.x, yoshi.y, yoshi.w, yoshi.h)
       }
@@ -1194,11 +1270,18 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
     // Indicador Modo Fiebre
     if (state.feverTime > 0) {
-      const segs = Math.ceil(state.feverTime / 60)
-      ctx.fillStyle = '#FF3B30'
-      ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif'
-      ctx.textAlign = 'left'
-      ctx.fillText(`★ ¡FIEBRE! (${segs}s) ★`, 18, 26)
+      if (state.feverUnstable) {
+        const parpadeaTexto = Math.floor(state.frameCount / 4) % 2 === 0
+        ctx.fillStyle = parpadeaTexto ? '#FF3B30' : '#FF9500'
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif'
+        ctx.textAlign = 'left'
+        ctx.fillText(`⚡ ¡FIEBRE INESTABLE! (1.5s - 6s) ⚡`, 18, 26)
+      } else {
+        ctx.fillStyle = '#34C759'
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif'
+        ctx.textAlign = 'left'
+        ctx.fillText(`★ ¡FIEBRE ACTIVA! ★`, 18, 26)
+      }
     }
   }
 

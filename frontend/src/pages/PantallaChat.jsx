@@ -820,6 +820,9 @@ export function PantallaChat() {
               const autorColor = m.color_acento || m.profiles?.color_acento
               const autorDigito = m.digito_id || m.profiles?.digito_id
               const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
+              const autorMarco = m.marco_avatar || m.profiles?.marco_avatar || (esPropio ? perfil?.marco_avatar : null)
+              const autorBurbuja = m.burbuja_chat || m.profiles?.burbuja_chat || (esPropio ? perfil?.burbuja_chat : null)
+              const autorPin = m.insignia_activa || m.profiles?.insignia_activa || (esPropio ? perfil?.insignia_activa : null)
               const esModerador = autorRol === 'moderador'
 
               // Agrupación de mensajes consecutivos
@@ -962,7 +965,7 @@ export function PantallaChat() {
                       paddingLeft: 4,
                       flexWrap: 'wrap'
                     }}>
-                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} />
+                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} marco={autorMarco} />
                       <span className="apple-caption" style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
                         {autorNombre}
                       </span>
@@ -971,6 +974,9 @@ export function PantallaChat() {
                           @{autorUsername}
                         </span>
                       )}
+                      {autorPin === 'pin_oro' && <span title="Pin de Oro Coleccionista SMR2" style={{ fontSize: 12 }}>👑</span>}
+                      {autorPin === 'pin_hacker' && <span title="Insignia Hacker Ético" style={{ fontSize: 12 }}>🛡️</span>}
+                      {autorPin === 'pin_arcade' && <span title="Medalla Estrella Yoshi" style={{ fontSize: 12 }}>⭐</span>}
                       {esModerador && (
                         <span style={{
                           fontSize: 10,
@@ -1028,17 +1034,25 @@ export function PantallaChat() {
                       borderRadius: 18,
                       borderBottomRightRadius: esPropio ? 4 : 18,
                       borderBottomLeftRadius: esPropio ? 18 : 4,
-                      backgroundColor: esPropio
+                      backgroundColor: autorBurbuja === 'carmin'
+                        ? (esPropio ? '#991B1B' : '#7F1D1D')
+                        : autorBurbuja === 'matrix'
+                        ? '#064E3B'
+                        : esPropio
                         ? 'var(--color-accent)'
                         : esModerador
                         ? 'var(--color-surface)'
                         : 'var(--color-surface)',
-                      border: esPropio
+                      border: autorBurbuja === 'carmin'
+                        ? '1.5px solid #F59E0B'
+                        : autorBurbuja === 'matrix'
+                        ? '1.5px solid #34C759'
+                        : esPropio
                         ? 'none'
                         : esModerador
                         ? '1.5px solid rgba(10, 132, 255, 0.35)'
                         : '1px solid var(--color-separator)',
-                      color: esPropio ? '#FFFFFF' : 'var(--color-ink)',
+                      color: (autorBurbuja || esPropio) ? '#FFFFFF' : 'var(--color-ink)',
                       fontSize: 15,
                       lineHeight: 1.4,
                       wordBreak: 'break-word',

@@ -27,21 +27,100 @@ import {
   Sparkle,
   Radio,
   Flame,
-  Palette
+  Palette,
+  Eye,
+  Crown
 } from 'lucide-react'
 
-// CATÁLOGO DE PRODUCTOS EXCLUSIVAMENTE CON TIEMPO DE ACTIVACIÓN
+// CATÁLOGO DE PRODUCTOS 100% VIRTUALES, VISIBLES PARA TODOS Y ACTIVABLES CUANDO QUIERAS
 export const CATALOGO_RECOMPENSAS = [
-  // 1. MARCOS DE AVATAR TEMPORALES
+  // 1. TÍTULOS HONORÍFICOS (VISIBLES EN CHAT Y RANKINGS)
+  {
+    id: 'titulo_root',
+    categoria: 'titulos',
+    titulo: 'Título: 👑 Linux Root Master',
+    desc: 'Luce el título de superusuario oficial debajo de tu nombre en cada mensaje del chat y podio.',
+    costo: 45,
+    icon: Crown,
+    stockMax: 3, // Stock limitado: solo 3 alumnos pueden tenerlo
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '👑 Linux Root Master',
+    color: '#007AFF'
+  },
+  {
+    id: 'titulo_mvp',
+    categoria: 'titulos',
+    titulo: 'Título: 🏆 MVP del Aula 15:30',
+    desc: 'Insignia de honor exclusiva reservada para los más veloces y participativos.',
+    costo: 50,
+    icon: Award,
+    stockMax: 2, // Stock limitado: solo 2 en el aula
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '🏆 MVP Aula 15:30',
+    color: '#D4AF37'
+  },
+  {
+    id: 'titulo_vlan',
+    categoria: 'titulos',
+    titulo: 'Título: ⚡ Maestro de VLANs',
+    desc: 'Título honorífico para los que configuran switches y routers sin mirar la chuleta.',
+    costo: 40,
+    icon: Zap,
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '⚡ Maestro de VLANs',
+    color: '#FF9500'
+  },
+  {
+    id: 'titulo_yoshi',
+    categoria: 'titulos',
+    titulo: 'Título: 🐉 Domador de Yoshi',
+    desc: 'Título especial para los expertos del recreo que dominan los saltos y bombas en el juego.',
+    costo: 35,
+    icon: Flame,
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '🐉 Domador de Yoshi',
+    color: '#34C759'
+  },
+  {
+    id: 'titulo_centinela',
+    categoria: 'titulos',
+    titulo: 'Título: 🛡️ Centinela SMR2',
+    desc: 'Título de guardián de sistemas para mantener la racha de puntualidad alta.',
+    costo: 30,
+    icon: Shield,
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '🛡️ Centinela SMR2',
+    color: '#007AFF'
+  },
+  {
+    id: 'titulo_terminal',
+    categoria: 'titulos',
+    titulo: 'Título: 🐧 Hacker de Terminal',
+    desc: 'Apodo para quienes resuelven todo desde Bash y PowerShell.',
+    costo: 25,
+    icon: Zap,
+    duracionMs: 4 * 3600 * 1000,
+    duracionTexto: '4 horas desde activación',
+    tituloTexto: '🐧 Hacker de Terminal',
+    color: '#8E8E93'
+  },
+
+  // 2. AURAS Y MARCOS DE AVATAR (VISIBLES EN CHAT, FEED Y RANKINGS)
   {
     id: 'marco_oro',
     categoria: 'marcos',
     titulo: 'Marco Dorado Imperial',
-    desc: 'Doble anillo de oro bruñido y resplandor de prestigio alrededor de tu avatar en chat y rankings.',
-    costo: 40,
+    desc: 'Doble anillo de oro bruñido y resplandor de prestigio alrededor de tu avatar en toda la web.',
+    costo: 50,
     icon: Award,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    stockMax: 2, // Stock limitado: solo 2 en toda la clase
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'oro',
     color: '#D4AF37'
   },
@@ -52,8 +131,8 @@ export const CATALOGO_RECOMPENSAS = [
     desc: 'Anillo ámbar ardiente que proyecta la llama de asistencia en tu foto de perfil.',
     costo: 35,
     icon: Flame,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'fuego',
     color: '#FF9500'
   },
@@ -64,8 +143,8 @@ export const CATALOGO_RECOMPENSAS = [
     desc: 'Borde cian reactivo de alta tecnología para apasionados de redes y sistemas.',
     costo: 35,
     icon: Zap,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'cyber',
     color: '#00F0FF'
   },
@@ -76,8 +155,8 @@ export const CATALOGO_RECOMPENSAS = [
     desc: 'Borde de tinta oficial lacrada estilo sello de puntualidad [PRESENTE].',
     costo: 30,
     icon: Stamp,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'tinta',
     color: '#FF3B30'
   },
@@ -88,8 +167,8 @@ export const CATALOGO_RECOMPENSAS = [
     desc: 'Aura verde fosforescente de terminal UNIX y consola de administración.',
     costo: 30,
     icon: Sparkles,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'esmeralda',
     color: '#34C759'
   },
@@ -100,171 +179,41 @@ export const CATALOGO_RECOMPENSAS = [
     desc: 'Acabado minimalista de titanio negro satinado con reflejo pulido.',
     costo: 25,
     icon: Shield,
-    duracionMs: 2 * 3600 * 1000,
-    duracionTexto: '2 horas desde activación',
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
     marcoKey: 'obsidiana',
     color: '#8E8E93'
   },
 
-  // 2. TÍTULOS Y APODOS VIP TEMPORALES
+  // 3. EFECTOS DE CHAT EN DIRECTO (SE ACTIVAN DESDE LA MOCHILA Y TODA LA CLASE LOS VE)
   {
-    id: 'titulo_root',
-    categoria: 'titulos',
-    titulo: 'Título: 💻 Linux Root Master',
-    desc: 'Luce el título de superusuario oficial debajo de tu nombre en cada mensaje del chat.',
-    costo: 45,
-    icon: Award,
-    duracionMs: 4 * 3600 * 1000,
-    duracionTexto: '4 horas desde activación',
-    tituloTexto: '💻 Linux Root Master',
-    color: '#007AFF'
-  },
-  {
-    id: 'titulo_mvp',
-    categoria: 'titulos',
-    titulo: 'Título: 🏆 MVP del Aula 15:30',
-    desc: 'Insignia de honor reservada para el alumno más puntual y participativo de la jornada.',
-    costo: 50,
-    icon: Award,
-    duracionMs: 4 * 3600 * 1000,
-    duracionTexto: '4 horas desde activación',
-    tituloTexto: '🏆 MVP Aula 15:30',
-    color: '#D4AF37'
-  },
-  {
-    id: 'titulo_hacker',
-    categoria: 'titulos',
-    titulo: 'Título: ⚡ Redes & Scripts God',
-    desc: 'Título honorífico para los que configuran switches y routers sin mirar la chuleta.',
-    costo: 40,
-    icon: Zap,
-    duracionMs: 4 * 3600 * 1000,
-    duracionTexto: '4 horas desde activación',
-    tituloTexto: '⚡ Redes & Scripts God',
-    color: '#FF9500'
-  },
-  {
-    id: 'titulo_patrocinador',
-    categoria: 'titulos',
-    titulo: 'Título: ☕ Rey del Descanso 18:10',
-    desc: 'Título oficial de cafetería para liderar la bajada en el descanso de la tarde.',
-    costo: 35,
-    icon: Coffee,
-    duracionMs: 4 * 3600 * 1000,
-    duracionTexto: '4 horas desde activación',
-    tituloTexto: '☕ Rey del Descanso 18:10',
-    color: '#34C759'
-  },
-  {
-    id: 'titulo_cable',
-    categoria: 'titulos',
-    titulo: 'Título: 🔌 Cable RJ45 Humano',
-    desc: 'Apodo clásico para el compañero que siempre tiene cable de red o adaptador a mano.',
-    costo: 25,
-    icon: HelpCircle,
-    duracionMs: 4 * 3600 * 1000,
-    duracionTexto: '4 horas desde activación',
-    tituloTexto: '🔌 Cable RJ45 Humano',
-    color: '#8E8E93'
-  },
-
-  // 3. VENTAJAS DE AULA TEMPORALES
-  {
-    id: 'congelar_racha',
-    categoria: 'aula',
-    titulo: 'Escudo Antirretraso de Asistencia',
-    desc: 'Si un día tienes un retraso justificado después de las 15:30, tu racha de días se conserva intacta.',
-    costo: 50,
-    icon: Shield,
-    duracionMs: 24 * 3600 * 1000,
-    duracionTexto: '24 horas desde activación',
-    color: '#007AFF'
-  },
-  {
-    id: 'elegir_sitio',
-    categoria: 'aula',
-    titulo: 'Elegir Sitio en el Aula de Informática',
-    desc: 'Derecho a elegir puesto de ordenador en el aula junto a tu compañero durante la jornada.',
-    costo: 80,
-    icon: MapPin,
-    duracionMs: 24 * 3600 * 1000,
-    duracionTexto: '24 horas lectivas desde activación',
-    color: '#34C759'
-  },
-  {
-    id: 'musica_descanso',
-    categoria: 'aula',
-    titulo: 'Conectar Altavoz en el Descanso',
-    desc: 'Pones tú la música por Bluetooth en el aula durante los 30 minutos del descanso de las 18:10.',
-    costo: 60,
-    icon: Music,
-    duracionMs: 45 * 60 * 1000,
-    duracionTexto: '45 minutos desde activación',
-    color: '#FF9500'
-  },
-  {
-    id: 'pista_examen',
-    categoria: 'aula',
-    titulo: 'Pista Clave de Práctica / Control',
-    desc: 'lominoño te facilita una pista orientativa sobre los comandos del próximo control de sistemas.',
-    costo: 100,
-    icon: HelpCircle,
-    duracionMs: 48 * 3600 * 1000,
-    duracionTexto: '48 horas desde activación',
-    color: '#FF3B30'
-  },
-  {
-    id: 'ticket_cafeteria',
-    categoria: 'aula',
-    titulo: 'Ticket de Cafetería / Máquina',
-    desc: 'Un café, zumo o tentempié acordado para el descanso de las 18:10 con el profesor.',
-    costo: 150,
-    icon: Coffee,
-    duracionMs: 72 * 3600 * 1000,
-    duracionTexto: '72 horas para canjear en clase',
-    color: '#8E8E93'
-  },
-
-  // 4. EFECTOS Y SELLOS EN TIEMPO REAL
-  {
-    id: 'sello_tinta_chat',
+    id: 'confeti_chat',
     categoria: 'efectos',
-    titulo: 'Estampar Sello Oficial en Chat',
-    desc: 'Estampa un sello físico oficial [PRESENTE], [VISTO], [DESCANSO] o [APROBADO].',
-    costo: 15,
-    icon: Stamp,
-    duracionMs: 15 * 60 * 1000,
-    duracionTexto: 'Uso durante 15 minutos',
-    color: '#FF3B30'
+    titulo: 'Lluvia de Confeti en Aula',
+    desc: 'Dispara una ráfaga de confeti de celebración en pantalla completa a todos los alumnos conectados.',
+    costo: 20,
+    icon: Sparkles,
+    duracionMs: 5 * 60 * 1000,
+    duracionTexto: 'Uso instantáneo (se activa cuando quieras)',
+    efecto: 'confeti',
+    color: '#FF9500'
   },
   {
     id: 'terremoto_chat',
     categoria: 'efectos',
     titulo: 'Sacudida Sísmica de Aula',
-    desc: 'Hace temblar la pantalla del chat de todos los compañeros en vivo durante 3 segundos.',
+    desc: 'Hace temblar la pantalla del chat de todos los compañeros en vivo durante 3 segundos con aviso sonoro.',
     costo: 25,
     icon: Zap,
     duracionMs: 5 * 60 * 1000,
-    duracionTexto: 'Recarga: 5 minutos',
+    duracionTexto: 'Uso instantáneo (se activa cuando quieras)',
     efecto: 'terremoto',
     color: '#FF3B30'
   },
   {
-    id: 'confeti_chat',
-    categoria: 'efectos',
-    titulo: 'Lluvia de Papelitos de Confeti',
-    desc: 'Dispara una ráfaga de confeti de celebración en el chat de todos los alumnos.',
-    costo: 20,
-    icon: Sparkles,
-    duracionMs: 3 * 60 * 1000,
-    duracionTexto: 'Recarga: 3 minutos',
-    efecto: 'confeti',
-    color: '#FF9500'
-  },
-  {
     id: 'megafono_chat',
     categoria: 'efectos',
-    titulo: 'Aviso Fijado en Tablón de Clase',
+    titulo: 'Aviso Fijado con Megáfono',
     desc: 'Fija un comunicado de texto en la cabecera del chat visible para toda la clase durante 30 minutos.',
     costo: 35,
     icon: Megaphone,
@@ -276,13 +225,79 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'sirena_descanso',
     categoria: 'efectos',
-    titulo: 'Silbato del Descanso 18:10',
+    titulo: 'Silbato del Recreo (18:10)',
     desc: 'Suena el aviso acústico oficial recordando que empieza el descanso de la tarde.',
     costo: 20,
     icon: Clock,
     duracionMs: 15 * 60 * 1000,
-    duracionTexto: 'Recarga: 15 minutos',
+    duracionTexto: 'Uso instantáneo (se activa cuando quieras)',
     efecto: 'descanso',
+    color: '#34C759'
+  },
+
+  // 4. TEMAS DE BURBUJA DE CHAT (TUS MENSAJES DESTACAN PARA TODOS)
+  {
+    id: 'burbuja_carmin',
+    categoria: 'burbujas',
+    titulo: 'Burbuja Carmín VIP en Chat',
+    desc: 'Tus mensajes en el chat aparecen con fondo carmín lacrado oficial para que destaquen sobre los demás.',
+    costo: 40,
+    icon: Palette,
+    stockMax: 3, // Stock limitado: solo 3 plazas
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
+    burbujaKey: 'carmin',
+    color: '#FF3B30'
+  },
+  {
+    id: 'burbuja_matrix',
+    categoria: 'burbujas',
+    titulo: 'Burbuja Matrix Consola',
+    desc: 'Tus mensajes adquieren tono de terminal negra con borde verde fósforo visible por toda la clase.',
+    costo: 35,
+    icon: Palette,
+    duracionMs: 3 * 3600 * 1000,
+    duracionTexto: '3 horas desde activación',
+    burbujaKey: 'matrix',
+    color: '#30D158'
+  },
+
+  // 5. PINES Y CONDECORACIONES DE PERFIL
+  {
+    id: 'pin_oro_smr2',
+    categoria: 'insignias',
+    titulo: 'Pin de Oro SMR2 Coleccionista',
+    desc: 'Condecoración de oro macizo digital. Se muestra con brillo estelar junto a tu nombre y en tu perfil.',
+    costo: 75,
+    icon: Crown,
+    stockMax: 1, // ¡Pieza única en toda la clase!
+    duracionMs: 24 * 3600 * 1000,
+    duracionTexto: '24 horas de exclusividad',
+    pinKey: 'pin_oro',
+    color: '#D4AF37'
+  },
+  {
+    id: 'pin_hacker',
+    categoria: 'insignias',
+    titulo: 'Insignia Hacker Ético SMR2',
+    desc: 'Pin de certificación de seguridad en redes informáticas visible en tu ficha de alumno.',
+    costo: 35,
+    icon: Shield,
+    duracionMs: 12 * 3600 * 1000,
+    duracionTexto: '12 horas desde activación',
+    pinKey: 'pin_hacker',
+    color: '#007AFF'
+  },
+  {
+    id: 'pin_arcade_master',
+    categoria: 'insignias',
+    titulo: 'Medalla Estrella Yoshi Runner',
+    desc: 'Medalla deportiva escolar por reflejos y proezas en el Recreo Arcade.',
+    costo: 30,
+    icon: Award,
+    duracionMs: 12 * 3600 * 1000,
+    duracionTexto: '12 horas desde activación',
+    pinKey: 'pin_arcade',
     color: '#34C759'
   }
 ]
@@ -406,6 +421,32 @@ export function TiendaRecompensas({ onClose }) {
   // Notificación
   const [notificacion, setNotificacion] = useState(null)
 
+  // Sistema de Stock Limitado
+  const [stockMap, setStockMap] = useState(() => {
+    try {
+      const s = localStorage.getItem('muudel_tienda_stock')
+      return s ? JSON.parse(s) : {}
+    } catch (e) {
+      return {}
+    }
+  })
+
+  // Escuchar actualización de stock en tiempo real
+  useEffect(() => {
+    const desuscribirStock = suscribirEvento('actualizar_stock_tienda', ({ itemId, nuevoStock }) => {
+      setStockMap(prev => ({ ...prev, [itemId]: nuevoStock }))
+    })
+    return () => desuscribirStock()
+  }, [])
+
+  const obtenerStockRestante = (item) => {
+    if (!item.stockMax) return null
+    if (typeof stockMap[item.id] === 'number') {
+      return stockMap[item.id]
+    }
+    return item.stockMax
+  }
+
   const puntosActuales = perfil?.puntos_total || 0
 
   // 1. Cargar inventario del usuario
@@ -502,6 +543,13 @@ export function TiendaRecompensas({ onClose }) {
 
   // 3. COMPRAR PRODUCTO: Va a la Mochila / Inventario (No se activa aún)
   const comprarProducto = async (item) => {
+    const stockRestante = obtenerStockRestante(item)
+    if (item.stockMax && stockRestante !== null && stockRestante <= 0) {
+      sound.playPop()
+      avisar(`¡Este producto está agotado! Se han vendido todas las unidades de la clase.`, 'error')
+      return
+    }
+
     if (puntosActuales < item.costo) {
       sound.playPop()
       avisar(`Te faltan ${item.costo - puntosActuales} puntos para comprar este artículo.`, 'error')
@@ -510,6 +558,17 @@ export function TiendaRecompensas({ onClose }) {
 
     setComprandoId(item.id)
     const nuevosPuntos = puntosActuales - item.costo
+
+    // Descontar stock si es limitado
+    if (item.stockMax) {
+      const nuevoStock = Math.max(0, (stockRestante ?? item.stockMax) - 1)
+      const stockActualizado = { ...stockMap, [item.id]: nuevoStock }
+      setStockMap(stockActualizado)
+      try {
+        localStorage.setItem('muudel_tienda_stock', JSON.stringify(stockActualizado))
+      } catch (e) {}
+      transmitirEvento('actualizar_stock_tienda', { itemId: item.id, nuevoStock })
+    }
 
     // Descontar puntos
     const perfilActualizado = { ...perfil, puntos_total: nuevosPuntos }
@@ -531,6 +590,8 @@ export function TiendaRecompensas({ onClose }) {
       duracionTexto: item.duracionTexto,
       marcoKey: item.marcoKey || null,
       tituloTexto: item.tituloTexto || null,
+      pinKey: item.pinKey || null,
+      burbujaKey: item.burbujaKey || null,
       efecto: item.efecto || null,
       color: item.color,
       estado: 'listo', // 'listo' | 'activo' | 'expirado'
@@ -616,18 +677,17 @@ export function TiendaRecompensas({ onClose }) {
       perfilActualizado.titulo_vip = invItem.tituloTexto
       perfilActualizado.frase = invItem.tituloTexto
     }
-    if (invItem.catalogoId === 'congelar_racha') {
-      perfilActualizado.racha_congelada = true
-      perfilActualizado.racha_congelada_hasta = expiraEn
+    if (invItem.pinKey) {
+      perfilActualizado.insignia_activa = invItem.pinKey
+    }
+    if (invItem.burbujaKey) {
+      perfilActualizado.burbuja_chat = invItem.burbujaKey
     }
 
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
     try {
       localStorage.setItem('muudel_user_meta_' + perfil.id, JSON.stringify(perfilActualizado))
-    } catch (e) {}
-
-    try {
       await supabase
         .from('profiles')
         .update({
@@ -636,6 +696,12 @@ export function TiendaRecompensas({ onClose }) {
         })
         .eq('id', perfil.id)
     } catch (e) {}
+
+    // Transmitir cambio de perfil en tiempo real para que todos en el chat y rankings vean su nuevo título, marco o pin
+    transmitirEvento('perfil_actualizado', {
+      userId: perfil.id,
+      perfil: perfilActualizado
+    })
 
     // Si es efecto o sello de chat, disparar en vivo
     if (invItem.catalogoId === 'sello_tinta_chat') {
@@ -792,7 +858,7 @@ export function TiendaRecompensas({ onClose }) {
             className={`segmented-control-item ${pestaña === 'catalogo' ? 'active' : ''}`}
             onClick={() => setPestaña('catalogo')}
           >
-            Catálogo
+            Catálogo Virtual
           </button>
           <button
             type="button"
@@ -800,13 +866,6 @@ export function TiendaRecompensas({ onClose }) {
             onClick={() => setPestaña('inventario')}
           >
             Mi Mochila ({articulosListos.length} listos · {articulosActivos.length} activos)
-          </button>
-          <button
-            type="button"
-            className={`segmented-control-item ${pestaña === 'tickets' ? 'active' : ''}`}
-            onClick={() => setPestaña('tickets')}
-          >
-            Vales de Aula ({canjes.length})
           </button>
         </div>
 
@@ -826,10 +885,11 @@ export function TiendaRecompensas({ onClose }) {
             }}>
               {[
                 { id: 'todos', label: 'Todos' },
-                { id: 'marcos', label: 'Marcos Avatar' },
                 { id: 'titulos', label: 'Títulos VIP' },
-                { id: 'aula', label: 'Ventajas Aula' },
-                { id: 'efectos', label: 'Efectos Chat' }
+                { id: 'marcos', label: 'Auras & Marcos' },
+                { id: 'efectos', label: 'Efectos en Vivo' },
+                { id: 'burbujas', label: 'Burbujas Chat' },
+                { id: 'insignias', label: 'Pines de Perfil' }
               ].map(cat => (
                 <button
                   key={cat.id}
@@ -862,7 +922,9 @@ export function TiendaRecompensas({ onClose }) {
             }}>
               {itemsCatalogoFiltrados.map((item, idx) => {
                 const Icono = item.icon
-                const alcanzable = puntosActuales >= item.costo
+                const stockRestante = obtenerStockRestante(item)
+                const estaAgotado = item.stockMax && stockRestante !== null && stockRestante <= 0
+                const alcanzable = puntosActuales >= item.costo && !estaAgotado
 
                 return (
                   <div
@@ -873,7 +935,7 @@ export function TiendaRecompensas({ onClose }) {
                       alignItems: 'center',
                       gap: 12,
                       borderBottom: idx < itemsCatalogoFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
-                      opacity: alcanzable ? 1 : 0.65
+                      opacity: estaAgotado ? 0.5 : (alcanzable ? 1 : 0.65)
                     }}
                   >
                     <div style={{
@@ -895,6 +957,17 @@ export function TiendaRecompensas({ onClose }) {
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)' }}>
                           {item.titulo}
                         </span>
+                        {item.stockMax && (
+                          stockRestante > 0 ? (
+                            <span className="apple-badge apple-badge-warning" style={{ fontSize: 10, fontWeight: 800 }}>
+                              🔥 Solo {stockRestante} en el aula
+                            </span>
+                          ) : (
+                            <span className="apple-badge apple-badge-negative" style={{ fontSize: 10, fontWeight: 800 }}>
+                              🚫 AGOTADO
+                            </span>
+                          )
+                        )}
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
@@ -912,7 +985,7 @@ export function TiendaRecompensas({ onClose }) {
                     <button
                       type="button"
                       className="btn-primary"
-                      disabled={!alcanzable || comprandoId === item.id}
+                      disabled={!alcanzable || comprandoId === item.id || estaAgotado}
                       onClick={() => comprarProducto(item)}
                       style={{
                         flexShrink: 0,
@@ -920,12 +993,13 @@ export function TiendaRecompensas({ onClose }) {
                         padding: '4px 14px',
                         fontSize: 13,
                         fontWeight: 700,
-                        backgroundColor: alcanzable ? item.color : 'var(--color-fill-secondary)',
-                        color: alcanzable ? '#FFFFFF' : 'var(--color-tertiary-ink)',
-                        boxShadow: 'none'
+                        backgroundColor: estaAgotado ? 'var(--color-fill-secondary)' : (alcanzable ? item.color : 'var(--color-fill-secondary)'),
+                        color: estaAgotado ? 'var(--color-tertiary-ink)' : (alcanzable ? '#FFFFFF' : 'var(--color-tertiary-ink)'),
+                        boxShadow: 'none',
+                        cursor: estaAgotado ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {comprandoId === item.id ? 'Comprando...' : `${item.costo} pts`}
+                      {estaAgotado ? 'Agotado' : (comprandoId === item.id ? 'Comprando...' : `${item.costo} pts`)}
                     </button>
                   </div>
                 )
