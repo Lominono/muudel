@@ -675,6 +675,24 @@ export function PantallaHoy() {
 
         {/* LISTADO DE ACTIVIDAD DEL FEED */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Estado de carga */}
+          {cargandoPosts && itemsMostrados.length === 0 && (
+            <div className="card" style={{ padding: '24px 16px', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-secondary-ink)', opacity: 0.7 }}>
+                Cargando publicaciones…
+              </div>
+            </div>
+          )}
+          {/* Estado vacío — sin datos ficticios */}
+          {!cargandoPosts && itemsMostrados.length === 0 && (
+            <div className="card" style={{ padding: '32px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={28} color="var(--color-accent)" style={{ opacity: 0.5 }} />
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-ink)' }}>El feed está vacío</div>
+              <div style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
+                Sé el primero en compartir un post o truco técnico con la clase.
+              </div>
+            </div>
+          )}
           {itemsMostrados.map((item) => {
             const esRespuesta = item.tipoFeed === 'respuesta'
             const yaLeDiLike = Boolean(likesDados[item.id])
