@@ -237,16 +237,83 @@ export const SVG_CLOUD = `
 </svg>
 `
 
+// 11. Yoshi Aleteando en el Aire (Flutter Jump - pataleo rápido para mantenerse suspendido)
+export const SVG_YOSHI_FLUTTER = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" shape-rendering="crispEdges">
+  <!-- Cola y cresta -->
+  <path d="M10 28 h10 v6 h-10 z" fill="#30D158" />
+  <path d="M18 18 h6 v6 h-6 z" fill="#FF3B30" />
+  <path d="M16 24 h6 v4 h-6 z" fill="#FF3B30" />
+  <!-- Caparazón rojo -->
+  <path d="M18 26 h10 v8 h-10 z" fill="#FF3B30" />
+  <!-- Cuerpo verde tenso -->
+  <path d="M24 22 h16 v16 h-16 z" fill="#30D158" />
+  <!-- Panza blanca inflada por esfuerzo -->
+  <path d="M34 24 h12 v14 h-12 z" fill="#FFFFFF" />
+  <!-- Cabeza con boca esforzándose (mejillas infladas de Yoshi al aletear) -->
+  <path d="M32 6 h16 v18 h-16 z" fill="#30D158" />
+  <path d="M44 10 h16 v14 h-16 z" fill="#30D158" />
+  <path d="M44 18 h8 v6 h-8 z" fill="#FFFFFF" />
+  <!-- Ojo abierto determinado -->
+  <path d="M36 4 h10 v12 h-10 z" fill="#FFFFFF" />
+  <path d="M42 6 h4 v6 h-4 z" fill="#1C1C1E" />
+  <!-- Brazos esforzándose hacia adelante -->
+  <path d="M42 24 h8 v5 h-8 z" fill="#FFFFFF" />
+  <!-- Patitas naranjas aleteando enérgicamente (pataleo frenético) -->
+  <path d="M22 38 h8 v8 h-8 z" fill="#30D158" />
+  <path d="M18 46 h14 v6 h-14 z" fill="#FF9500" />
+  <path d="M34 38 h8 v8 h-8 z" fill="#30D158" />
+  <path d="M36 46 h14 v6 h-14 z" fill="#FF9500" />
+</svg>
+`
+
+// 12. Super Baya / Fruta Yoshi (+Fiebre, invencibilidad y súper velocidad)
+export const SVG_SUPER_BERRY = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Tallo verde -->
+  <path d="M14 4 C14 2, 18 2, 18 7" stroke="#30D158" stroke-width="2.5" fill="none" stroke-linecap="round" />
+  <ellipse cx="20" cy="6" rx="4" ry="2" fill="#34C759" transform="rotate(-20 20 6)" />
+  <!-- Baya roja brillante -->
+  <circle cx="16" cy="18" r="11" fill="#FF3B30" stroke="#B91C1C" stroke-width="1.5" />
+  <!-- Brillo especular -->
+  <ellipse cx="12" cy="14" rx="3.5" ry="2" fill="#FFFFFF" transform="rotate(-30 12 14)" />
+  <!-- Estrellita dorada central -->
+  <polygon points="16,13 17.5,17 21.5,17 18.5,19.5 19.5,23.5 16,21 12.5,23.5 13.5,19.5 10.5,17 14.5,17" fill="#FBBF24" />
+</svg>
+`
+
+// 13. Obstáculo de alta velocidad: Bala Bill (Bullet Bill)
+export const SVG_BULLET_BILL = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" width="48" height="30" shape-rendering="crispEdges">
+  <!-- Ojiva y cuerpo negro azabache -->
+  <path d="M12 2 h24 a12 12 0 0 1 12 12 a12 12 0 0 1 -12 12 h-24 a2 2 0 0 1 -2 -2 v-20 a2 2 0 0 1 2 -2 z" fill="#1C1C1E" stroke="#000000" stroke-width="1" />
+  <!-- Ojo blanco malévolo -->
+  <path d="M30 6 h8 v10 h-8 z" fill="#FFFFFF" />
+  <path d="M34 8 h4 v6 h-4 z" fill="#1C1C1E" />
+  <!-- Brazo y puño blanco hacia adelante -->
+  <rect x="18" y="16" width="12" height="6" rx="2" fill="#FFFFFF" />
+  <circle cx="16" cy="19" r="4" fill="#FFFFFF" />
+  <!-- Propulsor trasero y fuego -->
+  <rect x="4" y="6" width="6" height="16" fill="#9CA3AF" />
+  <polygon points="4,10 -6,14 4,18" fill="#F59E0B" />
+  <polygon points="4,12 -2,14 4,16" fill="#EF4444" />
+</svg>
+`
+
 // Exportar Data URIs listos para usar en Image() de HTML5 Canvas
 export const SPRITES_DATA_URI = {
   yoshiRun1: toDataUri(SVG_YOSHI_RUN_1),
   yoshiRun2: toDataUri(SVG_YOSHI_RUN_2),
   yoshiJump: toDataUri(SVG_YOSHI_JUMP),
   yoshiDuck: toDataUri(SVG_YOSHI_DUCK),
+  yoshiFlutter: toDataUri(SVG_YOSHI_FLUTTER),
   piranhaPipe: toDataUri(SVG_PIRANHA_PIPE),
   koopaShell: toDataUri(SVG_KOOPA_SHELL),
   paratroopa: toDataUri(SVG_PARATROOPA),
+  bulletBill: toDataUri(SVG_BULLET_BILL),
   yoshiEgg: toDataUri(SVG_YOSHI_EGG),
   goldCoin: toDataUri(SVG_GOLD_COIN),
+  superBerry: toDataUri(SVG_SUPER_BERRY),
   cloud: toDataUri(SVG_CLOUD),
 }
+

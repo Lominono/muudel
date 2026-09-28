@@ -71,6 +71,7 @@ export function PantallaChat() {
     mensajes,
     cargando,
     enviar,
+    toggleLike,
     like,
     toggleReaccion,
     toggleFijado,
@@ -330,11 +331,16 @@ export function PantallaChat() {
     await enviar(contenido, perfil.id, perfil, replyData)
   }
 
-  const manejarLike = (id) => {
+  const manejarLike = async (id) => {
+    if (!perfil) return
     setLikedId(id)
     sound.playPop()
-    like(id)
-    setTimeout(() => setLikedId(null), 300)
+    const yaTieneLike = mensajes.find(m => m.id === id)?.liked_by_me
+    if (!yaTieneLike) {
+      sound.playStamp()
+    }
+    await toggleLike(id, perfil.id, perfil.username ? `@${perfil.username}` : (perfil.nombre?.split(' ')[0] || 'Compañero'))
+    setTimeout(() => setLikedId(null), 350)
   }
 
   const manejarReaccionEmoji = (msgId, emoji) => {
@@ -1128,25 +1134,43 @@ export function PantallaChat() {
                       {hora}
                     </span>
 
-                    {/* Like clásico rápido */}
+                    {/* Like interactivo mejorado con estado por usuario y tooltip de likers */}
                     <button
                       type="button"
                       onClick={() => manejarLike(m.id)}
-                      className={isLiked ? 'heart-pop' : ''}
-                      title="Dar me gusta"
+                      className={`chat-like-btn ${isLiked ? 'heart-pop' : ''} ${m.liked_by_me ? 'liked' : ''}`}
+                      title={
+                        m.likers && m.likers.length > 0
+                          ? `Le gusta a: ${m.likers.join(', ')}`
+                          : m.liked_by_me ? 'Ya no me gusta' : 'Dar me gusta'
+                      }
                       style={{
-                        background: 'transparent',
-                        border: 'none',
+                        background: m.liked_by_me ? 'rgba(255, 59, 48, 0.1)' : 'transparent',
+                        border: m.liked_by_me ? '1px solid rgba(255, 59, 48, 0.25)' : '1px solid transparent',
+                        borderRadius: 12,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 2,
-                        color: (m.likes_count || 0) > 0 ? 'var(--color-negative)' : 'var(--color-tertiary-ink)',
+                        gap: 3,
+                        color: m.liked_by_me
+                          ? 'var(--color-negative, #FF3B30)'
+                          : (m.likes_count || 0) > 0
+                          ? 'var(--color-negative, #FF3B30)'
+                          : 'var(--color-tertiary-ink)',
                         fontSize: 12,
-                        padding: '2px 4px',
+                        fontWeight: 600,
+                        padding: '2px 6px',
+                        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
                       }}
                     >
-                      <Heart size={12} fill={(m.likes_count || 0) > 0 ? 'currentColor' : 'none'} />
+                      <Heart
+                        size={13}
+                        fill={m.liked_by_me || (m.likes_count || 0) > 0 ? 'currentColor' : 'none'}
+                        style={{
+                          transform: isLiked ? 'scale(1.3)' : 'scale(1)',
+                          transition: 'transform 0.15s ease'
+                        }}
+                      />
                       <span className="tabular-nums font-semibold">{m.likes_count || 0}</span>
                     </button>
 

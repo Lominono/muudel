@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { Calendar, Trophy, Gamepad2, MessageSquare, User, ClipboardList } from 'lucide-react'
 import { useAuth } from '../App'
+import { sound } from '../utils/haptics'
 
 export function TabBar() {
   const { perfil } = useAuth()
@@ -44,6 +45,7 @@ export function TabBar() {
             key={tab.to}
             to={tab.to}
             end={tab.to === '/'}
+            onClick={() => sound.playPop()}
             style={({ isActive }) => ({
               display: 'flex',
               flexDirection: 'column',
@@ -54,7 +56,8 @@ export function TabBar() {
               color: isActive ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
               minWidth: 54,
               minHeight: 44,
-              transition: 'color 0.15s ease',
+              transition: 'all 0.15s ease',
+              transform: isActive ? 'scale(1.04)' : 'scale(1)',
             })}
           >
             {({ isActive }) => (

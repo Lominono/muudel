@@ -31,10 +31,28 @@ export function useChat(canal) {
       }
     })
 
-    // 2. Escuchar likes en tiempo real
-    const desuscribirLikes = suscribirEvento('like_mensaje_chat', ({ messageId, canal: canalMsg }) => {
+    // 2. Escuchar likes y unlikes en tiempo real con recuento exacto
+    const desuscribirLikes = suscribirEvento('toggle_like_mensaje_chat', ({ messageId, canal: canalMsg, userId: uid, nombreUsuario, liked, newCount }) => {
       if (canalMsg === canal) {
-        setMensajes(prev => prev.map(m => m.id === messageId ? { ...m, likes_count: (m.likes_count || 0) + 1 } : m))
+        setMensajes(prev => prev.map(m => {
+          if (m.id !== messageId) return m
+          const likersPrev = Array.isArray(m.likers) ? [...m.likers] : []
+          let likersActualizados = []
+          if (liked) {
+            if (!likersPrev.includes(nombreUsuario)) {
+              likersActualizados = [...likersPrev, nombreUsuario]
+            } else {
+              likersActualizados = likersPrev
+            }
+          } else {
+            likersActualizados = likersPrev.filter(n => n !== nombreUsuario)
+          }
+          return {
+            ...m,
+            likes_count: typeof newCount === 'number' ? newCount : (liked ? (m.likes_count || 0) + 1 : Math.max(0, (m.likes_count || 0) - 1)),
+            likers: likersActualizados
+          }
+        }))
       }
     })
 
@@ -154,6 +172,15 @@ export function useChat(canal) {
       if (err) throw err
 
       if (data && data.length > 0) {
+        let misLikes = {}
+        try {
+          const u = localStorage.getItem('racha_local_user')
+          if (u) {
+            const uid = JSON.parse(u).id
+            misLikes = JSON.parse(localStorage.getItem(`muudel_likes_${uid}`) || '{}')
+          }
+        } catch (e) {}
+
         // Enriquecer datos con datos del profile asociado si existen
         const enriquecidos = data.map(m => ({
           ...m,
@@ -162,7 +189,8 @@ export function useChat(canal) {
           color_acento: m.profiles?.color_acento || m.color_acento,
           rol: m.profiles?.rol || m.rol,
           digito_id: m.profiles?.digito_id || m.digito_id,
-          titulo_vip: m.profiles?.frase || m.titulo_vip
+          titulo_vip: m.profiles?.frase || m.titulo_vip,
+          liked_by_me: Boolean(misLikes[m.id])
         }))
         setMensajes(enriquecidos)
         try {
@@ -230,6 +258,8 @@ export function useChat(canal) {
       rol: perfil?.rol || 'alumno',
       titulo_vip: perfil?.frase || null,
       likes_count: 0,
+      liked_by_me: false,
+      likers: [],
       reacciones: {},
       fijado: false,
       reply_to: replyData?.id || null,
@@ -276,25 +306,95 @@ export function useChat(canal) {
     }
   }
 
-  const like = async (messageId) => {
+  // Sistema de Likes Mejorado (Like / Unlike con persistencia de usuario y recuento exacto)
+  const toggleLike = async (messageId, userId, nombreUsuario = 'Compañero') => {
+    if (!userId) return false
+
+    let estadoLikedFinal = false
+    let countFinal = 0
+
+    // Consultar likes locales del usuario
+    let misLikes = {}
+    try {
+      misLikes = JSON.parse(localStorage.getItem(`muudel_likes_${userId}`) || '{}')
+    } catch (e) {}
+
+    const yaLeDiLike = Boolean(misLikes[messageId])
+    estadoLikedFinal = !yaLeDiLike
+
+    if (estadoLikedFinal) {
+      misLikes[messageId] = true
+    } else {
+      delete misLikes[messageId]
+    }
+
+    try {
+      localStorage.setItem(`muudel_likes_${userId}`, JSON.stringify(misLikes))
+    } catch (e) {}
+
     setMensajes(prev => {
       const actualizados = prev.map(m => {
         if (m.id === messageId) {
-          return { ...m, likes_count: (m.likes_count || 0) + 1 }
+          const actualCount = Math.max(0, (m.likes_count || 0) + (estadoLikedFinal ? 1 : -1))
+          countFinal = actualCount
+          const likersPrev = Array.isArray(m.likers) ? [...m.likers] : []
+          let likersActualizados = []
+          if (estadoLikedFinal) {
+            if (!likersPrev.includes(nombreUsuario)) {
+              likersActualizados = [...likersPrev, nombreUsuario]
+            } else {
+              likersActualizados = likersPrev
+            }
+          } else {
+            likersActualizados = likersPrev.filter(n => n !== nombreUsuario)
+          }
+
+          return {
+            ...m,
+            likes_count: actualCount,
+            liked_by_me: estadoLikedFinal,
+            likers: likersActualizados
+          }
         }
         return m
       })
-      localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      } catch (e) {}
       return actualizados
     })
 
-    // Transmitir like a toda la clase
-    transmitirEvento('like_mensaje_chat', { messageId, canal })
+    // Transmitir like/unlike a toda la clase con información detallada
+    transmitirEvento('toggle_like_mensaje_chat', {
+      messageId,
+      canal,
+      userId,
+      nombreUsuario,
+      liked: estadoLikedFinal,
+      newCount: countFinal
+    })
 
     try {
-      await supabase.rpc('increment_likes', { msg_id: messageId })
-    } catch (e) {}
-    return true
+      const { data } = await supabase.rpc('toggle_like_mensaje', {
+        p_msg_id: messageId,
+        p_user_id: userId
+      })
+      if (data && typeof data.count === 'number') {
+        setMensajes(prev => prev.map(m => m.id === messageId ? { ...m, likes_count: data.count, liked_by_me: data.liked } : m))
+      }
+    } catch (e) {
+      try {
+        if (estadoLikedFinal) {
+          await supabase.from('message_likes').insert({ message_id: messageId, user_id: userId })
+          await supabase.rpc('increment_likes', { msg_id: messageId })
+        } else {
+          await supabase.from('message_likes').delete().eq('message_id', messageId).eq('user_id', userId)
+          await supabase.from('messages').update({ likes_count: countFinal }).eq('id', messageId)
+        }
+      } catch (err) {}
+    }
+
+    return estadoLikedFinal
   }
 
   // Alternar reacción rica con emoji (❤️, 👍, 💡, 🔥, ❓)
@@ -411,7 +511,8 @@ export function useChat(canal) {
     mensajes,
     cargando,
     enviar,
-    like,
+    toggleLike,
+    like: toggleLike,
     toggleReaccion,
     toggleFijado,
     eliminarMensaje,

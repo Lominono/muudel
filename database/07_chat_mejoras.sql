@@ -67,3 +67,33 @@ begin
   return v_reacciones;
 end;
 $$;
+
+-- 5. Función RPC para alternar Likes de mensajes (Like / Unlike)
+create or replace function toggle_like_mensaje(
+  p_msg_id uuid,
+  p_user_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_liked boolean;
+  v_count integer;
+begin
+  if exists (select 1 from message_likes where message_id = p_msg_id and user_id = p_user_id) then
+    delete from message_likes where message_id = p_msg_id and user_id = p_user_id;
+    v_liked := false;
+  else
+    insert into message_likes (message_id, user_id) values (p_msg_id, p_user_id)
+    on conflict do nothing;
+    v_liked := true;
+  end if;
+
+  select count(*) into v_count from message_likes where message_id = p_msg_id;
+  update messages set likes_count = v_count where id = p_msg_id;
+
+  return jsonb_build_object('liked', v_liked, 'count', v_count);
+end;
+$$;
+
