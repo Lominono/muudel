@@ -24,7 +24,11 @@ import {
   FileText,
   Quote,
   Save,
-  Tag
+  Tag,
+  Lock,
+  User,
+  AtSign,
+  AlertCircle
 } from 'lucide-react'
 import { sound } from '../utils/haptics'
 import { animarEscalonado } from '../utils/animations'
@@ -84,6 +88,8 @@ export function PantallaPerfil() {
   const [bannerSeleccionado, setBannerSeleccionado] = useState(perfil?.banner_estilo || 'cuadricula')
   const [tituloPersonalizado, setTituloPersonalizado] = useState(perfil?.titulo_personalizado || perfil?.titulo_vip || '')
   const [fraseEstado, setFraseEstado] = useState(perfil?.frase || perfil?.frase_estado || '')
+  const [username, setUsername] = useState(perfil?.username || '')
+  const [usernameError, setUsernameError] = useState('')
   
   const [guardando, setGuardando] = useState(false)
   const [mensajeGuardado, setMensajeGuardado] = useState(false)
@@ -114,6 +120,8 @@ export function PantallaPerfil() {
       setBannerSeleccionado(perfil.banner_estilo || 'cuadricula')
       setTituloPersonalizado(perfil.titulo_personalizado || perfil.titulo_vip || '')
       setFraseEstado(perfil.frase || perfil.frase_estado || '')
+      setUsername(perfil.username || '')
+      setUsernameError('')
     }
   }, [perfil?.id])
 
@@ -182,11 +190,19 @@ export function PantallaPerfil() {
 
   // Guardar cambios de personalización
   const guardarPersonalizacion = async () => {
+    setUsernameError('')
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    if (cleanUsername.length < 2 || cleanUsername.length > 20) {
+      setUsernameError('El nombre de usuario debe tener entre 2 y 20 caracteres (solo letras, números y _).')
+      return
+    }
+
     setGuardando(true)
     sound.playStamp()
 
     const perfilActualizado = {
       ...perfil,
+      username: cleanUsername,
       color_acento: colorAcento,
       marco_avatar: marcoSeleccionado,
       banner_estilo: bannerSeleccionado,
@@ -209,6 +225,7 @@ export function PantallaPerfil() {
       await supabase
         .from('profiles')
         .update({
+          username: cleanUsername,
           color_acento: colorAcento,
           marco_avatar: marcoSeleccionado,
           banner_estilo: bannerSeleccionado,
@@ -427,6 +444,117 @@ export function PantallaPerfil() {
                   {siguiente ? `${xpNecesario - xpEnNivel} XP para ${siguiente.nombre}` : 'Nivel máximo'}
                 </span>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* IDENTIDAD EN EL AULA: NOMBRE OFICIAL BLOQUEADO Y USERNAME EDITABLE */}
+        <section className="card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <div style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              backgroundColor: 'rgba(10, 132, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--color-accent)'
+            }}>
+              <User size={16} />
+            </div>
+            <div>
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Identidad y Nombre de Usuario
+              </h3>
+              <p className="apple-caption" style={{ fontSize: 12 }}>
+                Tu nombre oficial de registro está protegido, pero puedes cambiar tu @usuario cuando desees.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* 1. Nombre oficial bloqueado (no editable por alumnos) */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-secondary-ink)' }}>
+                  Nombre y Apellidos de Registro
+                </label>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--color-secondary-ink)',
+                  backgroundColor: 'var(--color-fill-secondary)',
+                  padding: '2px 8px',
+                  borderRadius: 6
+                }}>
+                  <Lock size={11} />
+                  <span>No modificable</span>
+                </span>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={perfil.nombre}
+                  disabled
+                  readOnly
+                  style={{
+                    backgroundColor: 'var(--color-fill-secondary)',
+                    color: 'var(--color-ink)',
+                    fontWeight: 600,
+                    cursor: 'not-allowed',
+                    opacity: 0.85
+                  }}
+                />
+              </div>
+              <p className="apple-caption" style={{ fontSize: 11, marginTop: 4, color: 'var(--color-tertiary-ink)' }}>
+                🔒 Asignado en tu matrícula oficial de clase. Solo el moderador puede modificar el nombre para garantizar el pase de lista de las 15:30 y evitar suplantaciones.
+              </p>
+            </div>
+
+            {/* 2. Nombre de usuario (@handle) editable */}
+            <div>
+              <label className="apple-caption" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                Nombre de Usuario (@alias en chat, ranking y juegos)
+              </label>
+              <div style={{ position: 'relative' }}>
+                <div style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--color-accent)',
+                  fontWeight: 700,
+                  fontSize: 14
+                }}>
+                  @
+                </div>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={username}
+                  onChange={(e) => {
+                    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')
+                    setUsername(val)
+                    if (usernameError) setUsernameError('')
+                  }}
+                  placeholder="ej: juanito_smr"
+                  maxLength={20}
+                  style={{ paddingLeft: 30, fontSize: 14, fontWeight: 600 }}
+                />
+              </div>
+              {usernameError && (
+                <p style={{ fontSize: 12, color: 'var(--color-negative)', marginTop: 4, fontWeight: 600 }}>
+                  {usernameError}
+                </p>
+              )}
+              <p className="apple-caption" style={{ fontSize: 11, marginTop: 4, color: 'var(--color-secondary-ink)' }}>
+                Tu @usuario es el alias público visible para el aula. Puedes cambiarlo libremente (2 a 20 caracteres: letras minúsculas, números o guiones bajos).
+              </p>
             </div>
           </div>
         </section>

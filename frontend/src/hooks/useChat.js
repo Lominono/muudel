@@ -6,14 +6,16 @@ export function useChat(canal) {
   const [mensajes, setMensajes] = useState([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState(null)
+  const [usuariosEscribiendo, setUsuariosEscribiendo] = useState({})
   const suscripcion = useRef(null)
+  const typingTimeouts = useRef({})
 
   useEffect(() => {
     if (!canal) return
     cargar()
     suscribirse()
 
-    // Escuchar mensajes entrantes en tiempo real por broadcast
+    // 1. Escuchar mensajes entrantes en tiempo real por broadcast
     const desuscribirMsg = suscribirEvento('nuevo_mensaje_chat', (msg) => {
       if (msg && msg.canal === canal) {
         setMensajes(prev => {
@@ -29,14 +31,91 @@ export function useChat(canal) {
       }
     })
 
-    // Escuchar likes en tiempo real
+    // 2. Escuchar likes en tiempo real
     const desuscribirLikes = suscribirEvento('like_mensaje_chat', ({ messageId, canal: canalMsg }) => {
       if (canalMsg === canal) {
         setMensajes(prev => prev.map(m => m.id === messageId ? { ...m, likes_count: (m.likes_count || 0) + 1 } : m))
       }
     })
 
-    // Escuchar limpieza de canal
+    // 3. Escuchar reacciones ricas con emoji en tiempo real
+    const desuscribirReacciones = suscribirEvento('reaccion_mensaje_chat', ({ messageId, emoji, userId, canal: canalMsg }) => {
+      if (canalMsg === canal) {
+        setMensajes(prev => prev.map(m => {
+          if (m.id !== messageId) return m
+          const reaccionesPrev = { ...(m.reacciones || {}) }
+          const listaUsers = Array.isArray(reaccionesPrev[emoji]) ? [...reaccionesPrev[emoji]] : []
+          const idx = listaUsers.indexOf(userId)
+          if (idx >= 0) {
+            listaUsers.splice(idx, 1)
+          } else {
+            listaUsers.push(userId)
+          }
+          if (listaUsers.length === 0) {
+            delete reaccionesPrev[emoji]
+          } else {
+            reaccionesPrev[emoji] = listaUsers
+          }
+          return { ...m, reacciones: reaccionesPrev }
+        }))
+      }
+    })
+
+    // 4. Escuchar fijado de mensaje en tiempo real
+    const desuscribirFijado = suscribirEvento('mensaje_fijado', ({ messageId, fijado, canal: canalMsg, fijadoPor }) => {
+      if (canalMsg === canal) {
+        setMensajes(prev => prev.map(m => {
+          if (m.id === messageId) {
+            return { ...m, fijado, fijado_por_nombre: fijadoPor }
+          }
+          // Si sólo permitimos un mensaje fijado por canal:
+          return fijado ? { ...m, fijado: false } : m
+        }))
+      }
+    })
+
+    // 5. Escuchar eliminación de mensaje en tiempo real
+    const desuscribirEliminado = suscribirEvento('mensaje_eliminado', ({ messageId, canal: canalMsg }) => {
+      if (canalMsg === canal) {
+        setMensajes(prev => {
+          const actualizados = prev.filter(m => m.id !== messageId)
+          try {
+            localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados.slice(-100)))
+          } catch (e) {}
+          return actualizados
+        })
+      }
+    })
+
+    // 6. Escuchar presencia de escritura (typing indicator)
+    const desuscribirTyping = suscribirEvento('typing_usuario', ({ userId, nombre, canal: canalMsg, typing }) => {
+      if (canalMsg === canal) {
+        if (typing) {
+          setUsuariosEscribiendo(prev => ({ ...prev, [userId]: nombre }))
+          if (typingTimeouts.current[userId]) {
+            clearTimeout(typingTimeouts.current[userId])
+          }
+          typingTimeouts.current[userId] = setTimeout(() => {
+            setUsuariosEscribiendo(prev => {
+              const copy = { ...prev }
+              delete copy[userId]
+              return copy
+            })
+          }, 3500)
+        } else {
+          setUsuariosEscribiendo(prev => {
+            const copy = { ...prev }
+            delete copy[userId]
+            return copy
+          })
+          if (typingTimeouts.current[userId]) {
+            clearTimeout(typingTimeouts.current[userId])
+          }
+        }
+      }
+    })
+
+    // 7. Escuchar limpieza de canal
     const desuscribirLimpieza = suscribirEvento('limpieza_canal', ({ canal: cLimpio }) => {
       if (cLimpio === canal) {
         setMensajes([])
@@ -47,7 +126,12 @@ export function useChat(canal) {
     return () => {
       desuscribirMsg()
       desuscribirLikes()
+      desuscribirReacciones()
+      desuscribirFijado()
+      desuscribirEliminado()
+      desuscribirTyping()
       desuscribirLimpieza()
+      Object.values(typingTimeouts.current).forEach(t => clearTimeout(t))
       if (suscripcion.current) {
         try {
           supabase.removeChannel(suscripcion.current)
@@ -61,17 +145,30 @@ export function useChat(canal) {
     try {
       const { data, error: err } = await supabase
         .from('messages')
-        .select('*, profiles(nombre, color_acento, rol)')
+        .select('*, profiles(nombre, username, color_acento, rol, digito_id, frase)')
         .eq('canal', canal)
+        .eq('soft_deleted', false)
         .order('created_at', { ascending: true })
         .limit(100)
 
       if (err) throw err
 
       if (data && data.length > 0) {
-        setMensajes(data)
+        // Enriquecer datos con datos del profile asociado si existen
+        const enriquecidos = data.map(m => ({
+          ...m,
+          nombre: m.profiles?.nombre || m.nombre,
+          username: m.profiles?.username || m.username,
+          color_acento: m.profiles?.color_acento || m.color_acento,
+          rol: m.profiles?.rol || m.rol,
+          digito_id: m.profiles?.digito_id || m.digito_id,
+          titulo_vip: m.profiles?.frase || m.titulo_vip
+        }))
+        setMensajes(enriquecidos)
+        try {
+          localStorage.setItem('racha_chat_' + canal, JSON.stringify(enriquecidos.slice(-100)))
+        } catch (e) {}
       } else {
-        // Cargar mensajes locales guardados del canal si existen
         const local = localStorage.getItem('racha_chat_' + canal)
         if (local) {
           try {
@@ -109,13 +206,16 @@ export function useChat(canal) {
           table: 'messages',
           filter: `canal=eq.${canal}`,
         }, (payload) => {
-          setMensajes(prev => [...prev, payload.new])
+          setMensajes(prev => {
+            if (prev.some(m => m.id === payload.new.id)) return prev
+            return [...prev, payload.new]
+          })
         })
         .subscribe()
     } catch (e) {}
   }
 
-  const enviar = async (texto, userId, perfil = null, replyTo = null) => {
+  const enviar = async (texto, userId, perfil = null, replyData = null) => {
     if (!texto.trim()) return { data: null, error: 'Escribe un mensaje' }
 
     const nuevoMensaje = {
@@ -124,18 +224,26 @@ export function useChat(canal) {
       user_id: userId,
       texto: texto.trim(),
       nombre: perfil?.nombre || 'Usuario',
-      digito_id: perfil?.digito_id || null,
       username: perfil?.username || null,
+      digito_id: perfil?.digito_id || null,
       color_acento: perfil?.color_acento,
       rol: perfil?.rol || 'alumno',
+      titulo_vip: perfil?.frase || null,
       likes_count: 0,
+      reacciones: {},
+      fijado: false,
+      reply_to: replyData?.id || null,
+      reply_to_texto: replyData?.texto || '',
+      reply_to_nombre: replyData?.nombre || '',
       created_at: new Date().toISOString()
     }
 
-    // Persistir localmente para tener reactividad inmediata
+    // Persistir localmente para tener reactividad instantánea
     setMensajes(prev => {
       const actualizados = [...prev, nuevoMensaje]
-      localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados.slice(-100)))
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados.slice(-100)))
+      } catch (e) {}
       return actualizados
     })
 
@@ -143,14 +251,22 @@ export function useChat(canal) {
     transmitirEvento('nuevo_mensaje_chat', nuevoMensaje)
 
     try {
+      const payloadInsert = {
+        user_id: userId,
+        canal,
+        texto: texto.trim(),
+        reply_to: replyData?.id || null
+      }
+
+      // Si la base de datos ya tiene las columnas reply_to_texto/nombre
+      if (replyData?.texto) {
+        payloadInsert.reply_to_texto = replyData.texto
+        payloadInsert.reply_to_nombre = replyData.nombre
+      }
+
       const { data, error: err } = await supabase
         .from('messages')
-        .insert({
-          user_id: userId,
-          canal,
-          texto: texto.trim(),
-          reply_to: replyTo
-        })
+        .insert(payloadInsert)
         .select()
         .single()
 
@@ -181,5 +297,127 @@ export function useChat(canal) {
     return true
   }
 
-  return { mensajes, cargando, enviar, like, error }
+  // Alternar reacción rica con emoji (❤️, 👍, 💡, 🔥, ❓)
+  const toggleReaccion = async (messageId, emoji, userId) => {
+    let nuevasReacciones = {}
+    setMensajes(prev => {
+      const actualizados = prev.map(m => {
+        if (m.id !== messageId) return m
+        const rCopy = { ...(m.reacciones || {}) }
+        const users = Array.isArray(rCopy[emoji]) ? [...rCopy[emoji]] : []
+        const idx = users.indexOf(userId)
+        if (idx >= 0) {
+          users.splice(idx, 1)
+        } else {
+          users.push(userId)
+        }
+        if (users.length === 0) {
+          delete rCopy[emoji]
+        } else {
+          rCopy[emoji] = users
+        }
+        nuevasReacciones = rCopy
+        return { ...m, reacciones: rCopy }
+      })
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      } catch (e) {}
+      return actualizados
+    })
+
+    transmitirEvento('reaccion_mensaje_chat', { messageId, emoji, userId, canal })
+
+    try {
+      await supabase
+        .from('messages')
+        .update({ reacciones: nuevasReacciones })
+        .eq('id', messageId)
+    } catch (e) {}
+  }
+
+  // Fijar / desfijar un mensaje en el canal
+  const toggleFijado = async (messageId, perfilModerador) => {
+    let nuevoEstadoFijado = false
+    setMensajes(prev => {
+      const actualizados = prev.map(m => {
+        if (m.id === messageId) {
+          nuevoEstadoFijado = !m.fijado
+          return {
+            ...m,
+            fijado: nuevoEstadoFijado,
+            fijado_por_nombre: nuevoEstadoFijado ? perfilModerador?.nombre : null
+          }
+        }
+        // Desfijar otros en el mismo canal para tener uno solo fijado
+        return nuevoEstadoFijado ? { ...m, fijado: false } : m
+      })
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      } catch (e) {}
+      return actualizados
+    })
+
+    transmitirEvento('mensaje_fijado', {
+      messageId,
+      fijado: nuevoEstadoFijado,
+      canal,
+      fijadoPor: perfilModerador?.nombre || 'Moderador'
+    })
+
+    try {
+      await supabase
+        .from('messages')
+        .update({
+          fijado: nuevoEstadoFijado,
+          fijado_por: nuevoEstadoFijado ? perfilModerador?.id : null,
+          fijado_en: nuevoEstadoFijado ? new Date().toISOString() : null
+        })
+        .eq('id', messageId)
+    } catch (e) {}
+  }
+
+  // Eliminar mensaje (por autor dentro de tiempo o por moderador)
+  const eliminarMensaje = async (messageId) => {
+    setMensajes(prev => {
+      const actualizados = prev.filter(m => m.id !== messageId)
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      } catch (e) {}
+      return actualizados
+    })
+
+    transmitirEvento('mensaje_eliminado', { messageId, canal })
+
+    try {
+      await supabase
+        .from('messages')
+        .update({ soft_deleted: true })
+        .eq('id', messageId)
+    } catch (e) {}
+  }
+
+  // Transmitir typing indicator
+  const emitirTyping = (perfil, typing = true) => {
+    if (!perfil) return
+    transmitirEvento('typing_usuario', {
+      userId: perfil.id,
+      nombre: perfil.username ? `@${perfil.username}` : (perfil.nombre?.split(' ')[0] || 'Compañero'),
+      canal,
+      typing
+    })
+  }
+
+  return {
+    mensajes,
+    cargando,
+    enviar,
+    like,
+    toggleReaccion,
+    toggleFijado,
+    eliminarMensaje,
+    emitirTyping,
+    usuariosEscribiendo,
+    error
+  }
 }
+

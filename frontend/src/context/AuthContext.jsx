@@ -504,6 +504,39 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const actualizarUsername = async (nuevoUsername) => {
+    if (!perfil) return { success: false, error: 'No hay sesión de usuario activa' }
+    const limpio = (nuevoUsername || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    if (limpio.length < 2 || limpio.length > 20) {
+      return { success: false, error: 'El nombre de usuario debe tener entre 2 y 20 caracteres (solo letras, números y guiones bajos).' }
+    }
+
+    try {
+      const updated = { ...perfil, username: limpio }
+      setPerfil(updated)
+      localStorage.setItem('racha_local_user', JSON.stringify(updated))
+      try {
+        localStorage.setItem('muudel_user_meta_' + perfil.id, JSON.stringify(updated))
+      } catch (e) {}
+
+      if (perfil.id && !perfil.id.startsWith('demo-') && !perfil.id.startsWith('alumno-demo-')) {
+        await supabase
+          .from('profiles')
+          .update({
+            username: limpio,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', perfil.id)
+      }
+
+      window.dispatchEvent(new CustomEvent('muudel-rt-perfil_actualizado', { detail: updated }))
+      return { success: true, username: limpio }
+    } catch (e) {
+      console.error('Error al actualizar username:', e)
+      return { success: false, error: e.message || 'Error al actualizar nombre de usuario' }
+    }
+  }
+
   const actualizarFrase = async (nuevaFrase) => {
     if (!perfil) return { success: false }
     const limpia = (nuevaFrase || '').trim().slice(0, 80)
@@ -616,6 +649,7 @@ export function AuthProvider({ children }) {
           .from('profiles')
           .update({
             nombre: (actualizado.nombre || 'Alumno').trim().slice(0, 30),
+            username: (actualizado.username || '').trim().toLowerCase().slice(0, 20),
             color_acento: actualizado.color_acento || '#0A84FF',
             frase: (actualizado.frase || '').slice(0, 70),
             updated_at: new Date().toISOString()
@@ -643,6 +677,7 @@ export function AuthProvider({ children }) {
     iniciarSesionConEmail,
     registrarseConEmail,
     actualizarNombre,
+    actualizarUsername,
     actualizarFrase,
     actualizarColor,
     actualizarPerfilCompleto,

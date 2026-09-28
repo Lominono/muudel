@@ -24,7 +24,8 @@ import {
   Calendar,
   Hourglass,
   Clock,
-  Shield
+  Shield,
+  Gamepad2
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
@@ -535,6 +536,74 @@ export function PantallaHoy() {
 
           {/* Reto diario */}
           <RetoDelDia perfil={perfil} onCompletado={sumarPuntos} />
+
+          {/* Banner Recreo Arcade con Yoshi Runner */}
+          <section
+            className="card"
+            style={{
+              padding: '14px 16px',
+              backgroundColor: 'rgba(48, 209, 88, 0.08)',
+              border: '1px solid rgba(48, 209, 88, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              cursor: 'pointer'
+            }}
+            onClick={() => navigate('/juegos')}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: '#30D158',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(48, 209, 88, 0.3)'
+                }}
+              >
+                <Gamepad2 size={22} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#248A3D', letterSpacing: 0.5 }}>
+                    Recreo Arcade
+                  </span>
+                  <span className="apple-badge apple-badge-neutral" style={{ fontSize: 10, backgroundColor: 'rgba(48, 209, 88, 0.15)', color: '#248A3D' }}>
+                    +60 pts diarios
+                  </span>
+                </div>
+                <h4 className="apple-headline" style={{ fontSize: 15, margin: 0 }}>
+                  Yoshi Runner (Estilo Chrome Dino)
+                </h4>
+                <p className="apple-caption" style={{ fontSize: 12, margin: 0 }}>
+                  Esquiva tuberías piraña, recoge huevos y supera retos de clase.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={(e) => { e.stopPropagation(); navigate('/juegos') }}
+              style={{
+                backgroundColor: '#30D158',
+                color: '#FFFFFF',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '6px 14px',
+                minHeight: 34,
+                borderRadius: 9999
+              }}
+            >
+              Jugar ahora
+            </button>
+          </section>
 
           {/* Podio real de la clase */}
           {ranking.length > 0 && <TopRanking lista={ranking} />}

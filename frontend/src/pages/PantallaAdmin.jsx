@@ -119,6 +119,30 @@ export function PantallaAdmin() {
   const [nuevaPreguntaTexto, setNuevaPreguntaTexto] = useState('')
   const [opcionesFlash, setOpcionesFlash] = useState(['', '', ''])
 
+  // Gestión de Avisos y Comunicados Activos
+  const [avisoDiarioActual, setAvisoDiarioActual] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
+  const [megafonoActual, setMegafonoActual] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('muudel_megafono_activo') || 'null')
+    } catch (e) {
+      return null
+    }
+  })
+
+  // Modal para modificar puntaje exacto y racha
+  const [modalPuntaje, setModalPuntaje] = useState(null) // { alumno, modo: 'exacto' | 'delta', puntosExactos, deltaPuntos, rachaExacta, modificarRacha, motivo }
+
+  // Entregas de Retos para Comprobación
+  const [entregasRetos, setEntregasRetos] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
+    } catch (e) {
+      return []
+    }
+  })
+  const [filtroEntregasRetos, setFiltroEntregasRetos] = useState('pendientes') // 'pendientes' | 'aprobados' | 'rechazados' | 'todos'
+  const [modalRechazoReto, setModalRechazoReto] = useState(null) // { entrega, feedback: '' }
+
   const fechaHoy = new Date().toISOString().split('T')[0]
   const timerInactividadRef = useRef(null)
 
@@ -210,10 +234,37 @@ export function PantallaAdmin() {
       cargarDatos()
     })
 
+    // 4. Escuchar nuevas entregas de retos para comprobación
+    const desuscribirEntregas = suscribirEvento('nueva_entrega_reto', (entrega) => {
+      if (!entrega) return
+      sound.playStamp()
+      setEntregasRetos((prev) => {
+        const sinRepetir = prev.filter(e => !(e.userId === entrega.userId && e.retoId === entrega.retoId))
+        const actualizadas = [entrega, ...sinRepetir]
+        try {
+          localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizadas))
+        } catch (e) {}
+        return actualizadas
+      })
+      avisar(`📝 ${entrega.nombre} ha entregado el reto: "${entrega.retoTitulo}"`)
+    })
+
+    // 5. Escuchar cambios de avisos
+    const desuscribirAvisos = suscribirEvento('aviso_admin', ({ texto }) => {
+      setAvisoDiarioActual(texto || '')
+    })
+
+    const desuscribirMega = suscribirEvento('megafono_activo', (data) => {
+      setMegafonoActual(data || null)
+    })
+
     return () => {
       desuscribirSol()
       desuscribirCanjes()
       desuscribirPuntos()
+      desuscribirEntregas()
+      desuscribirAvisos()
+      desuscribirMega()
     }
   }, [desbloqueado, fechaHoy])
 
@@ -327,7 +378,56 @@ export function PantallaAdmin() {
 
       setRetosActivos(retosData || [])
 
-      // 6. Cargar registros de auditoría
+      // 6. Cargar avisos actuales
+      const avisoHoyLocal = localStorage.getItem('racha_aviso_hoy') || ''
+      setAvisoDiarioActual(avisoHoyLocal)
+      try {
+        const megaLocal = JSON.parse(localStorage.getItem('muudel_megafono_activo') || 'null')
+        setMegafonoActual(megaLocal)
+      } catch (e) {
+        setMegafonoActual(null)
+      }
+
+      // 7. Cargar entregas de retos para comprobación
+      let listaEntregas = []
+      try {
+        const rawEnt = localStorage.getItem('muudel_entregas_retos')
+        if (rawEnt) listaEntregas = JSON.parse(rawEnt)
+      } catch (e) {}
+
+      // Intentar sincronizar también desde Supabase reto_completado si hay
+      try {
+        const { data: remotos } = await supabase
+          .from('reto_completado')
+          .select('*, profiles(nombre, color_acento, digito_id, username), retos(titulo, puntos)')
+          .order('fecha', { ascending: false })
+          .limit(30)
+
+        if (remotos && remotos.length > 0) {
+          remotos.forEach(rc => {
+            const existe = listaEntregas.find(e => e.userId === rc.user_id && e.retoId === rc.reto_id)
+            if (!existe) {
+              listaEntregas.push({
+                id: `rc-${rc.reto_id}-${rc.user_id}`,
+                retoId: rc.reto_id,
+                retoTitulo: rc.retos?.titulo || 'Reto de clase',
+                puntos: rc.retos?.puntos || 25,
+                userId: rc.user_id,
+                nombre: rc.profiles?.nombre || 'Alumno',
+                username: rc.profiles?.username || '',
+                color: rc.profiles?.color_acento || '#0A84FF',
+                evidencia: rc.evidencia || 'Sin texto adjunto',
+                estado: rc.estado || (rc.validado ? 'aprobado' : 'pendiente'),
+                fecha: rc.fecha ? new Date(rc.fecha).toLocaleDateString('es-ES') : fechaHoy,
+                hora: rc.fecha ? new Date(rc.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+              })
+            }
+          })
+        }
+      } catch (e) {}
+      setEntregasRetos(listaEntregas)
+
+      // 8. Cargar registros de auditoría
       const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
       setLogsAuditoria(logs)
     } catch (err) {
@@ -798,6 +898,242 @@ export function PantallaAdmin() {
     })
   }
 
+  // AVISOS: Quitar aviso diario de la pantalla principal
+  const handleQuitarAvisoDiario = () => {
+    localStorage.removeItem('racha_aviso_hoy')
+    setAvisoDiarioActual('')
+    transmitirEvento('aviso_admin', { texto: '' })
+    sound.playPop()
+    avisar('Aviso diario de clase retirado con éxito.')
+    registrarAuditoria('Quitar Aviso', 'Aviso diario de clase retirado de todas las pantallas')
+  }
+
+  // AVISOS: Retirar megáfono fijado del chat
+  const handleQuitarMegafono = () => {
+    localStorage.removeItem('muudel_megafono_activo')
+    setMegafonoActual(null)
+    transmitirEvento('megafono_activo', null)
+    sound.playPop()
+    avisar('Megáfono fijado desanclado de la cabecera del chat.')
+    registrarAuditoria('Quitar Megáfono', 'Comunicado fijado del moderador retirado')
+  }
+
+  // AVISOS: Retirar todos los avisos y comunicados simultáneamente
+  const handleQuitarTodosAvisos = () => {
+    localStorage.removeItem('racha_aviso_hoy')
+    localStorage.removeItem('muudel_megafono_activo')
+    setAvisoDiarioActual('')
+    setMegafonoActual(null)
+    transmitirEvento('aviso_admin', { texto: '' })
+    transmitirEvento('megafono_activo', null)
+    sound.playPop()
+    avisar('Todos los avisos diarios y comunicados fijados han sido retirados.')
+    registrarAuditoria('Limpieza de Avisos', 'Eliminados todos los comunicados y avisos activos del aula')
+  }
+
+  // PUNTAJE: Abrir modal de personalización de puntuación y racha
+  const handleAbrirModalPuntaje = (alumno) => {
+    setModalPuntaje({
+      alumno,
+      modo: 'exacto', // 'exacto' | 'delta'
+      puntosExactos: alumno.puntos_total || 0,
+      deltaPuntos: 10,
+      rachaExacta: alumno.racha_actual || 0,
+      modificarRacha: false,
+      motivo: 'Ajuste personalizado de moderación'
+    })
+  }
+
+  // PUNTAJE: Confirmar y guardar ajuste de puntuación
+  const handleConfirmarAjustePuntaje = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (!modalPuntaje?.alumno) return
+    const { alumno, modo, puntosExactos, deltaPuntos, rachaExacta, modificarRacha, motivo } = modalPuntaje
+    const alumnoId = alumno.id
+
+    let nuevoPuntaje = alumno.puntos_total || 0
+    if (modo === 'exacto') {
+      nuevoPuntaje = Math.max(0, Number(puntosExactos) || 0)
+    } else {
+      nuevoPuntaje = Math.max(0, (alumno.puntos_total || 0) + Number(deltaPuntos))
+    }
+
+    const payloadUpdate = {
+      puntos_total: nuevoPuntaje,
+      updated_at: new Date().toISOString()
+    }
+
+    if (modificarRacha) {
+      payloadUpdate.racha_actual = Math.max(0, Number(rachaExacta) || 0)
+    }
+
+    setAccionEnCurso(alumnoId)
+    try {
+      await supabase
+        .from('profiles')
+        .update(payloadUpdate)
+        .eq('id', alumnoId)
+
+      // Actualizar en el estado local de todos los alumnos
+      setTodosAlumnos(prev => prev.map(a => {
+        if (a.id === alumnoId) {
+          return {
+            ...a,
+            puntos_total: nuevoPuntaje,
+            ...(modificarRacha ? { racha_actual: payloadUpdate.racha_actual } : {})
+          }
+        }
+        return a
+      }))
+
+      // Si es el usuario activo guardado en local
+      const localUser = localStorage.getItem('racha_local_user')
+      if (localUser) {
+        try {
+          const parsed = JSON.parse(localUser)
+          if (parsed.id === alumnoId) {
+            const act = {
+              ...parsed,
+              puntos_total: nuevoPuntaje,
+              ...(modificarRacha ? { racha_actual: payloadUpdate.racha_actual } : {})
+            }
+            localStorage.setItem('racha_local_user', JSON.stringify(act))
+          }
+        } catch (err) {}
+      }
+
+      sound.playStamp()
+      triggerConfetti()
+      avisar(`Puntaje de ${alumno.nombre} establecido en ${nuevoPuntaje} pts.`)
+      registrarAuditoria('Ajuste de Puntos', `${alumno.nombre} fijado a ${nuevoPuntaje} pts ${modificarRacha ? `(racha: ${payloadUpdate.racha_actual}d)` : ''} · Motivo: ${motivo}`)
+      transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: nuevoPuntaje })
+      setModalPuntaje(null)
+    } catch (err) {
+      avisar('Error al actualizar el puntaje.', 'error')
+    } finally {
+      setAccionEnCurso(null)
+    }
+  }
+
+  // RETOS: Aprobar entrega enviada por un alumno
+  const handleAprobarEntregaReto = async (entrega) => {
+    setAccionEnCurso(entrega.id)
+    const puntos = Number(entrega.puntos) || 25
+
+    // 1. Actualizar entregas en local
+    const actualizadas = entregasRetos.map(e => e.id === entrega.id ? { ...e, estado: 'aprobado', feedback: '¡Aprobado y comprobado por lominoño!' } : e)
+    setEntregasRetos(actualizadas)
+    localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizadas))
+
+    // 2. Sumar puntos al alumno
+    const alumno = todosAlumnos.find(a => a.id === entrega.userId)
+    const nuevosPuntos = (alumno?.puntos_total || 0) + puntos
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({ puntos_total: nuevosPuntos })
+        .eq('id', entrega.userId)
+
+      await supabase
+        .from('reto_completado')
+        .upsert({
+          reto_id: entrega.retoId,
+          user_id: entrega.userId,
+          validado: true,
+          estado: 'aprobado',
+          feedback_admin: '¡Aprobado por lominoño!',
+          revisado_por: perfil?.id,
+          revisado_en: new Date().toISOString()
+        })
+    } catch (e) {}
+
+    setTodosAlumnos(prev => prev.map(a => a.id === entrega.userId ? { ...a, puntos_total: nuevosPuntos } : a))
+
+    // Transmitir evento para que la pantalla del alumno celebre en directo
+    transmitirEvento('reto_validado', {
+      retoId: entrega.retoId,
+      userId: entrega.userId,
+      puntos,
+      feedback: '¡Aprobado por lominoño!'
+    })
+    transmitirEvento('puntos_actualizados', { userId: entrega.userId, nuevosPuntos })
+
+    sound.playStamp()
+    triggerConfetti()
+    avisar(`Reto "${entrega.retoTitulo}" aprobado para ${entrega.nombre} (+${puntos} pts).`)
+    registrarAuditoria('Reto Aprobado', `Entrega de "${entrega.retoTitulo}" validada a ${entrega.nombre} (+${puntos} pts)`)
+    setAccionEnCurso(null)
+  }
+
+  // RETOS: Rechazar entrega con nota de corrección
+  const handleRechazarEntregaReto = async (entrega, feedbackTexto) => {
+    const feedback = (feedbackTexto || '').trim() || 'Evidencia no válida o explicación incompleta.'
+    const actualizadas = entregasRetos.map(e => e.id === entrega.id ? { ...e, estado: 'rechazado', feedback } : e)
+    setEntregasRetos(actualizadas)
+    localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizadas))
+
+    try {
+      await supabase
+        .from('reto_completado')
+        .upsert({
+          reto_id: entrega.retoId,
+          user_id: entrega.userId,
+          validado: false,
+          estado: 'rechazado',
+          feedback_admin: feedback,
+          revisado_por: perfil?.id,
+          revisado_en: new Date().toISOString()
+        })
+    } catch (e) {}
+
+    transmitirEvento('reto_rechazado', {
+      retoId: entrega.retoId,
+      userId: entrega.userId,
+      feedback
+    })
+
+    sound.playPop()
+    avisar(`Entrega de ${entrega.nombre} rechazada con feedback.`, 'error')
+    registrarAuditoria('Reto Rechazado', `Rechazada entrega de "${entrega.retoTitulo}" a ${entrega.nombre} (${feedback})`)
+    setModalRechazoReto(null)
+  }
+
+  // RETOS: Pausar o reanudar reto
+  const handleToggleActivoReto = async (reto) => {
+    const nuevoEstado = !reto.activo
+    try {
+      await supabase.from('retos').update({ activo: nuevoEstado }).eq('id', reto.id)
+      setRetosActivos(prev => prev.map(r => r.id === reto.id ? { ...r, activo: nuevoEstado } : r))
+      sound.playPop()
+      avisar(`Reto "${reto.titulo}" ${nuevoEstado ? 'activado' : 'pausado'}.`)
+      registrarAuditoria('Estado Reto', `Reto "${reto.titulo}" marcado como ${nuevoEstado ? 'activo' : 'pausado'}`)
+    } catch (e) {
+      avisar('Error al modificar estado del reto.', 'error')
+    }
+  }
+
+  // RETOS: Eliminar reto
+  const handleEliminarReto = (reto) => {
+    setModalConfirmacion({
+      titulo: `¿Eliminar reto "${reto.titulo}"?`,
+      mensaje: 'Esta acción borrará el reto y no se mostrará a los alumnos.',
+      peligroso: true,
+      accion: async () => {
+        setModalConfirmacion(null)
+        try {
+          await supabase.from('retos').delete().eq('id', reto.id)
+          setRetosActivos(prev => prev.filter(r => r.id !== reto.id))
+          sound.playPop()
+          avisar(`Reto "${reto.titulo}" eliminado.`)
+          registrarAuditoria('Reto Eliminado', `Eliminado reto "${reto.titulo}"`)
+        } catch (e) {
+          avisar('Error al eliminar reto.', 'error')
+        }
+      }
+    })
+  }
+
   // Bonificar o penalizar puntos a un alumno
   const handleModificarPuntos = async (alumnoId, deltaPuntos, motivo) => {
     setAccionEnCurso(alumnoId)
@@ -1123,7 +1459,7 @@ export function PantallaAdmin() {
             { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
             { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
-            { id: 'retos', label: 'Retos & Flash', icon: Target },
+            { id: 'retos', label: entregasRetos.filter(e => e.estado === 'pendiente').length > 0 ? `Retos (${entregasRetos.filter(e => e.estado === 'pendiente').length} pend.)` : `Retos (${retosActivos.length})`, icon: Target },
             { id: 'seguridad', label: 'Auditoría', icon: ShieldAlert }
           ].map((t) => {
             const Icono = t.icon
@@ -1482,6 +1818,125 @@ export function PantallaAdmin() {
             </form>
           </section>
 
+          {/* GESTIÓN Y RETIRADA DE AVISOS Y COMUNICADOS ACTIVOS */}
+          <section className="card" style={{ border: '1px solid rgba(255, 149, 0, 0.3)', backgroundColor: 'rgba(255, 149, 0, 0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Megaphone size={18} color="#FF9500" />
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Avisos y Comunicados Activos del Aula
+                </h3>
+              </div>
+
+              {(avisoDiarioActual || megafonoActual) && (
+                <button
+                  type="button"
+                  onClick={handleQuitarTodosAvisos}
+                  className="btn-secondary"
+                  style={{
+                    minHeight: 32,
+                    fontSize: 12,
+                    color: 'var(--color-negative)',
+                    backgroundColor: 'rgba(255, 59, 48, 0.08)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  title="Retirar aviso diario y megáfono de un solo clic"
+                >
+                  <Trash2 size={13} />
+                  <span>Quitar Todos los Avisos</span>
+                </button>
+              )}
+            </div>
+
+            <p className="apple-caption" style={{ marginBottom: 14 }}>
+              Revisa los avisos emitidos y quítalos en cualquier momento para limpiar el tablón y el chat de los alumnos.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* 1. Aviso Diario de Clase (Tablón Pantalla Hoy) */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-separator)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8
+              }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-accent)' }}>
+                      Aviso Diario (Tablón de Hoy)
+                    </span>
+                    <span className={`apple-badge ${avisoDiarioActual ? 'apple-badge-accent' : 'apple-badge-neutral'}`} style={{ fontSize: 10 }}>
+                      {avisoDiarioActual ? 'Visible para alumnos' : 'Sin aviso activo'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: avisoDiarioActual ? 'var(--color-ink)' : 'var(--color-tertiary-ink)', fontStyle: avisoDiarioActual ? 'normal' : 'italic', lineHeight: 1.4 }}>
+                    {avisoDiarioActual || 'No hay ningún aviso diario publicado hoy.'}
+                  </div>
+                </div>
+
+                {avisoDiarioActual && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleQuitarAvisoDiario}
+                    style={{ minHeight: 32, fontSize: 12, color: 'var(--color-negative)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title="Eliminar este aviso de las pantallas de los alumnos"
+                  >
+                    <Trash2 size={13} />
+                    <span>Quitar Aviso Diario</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 2. Megáfono Fijado en el Chat */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-separator)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8
+              }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#D4AF37' }}>
+                      Megáfono Fijado en Chat
+                    </span>
+                    <span className={`apple-badge ${megafonoActual ? 'apple-badge-warning' : 'apple-badge-neutral'}`} style={{ fontSize: 10 }}>
+                      {megafonoActual ? 'Anclado en la cabecera' : 'Sin megáfono anclado'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: megafonoActual ? 'var(--color-ink)' : 'var(--color-tertiary-ink)', fontStyle: megafonoActual ? 'normal' : 'italic', lineHeight: 1.4 }}>
+                    {megafonoActual ? `"${megafonoActual.texto}" (${megafonoActual.autor})` : 'No hay ningún comunicado fijado en la cabecera del chat.'}
+                  </div>
+                </div>
+
+                {megafonoActual && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleQuitarMegafono}
+                    style={{ minHeight: 32, fontSize: 12, color: 'var(--color-negative)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title="Desanclar megáfono del chat"
+                  >
+                    <Trash2 size={13} />
+                    <span>Retirar Megáfono</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
           {/* 4. Limpieza de Spam o Canales */}
           <section className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1770,6 +2225,29 @@ export function PantallaAdmin() {
 
                   {/* Acciones directas de moderador */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                    {/* Botón para modificar puntaje exacto y racha */}
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={accionEnCurso === alumno.id}
+                      onClick={() => handleAbrirModalPuntaje(alumno)}
+                      style={{
+                        minHeight: 30,
+                        padding: '3px 12px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        backgroundColor: 'var(--color-accent)',
+                        color: '#FFFFFF',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5
+                      }}
+                      title="Establecer puntaje exacto o ajustar racha de clase"
+                    >
+                      <Award size={13} />
+                      <span>Modificar Puntaje</span>
+                    </button>
+
                     <button
                       type="button"
                       className="btn-secondary"
@@ -1881,6 +2359,231 @@ export function PantallaAdmin() {
       {/* PESTAÑA 5: RETOS Y PREGUNTA FLASH */}
       {tab === 'retos' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* BANDEJA DE COMPROBACIÓN DE RETOS ENTREGADOS POR ALUMNOS */}
+          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{
+              padding: '14px 16px',
+              borderBottom: '1px solid var(--color-separator)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCheck size={18} color="var(--color-accent)" />
+                  <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                    Comprobación de Retos Entregados ({entregasRetos.length})
+                  </h3>
+                </div>
+                <p className="apple-caption" style={{ marginTop: 2 }}>
+                  Revisa las pruebas y evidencias de los alumnos antes de acreditar los puntos.
+                </p>
+              </div>
+
+              {/* Filtros de entregas */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[
+                  { id: 'pendientes', label: `Pendientes (${entregasRetos.filter(e => e.estado === 'pendiente').length})` },
+                  { id: 'aprobados', label: `Aprobados (${entregasRetos.filter(e => e.estado === 'aprobado').length})` },
+                  { id: 'rechazados', label: `Rechazados (${entregasRetos.filter(e => e.estado === 'rechazado').length})` },
+                  { id: 'todos', label: 'Todos' }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFiltroEntregasRetos(f.id)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      border: 'none',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      backgroundColor: filtroEntregasRetos === f.id ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                      color: filtroEntregasRetos === f.id ? '#FFFFFF' : 'var(--color-secondary-ink)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Listado de entregas */}
+            {entregasRetos.filter(e => {
+              if (filtroEntregasRetos === 'todos') return true
+              return e.estado === filtroEntregasRetos
+            }).length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center' }}>
+                <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                  No hay entregas de retos en esta categoría.
+                </p>
+              </div>
+            ) : (
+              entregasRetos.filter(e => {
+                if (filtroEntregasRetos === 'todos') return true
+                return e.estado === filtroEntregasRetos
+              }).map((entrega, idx, arr) => (
+                <div
+                  key={entrega.id || idx}
+                  style={{
+                    padding: '14px 16px',
+                    borderBottom: idx < arr.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    backgroundColor: entrega.estado === 'pendiente' ? 'rgba(255, 149, 0, 0.03)' : 'transparent'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <InsigniaIniciales nombre={entrega.nombre} color={entrega.color || '#0A84FF'} size={34} />
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 700, fontSize: 14 }}>{entrega.nombre}</span>
+                          {entrega.username && (
+                            <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                              @{entrega.username}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                          Reto: <strong>{entrega.retoTitulo}</strong> · <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>+{entrega.puntos} pts</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className={`apple-badge ${
+                        entrega.estado === 'aprobado' ? 'apple-badge-positive' : entrega.estado === 'rechazado' ? 'apple-badge-negative' : 'apple-badge-warning'
+                      }`} style={{ fontSize: 11 }}>
+                        {entrega.estado === 'aprobado' ? 'Aprobado (+pts)' : entrega.estado === 'rechazado' ? 'Rechazado' : 'Pendiente de Revisión'}
+                      </span>
+                      <span className="apple-caption" style={{ fontSize: 11 }}>
+                        {entrega.fecha} {entrega.hora || ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Evidencia o prueba presentada por el alumno */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    border: '1px solid var(--color-separator)',
+                    fontSize: 13,
+                    lineHeight: 1.4
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-secondary-ink)', marginBottom: 3 }}>
+                      Evidencia entregada:
+                    </div>
+                    <div style={{ color: 'var(--color-ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {entrega.evidencia || 'Sin texto de prueba.'}
+                    </div>
+                    {entrega.feedback && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '0.5px solid var(--color-separator)', fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
+                        Feedback dado: <em>{entrega.feedback}</em>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botones de acción del moderador */}
+                  {entrega.estado === 'pendiente' && (
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={accionEnCurso === entrega.id}
+                        onClick={() => setModalRechazoReto({ entrega, feedback: '' })}
+                        style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, color: 'var(--color-negative)' }}
+                      >
+                        Rechazar con Nota
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={accionEnCurso === entrega.id}
+                        onClick={() => handleAprobarEntregaReto(entrega)}
+                        style={{ minHeight: 32, padding: '4px 14px', fontSize: 12, fontWeight: 700, backgroundColor: 'var(--color-positive)' }}
+                      >
+                        Aprobar y Sumar +{entrega.puntos} pts
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+
+          {/* GESTOR DE RETOS ACTIVOS DEL AULA */}
+          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Target size={18} color="var(--color-accent)" />
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Retos de Clase Disponibles ({retosActivos.length})
+                </h3>
+              </div>
+            </div>
+
+            {retosActivos.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center' }}>
+                <p className="apple-caption">No hay retos en base de datos. Se muestran los retos por defecto del día.</p>
+              </div>
+            ) : (
+              retosActivos.map((r, idx) => (
+                <div
+                  key={r.id || idx}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: idx < retosActivos.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 8
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{r.titulo}</span>
+                      <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
+                        +{r.puntos} XP
+                      </span>
+                      <span className={`apple-badge ${r.activo ? 'apple-badge-positive' : 'apple-badge-neutral'}`} style={{ fontSize: 10 }}>
+                        {r.activo ? 'Activo' : 'Pausado'}
+                      </span>
+                    </div>
+                    <p className="apple-caption" style={{ marginTop: 2, maxWidth: 500 }}>
+                      {r.descripcion}
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleToggleActivoReto(r)}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
+                    >
+                      {r.activo ? 'Pausar' : 'Activar'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleEliminarReto(r)}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+
           {/* Pregunta Flash */}
           <section className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -2344,6 +3047,389 @@ export function PantallaAdmin() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA MODIFICAR PUNTAJE Y RACHA DE ALUMNO */}
+      {modalPuntaje && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 440, width: '100%', padding: '24px', textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                color: 'var(--color-warning)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Award size={22} />
+              </div>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                  Modificar Puntuación
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 1 }}>
+                  {modalPuntaje.alumno.nombre} {modalPuntaje.alumno.username ? `(@${modalPuntaje.alumno.username})` : ''}
+                </p>
+              </div>
+            </div>
+
+            {/* Puntos actuales */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px 14px',
+              borderRadius: 12,
+              backgroundColor: 'var(--color-surface-secondary)',
+              marginBottom: 16
+            }}>
+              <div>
+                <span className="apple-caption" style={{ display: 'block' }}>Puntos actuales</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-ink)' }}>
+                  {modalPuntaje.alumno.puntos_total || 0} pts
+                </span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span className="apple-caption" style={{ display: 'block' }}>Racha actual</span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-accent)' }}>
+                  🔥 {modalPuntaje.alumno.racha_actual || 0} días
+                </span>
+              </div>
+            </div>
+
+            {/* Selector de Modo */}
+            <div style={{
+              display: 'flex',
+              padding: 3,
+              backgroundColor: 'var(--color-surface-secondary)',
+              borderRadius: 10,
+              marginBottom: 16
+            }}>
+              <button
+                type="button"
+                onClick={() => setModalPuntaje(p => ({ ...p, modo: 'exacto' }))}
+                style={{
+                  flex: 1,
+                  padding: '7px 0',
+                  borderRadius: 8,
+                  border: 'none',
+                  backgroundColor: modalPuntaje.modo === 'exacto' ? 'var(--color-surface)' : 'transparent',
+                  color: modalPuntaje.modo === 'exacto' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                  fontWeight: modalPuntaje.modo === 'exacto' ? 700 : 500,
+                  fontSize: 13,
+                  boxShadow: modalPuntaje.modo === 'exacto' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Puntaje Exacto
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalPuntaje(p => ({ ...p, modo: 'delta' }))}
+                style={{
+                  flex: 1,
+                  padding: '7px 0',
+                  borderRadius: 8,
+                  border: 'none',
+                  backgroundColor: modalPuntaje.modo === 'delta' ? 'var(--color-surface)' : 'transparent',
+                  color: modalPuntaje.modo === 'delta' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                  fontWeight: modalPuntaje.modo === 'delta' ? 700 : 500,
+                  fontSize: 13,
+                  boxShadow: modalPuntaje.modo === 'delta' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Sumar / Restar (+/-)
+              </button>
+            </div>
+
+            {modalPuntaje.modo === 'exacto' ? (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Nuevo valor exacto de puntos
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="99999"
+                  value={modalPuntaje.puntosExactos}
+                  onChange={(e) => setModalPuntaje(p => ({ ...p, puntosExactos: e.target.value }))}
+                  className="apple-input"
+                  style={{ width: '100%', minHeight: 40, fontSize: 16, fontWeight: 700 }}
+                  required
+                />
+              </div>
+            ) : (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Cantidad a sumar o restar (usa negativos para restar)
+                </label>
+                <input
+                  type="number"
+                  value={modalPuntaje.deltaPuntos}
+                  onChange={(e) => setModalPuntaje(p => ({ ...p, deltaPuntos: e.target.value }))}
+                  className="apple-input"
+                  style={{ width: '100%', minHeight: 40, fontSize: 16, fontWeight: 700 }}
+                  required
+                />
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {[+5, +10, +25, +50, -10, -25].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setModalPuntaje(p => ({ ...p, deltaPuntos: val }))}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 8,
+                        border: '1px solid var(--color-separator)',
+                        backgroundColor: Number(modalPuntaje.deltaPuntos) === val ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface-secondary)',
+                        color: Number(modalPuntaje.deltaPuntos) === val ? 'var(--color-accent)' : 'var(--color-ink)',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {val > 0 ? `+${val}` : val}
+                    </button>
+                  ))}
+                </div>
+                <p className="apple-caption" style={{ marginTop: 6 }}>
+                  Resultado final:{' '}
+                  <strong>
+                    {Math.max(0, (modalPuntaje.alumno.puntos_total || 0) + (Number(modalPuntaje.deltaPuntos) || 0))} pts
+                  </strong>
+                </p>
+              </div>
+            )}
+
+            {/* Checkbox para modificar Racha */}
+            <div style={{
+              padding: '12px',
+              borderRadius: 10,
+              backgroundColor: 'var(--color-surface-secondary)',
+              marginBottom: 14
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={modalPuntaje.modificarRacha}
+                  onChange={(e) => setModalPuntaje(p => ({ ...p, modificarRacha: e.target.checked }))}
+                />
+                <span>Ajustar también racha de días</span>
+              </label>
+              {modalPuntaje.modificarRacha && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 11, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                    Días de racha consecutivos:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="365"
+                    value={modalPuntaje.rachaExacta}
+                    onChange={(e) => setModalPuntaje(p => ({ ...p, rachaExacta: e.target.value }))}
+                    className="apple-input"
+                    style={{ width: '100%', minHeight: 36, fontSize: 14, fontWeight: 700 }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Motivo del cambio */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                Motivo del ajuste
+              </label>
+              <input
+                type="text"
+                value={modalPuntaje.motivo}
+                onChange={(e) => setModalPuntaje(p => ({ ...p, motivo: e.target.value }))}
+                placeholder="Ej: Participación brillante en clase"
+                className="apple-input"
+                style={{ width: '100%', minHeight: 38, fontSize: 13 }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {['Participación destacada', 'Ayuda a compañero', 'Corrección de error', 'Penalización'].map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setModalPuntaje(p => ({ ...p, motivo: preset }))}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: 'transparent',
+                      color: 'var(--color-secondary-ink)',
+                      fontSize: 11,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirmarAjustePuntaje}
+                disabled={accionEnCurso === modalPuntaje.alumno.id}
+                style={{ flex: 1, minHeight: 42, fontSize: 14, fontWeight: 700 }}
+              >
+                {accionEnCurso === modalPuntaje.alumno.id ? 'Guardando...' : 'Confirmar Ajuste'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setModalPuntaje(null)}
+                style={{ minHeight: 42, fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA RECHAZAR ENTREGA DE RETO CON FEEDBACK */}
+      {modalRechazoReto && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 440, width: '100%', padding: '24px', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 59, 48, 0.12)',
+                color: 'var(--color-negative)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <AlertCircle size={22} />
+              </div>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                  Rechazar Entrega de Reto
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 1 }}>
+                  {modalRechazoReto.entrega.nombre} · {modalRechazoReto.entrega.retoTitulo}
+                </p>
+              </div>
+            </div>
+
+            <p className="apple-subheadline" style={{ fontSize: 13, marginBottom: 14 }}>
+              Indica al estudiante qué debe corregir para que pueda volver a intentarlo y aprender.
+            </p>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 6 }}>
+                Comentario de corrección:
+              </label>
+              <textarea
+                className="apple-input"
+                rows={3}
+                value={modalRechazoReto.feedback}
+                onChange={(e) => setModalRechazoReto(p => ({ ...p, feedback: e.target.value }))}
+                placeholder="Explica qué faltó o qué debe corregir el alumno..."
+                style={{ width: '100%', resize: 'none', fontSize: 13 }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ fontSize: 11, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 6 }}>
+                Sugerencias rápidas:
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {[
+                  'Evidencia insuficiente o no adjunta.',
+                  'El código o enlace no funciona o no compila.',
+                  'La solución no cumple lo pedido en la consigna.',
+                  'Por favor explica paso a paso tu procedimiento.'
+                ].map(msg => (
+                  <button
+                    key={msg}
+                    type="button"
+                    onClick={() => setModalRechazoReto(p => ({ ...p, feedback: msg }))}
+                    style={{
+                      textAlign: 'left',
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: modalRechazoReto.feedback === msg ? 'rgba(255, 59, 48, 0.08)' : 'var(--color-surface-secondary)',
+                      color: modalRechazoReto.feedback === msg ? 'var(--color-negative)' : 'var(--color-ink)',
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {msg}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => handleRechazarEntregaReto(modalRechazoReto.entrega, modalRechazoReto.feedback)}
+                disabled={!modalRechazoReto.feedback?.trim()}
+                style={{
+                  flex: 1,
+                  minHeight: 42,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  backgroundColor: 'var(--color-negative)',
+                  borderColor: 'var(--color-negative)'
+                }}
+              >
+                Rechazar con Nota
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setModalRechazoReto(null)}
+                style={{ minHeight: 42, fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

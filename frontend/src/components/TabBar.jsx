@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Calendar, Trophy, MessageSquare, User, ClipboardList } from 'lucide-react'
+import { Calendar, Trophy, Gamepad2, MessageSquare, User, ClipboardList } from 'lucide-react'
 import { useAuth } from '../App'
 
 export function TabBar() {
@@ -8,6 +8,7 @@ export function TabBar() {
   const tabs = [
     { to: '/', label: 'Hoy', icon: Calendar },
     { to: '/ranking', label: 'Ranking', icon: Trophy },
+    { to: '/juegos', label: 'Juegos', icon: Gamepad2 },
     { to: '/chat', label: 'Chat', icon: MessageSquare },
     { to: '/perfil', label: 'Perfil', icon: User },
   ]

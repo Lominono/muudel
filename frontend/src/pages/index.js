@@ -1,5 +1,8 @@
 export { PantallaInicio } from './PantallaInicio'
 export { PantallaHoy } from './PantallaHoy'
 export { PantallaRanking } from './PantallaRanking'
+export { PantallaJuegos } from './PantallaJuegos'
 export { PantallaChat } from './PantallaChat'
 export { PantallaPerfil } from './PantallaPerfil'
+export { PantallaAdmin } from './PantallaAdmin'
+export { PantallaCompletarPerfil } from './PantallaCompletarPerfil'

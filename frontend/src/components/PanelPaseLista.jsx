@@ -78,6 +78,13 @@ export function PanelPaseLista() {
     sound.playPop()
   }
 
+  const borrarAviso = () => {
+    setAvisoClase('')
+    setAvisoTemporal('')
+    localStorage.removeItem('racha_aviso_hoy')
+    sound.playPop()
+  }
+
   // Marcar estado de un alumno
   const marcarEstado = async (alumnoId, tipo) => {
     sound.playPop()
@@ -330,19 +337,41 @@ export function PanelPaseLista() {
           </div>
 
           {!editandoAviso && (
-            <button
-              onClick={() => setEditandoAviso(true)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--color-accent)',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              {avisoClase ? 'Editar' : 'Añadir aviso'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {avisoClase && (
+                <button
+                  type="button"
+                  onClick={borrarAviso}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--color-negative)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Quitar aviso
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setAvisoTemporal(avisoClase)
+                  setEditandoAviso(true)
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--color-accent)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {avisoClase ? 'Editar' : 'Añadir aviso'}
+              </button>
+            </div>
           )}
         </div>
 

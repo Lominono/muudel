@@ -4,6 +4,7 @@ import { TabBar } from './components/TabBar'
 import { PantallaInicio } from './pages/PantallaInicio'
 import { PantallaHoy } from './pages/PantallaHoy'
 import { PantallaRanking } from './pages/PantallaRanking'
+import { PantallaJuegos } from './pages/PantallaJuegos'
 import { PantallaChat } from './pages/PantallaChat'
 import { PantallaPerfil } from './pages/PantallaPerfil'
 import { PantallaAdmin } from './pages/PantallaAdmin'
@@ -140,6 +141,7 @@ function ContenidoApp() {
           <>
             <Route path="/" element={<PantallaHoy />} />
             <Route path="/ranking" element={<PantallaRanking />} />
+            <Route path="/juegos" element={<PantallaJuegos />} />
             <Route path="/chat" element={<PantallaChat />} />
             <Route path="/perfil" element={<PantallaPerfil />} />
             {perfil?.rol === 'moderador' && (

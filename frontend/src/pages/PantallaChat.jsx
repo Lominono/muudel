@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
 import {
@@ -16,7 +16,14 @@ import {
   Lock,
   Unlock,
   Radio,
-  Stamp
+  Stamp,
+  Pin,
+  Reply,
+  Trash2,
+  Search,
+  Smile,
+  ExternalLink,
+  ChevronDown
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
@@ -25,10 +32,10 @@ import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICI
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
 
 const CANALES = [
-  { id: 'general', label: 'General' },
-  { id: 'dudas', label: 'Dudas' },
-  { id: 'apuntes', label: 'Apuntes' },
-  { id: 'avisos', label: 'Avisos' },
+  { id: 'general', label: 'General', desc: 'Sala principal del aula' },
+  { id: 'dudas', label: 'Dudas', desc: 'Consultas sobre ejercicios' },
+  { id: 'apuntes', label: 'Apuntes', desc: 'Resúmenes y enlaces útiles' },
+  { id: 'avisos', label: 'Avisos', desc: 'Comunicados oficiales del profe' },
 ]
 
 const RESPUESTAS_RAPIDAS = [
@@ -40,14 +47,50 @@ const RESPUESTAS_RAPIDAS = [
   'Apunte subido',
 ]
 
+const REACCIONES_POPULARES = [
+  { emoji: '❤️', label: 'Me gusta' },
+  { emoji: '👍', label: 'Entendido' },
+  { emoji: '💡', label: 'Buena idea' },
+  { emoji: '🔥', label: 'Crack' },
+  { emoji: '❓', label: 'Misma duda' }
+]
+
+const SELLOS_RAPIDOS = [
+  { id: 'PRESENTE', etiqueta: 'PRESENTE 15:30', clase: 'sello-tinta-rojo', texto: '[SELLO:PRESENTE]' },
+  { id: 'ENTENDIDO', etiqueta: 'ENTENDIDO', clase: 'sello-tinta-verde', texto: '[SELLO:ENTENDIDO]' },
+  { id: 'DUDA', etiqueta: 'DUDA EN CLASE', clase: 'sello-tinta-azul', texto: '[SELLO:DUDA]' },
+  { id: 'VISTO', etiqueta: 'VISTO Y COPIADO', clase: 'sello-tinta-azul', texto: '[SELLO:VISTO]' },
+]
+
 export function PantallaChat() {
   const { perfil, setPerfil } = useAuth()
   const [canal, setCanal] = useState('general')
   const [texto, setTexto] = useState('')
   const [likedId, setLikedId] = useState(null)
-  const { mensajes, cargando, enviar, like } = useChat(canal)
+  const {
+    mensajes,
+    cargando,
+    enviar,
+    like,
+    toggleReaccion,
+    toggleFijado,
+    eliminarMensaje,
+    emitirTyping,
+    usuariosEscribiendo
+  } = useChat(canal)
+
   const chatEndRef = useRef(null)
   const ultimoMensajeRef = useRef(null)
+  const typingTimerRef = useRef(null)
+  const inputRef = useRef(null)
+
+  // Estados de Interfaz y Nuevas Funciones
+  const [mensajeAResponder, setMensajeAResponder] = useState(null) // { id, texto, nombre }
+  const [mostrarBuscador, setMostrarBuscador] = useState(false)
+  const [queryBusqueda, setQueryBusqueda] = useState('')
+  const [mensajeDestacadoId, setMensajeDestacadoId] = useState(null)
+  const [menuReaccionesAbiertoId, setMenuReaccionesAbiertoId] = useState(null)
+  const [mostrarMenuSellos, setMostrarMenuSellos] = useState(false)
 
   // Estados de la Tienda y Efectos de Chat
   const [mostrarTienda, setMostrarTienda] = useState(false)
@@ -78,7 +121,23 @@ export function PantallaChat() {
   const [chatSilenciado, setChatSilenciado] = useState(false)
   const idUltimoEfectoProcesado = useRef(null)
 
-  // 1. Tick cada segundo para actualizar cuentas regresivas y verificar expiración del megáfono
+  // Mensaje fijado en el canal actual
+  const mensajeFijado = useMemo(() => {
+    return mensajes.find(m => m.fijado)
+  }, [mensajes])
+
+  // Filtrado de mensajes por búsqueda
+  const mensajesFiltrados = useMemo(() => {
+    if (!queryBusqueda.trim()) return mensajes
+    const q = queryBusqueda.toLowerCase()
+    return mensajes.filter(m =>
+      (m.texto && m.texto.toLowerCase().includes(q)) ||
+      (m.nombre && m.nombre.toLowerCase().includes(q)) ||
+      (m.username && m.username.toLowerCase().includes(q))
+    )
+  }, [mensajes, queryBusqueda])
+
+  // 1. Tick cada segundo para actualizar cuentas regresivas
   useEffect(() => {
     const timer = setInterval(() => {
       setRelojTick(prev => prev + 1)
@@ -119,7 +178,7 @@ export function PantallaChat() {
     return () => clearInterval(timer)
   }, [])
 
-  // Helper para consultar tiempo de recarga (cooldown) restante en segundos
+  // Helper para consultar tiempo de recarga (cooldown)
   const obtenerCooldownRestante = (itemId) => {
     try {
       const hasta = Number(localStorage.getItem(`muudel_cooldown_${itemId}`) || 0)
@@ -132,7 +191,7 @@ export function PantallaChat() {
     }
   }
 
-  // 3. Escuchar efectos de chat, megáfono y moderación en tiempo real (WebSocket a toda la clase)
+  // 3. Escuchar efectos de chat, megáfono y moderación
   useEffect(() => {
     const desuscribirEfectos = suscribirEvento('efecto_chat', (payload) => {
       const { tipo, autor, texto: textoExtra } = payload || {}
@@ -160,7 +219,7 @@ export function PantallaChat() {
     }
   }, [])
 
-  // 4. Detectar efectos en los mensajes que llegan por Supabase
+  // 4. Detectar efectos en los mensajes
   useEffect(() => {
     if (mensajes.length === 0) return
     const ultimo = mensajes[mensajes.length - 1]
@@ -183,7 +242,6 @@ export function PantallaChat() {
     }
   }, [mensajes])
 
-  // Despachador de efectos visuales y sonoros
   const ejecutarEfecto = (tipo, autor, textoExtra) => {
     const deshabilitados = localStorage.getItem('muudel_efectos_chat_desactivados') === 'true'
     if (deshabilitados) return
@@ -197,7 +255,7 @@ export function PantallaChat() {
       triggerConfetti()
     } else if (tipo === 'megafono') {
       sound.playPop()
-      const expiraEn = Date.now() + 30 * 60 * 1000 // 30 minutos de duración
+      const expiraEn = Date.now() + 30 * 60 * 1000
       const nuevoMegafono = {
         autor: autor || 'Compañero',
         texto: textoExtra || 'Aviso fijado de clase',
@@ -214,13 +272,38 @@ export function PantallaChat() {
     }
   }
 
-  // Scroll automático y animación de burbujas
+  // Scroll automático hacia el final
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!queryBusqueda) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
     if (ultimoMensajeRef.current) {
       animarBurbuja(ultimoMensajeRef.current)
     }
-  }, [mensajes])
+  }, [mensajes.length, queryBusqueda])
+
+  // Desplazarse a un mensaje específico (por cita o fijado)
+  const scrollToMessage = (msgId) => {
+    const el = document.getElementById(`msg-${msgId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setMensajeDestacadoId(msgId)
+      setTimeout(() => setMensajeDestacadoId(null), 1600)
+      sound.playPop()
+    }
+  }
+
+  // Control del indicador de escritura (typing)
+  const handleInputChange = (e) => {
+    setTexto(e.target.value)
+    if (perfil) {
+      emitirTyping(perfil, true)
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+      typingTimerRef.current = setTimeout(() => {
+        emitirTyping(perfil, false)
+      }, 2500)
+    }
+  }
 
   const manejarEnvio = async (e) => {
     if (e) e.preventDefault()
@@ -233,8 +316,18 @@ export function PantallaChat() {
 
     const contenido = texto
     setTexto('')
+    if (perfil) emitirTyping(perfil, false)
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+
+    const replyData = mensajeAResponder ? {
+      id: mensajeAResponder.id,
+      texto: mensajeAResponder.texto,
+      nombre: mensajeAResponder.nombre
+    } : null
+
+    setMensajeAResponder(null)
     sound.playPop()
-    await enviar(contenido, perfil.id, perfil)
+    await enviar(contenido, perfil.id, perfil, replyData)
   }
 
   const manejarLike = (id) => {
@@ -244,40 +337,18 @@ export function PantallaChat() {
     setTimeout(() => setLikedId(null), 300)
   }
 
-  // Lanzar efecto rápido descontando puntos y aplicando tiempo de recarga
-  const dispararEfectoRapido = async (itemEfecto) => {
+  const manejarReaccionEmoji = (msgId, emoji) => {
     if (!perfil) return
+    sound.playPop()
+    toggleReaccion(msgId, emoji, perfil.id)
+    setMenuReaccionesAbiertoId(null)
+  }
 
-    // 1. Verificar cooldown de tiempo
-    const segsCooldown = obtenerCooldownRestante(itemEfecto.id)
-    if (segsCooldown > 0) {
-      sound.playPop()
-      alert(`Este efecto está en recarga. Espera ${segsCooldown} segundos.`)
-      return
-    }
-
-    const puntos = perfil.puntos_total || 0
-    if (puntos < itemEfecto.costo) {
-      sound.playPop()
-      alert(`Te faltan ${itemEfecto.costo - puntos} pts para canjear "${itemEfecto.titulo}"`)
-      return
-    }
-
-    // Registrar tiempo de recarga (cooldown)
-    if (itemEfecto.cooldownMs) {
-      localStorage.setItem(`muudel_cooldown_${itemEfecto.id}`, String(Date.now() + itemEfecto.cooldownMs))
-    }
-
-    setMostrarMenuEfectos(false)
-    const nuevosPuntos = puntos - itemEfecto.costo
-    const updated = { ...perfil, puntos_total: nuevosPuntos }
-    setPerfil(updated)
-    localStorage.setItem('racha_local_user', JSON.stringify(updated))
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-      await emitirEfectoChat(itemEfecto.efecto, perfil)
-    } catch (e) {}
+  const manejarEstamparSello = async (sello) => {
+    if (!perfil) return
+    sound.playStamp()
+    setMostrarMenuSellos(false)
+    await enviar(sello.texto, perfil.id, perfil)
   }
 
   const parsearEfectoMensaje = (textoMsg) => {
@@ -299,46 +370,203 @@ export function PantallaChat() {
     return SELLOS_OFICIALES.find(s => s.id === selloId) || SELLOS_OFICIALES[0]
   }
 
+  // Formateo enriquecido de texto: código monospace, enlaces y menciones
+  const renderizarTextoEnriquecido = (cadena, esPropio) => {
+    if (!cadena) return null
+
+    // 1. Detección de bloques de código ```
+    if (cadena.includes('```')) {
+      const partes = cadena.split(/(```[\s\S]*?```)/g)
+      return partes.map((parte, i) => {
+        if (parte.startsWith('```') && parte.endsWith('```')) {
+          const codigo = parte.slice(3, -3).replace(/^[\r\n]+|[\r\n]+$/g, '')
+          return (
+            <pre key={i} className="chat-code-block">
+              <code>{codigo}</code>
+            </pre>
+          )
+        }
+        return <span key={i}>{renderizarInline(parte, esPropio)}</span>
+      })
+    }
+
+    return renderizarInline(cadena, esPropio)
+  }
+
+  const renderizarInline = (str, esPropio) => {
+    // Regex para URLs, código inline `...` y menciones @...
+    const tokens = str.split(/(`[^`]+`|https?:\/\/[^\s]+|@[a-zA-Z0-9_]+)/g)
+
+    return tokens.map((token, idx) => {
+      if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
+        return (
+          <code key={idx} className="chat-code-inline">
+            {token.slice(1, -1)}
+          </code>
+        )
+      }
+      if (token.startsWith('http://') || token.startsWith('https://')) {
+        return (
+          <a
+            key={idx}
+            href={token}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: esPropio ? '#FFFFFF' : 'var(--color-accent)',
+              textDecoration: 'underline',
+              wordBreak: 'break-all',
+              fontWeight: 600
+            }}
+          >
+            {token.replace(/^https?:\/\//, '').slice(0, 30)}...
+            <ExternalLink size={12} style={{ display: 'inline', marginLeft: 2 }} />
+          </a>
+        )
+      }
+      if (token.startsWith('@') && token.length > 1) {
+        return (
+          <span
+            key={idx}
+            style={{
+              fontWeight: 700,
+              color: esPropio ? '#FFFFFF' : 'var(--color-accent)',
+              backgroundColor: esPropio ? 'rgba(255,255,255,0.2)' : 'rgba(10, 132, 255, 0.1)',
+              padding: '1px 5px',
+              borderRadius: 5
+            }}
+          >
+            {token}
+          </span>
+        )
+      }
+      return token
+    })
+  }
+
+  // Lista de usuarios escribiendo (excluyendo al usuario actual)
+  const nombresEscribiendo = Object.entries(usuariosEscribiendo)
+    .filter(([uid]) => uid !== perfil?.id)
+    .map(([, nombre]) => nombre)
+
   const estaBloqueadoEnvio = chatSilenciado && perfil?.rol !== 'moderador'
 
   return (
     <main className={`app-container ${temblorActivo ? 'chat-screen-shake' : ''}`}>
       {/* Cabecera */}
-      <header style={{ marginBottom: 14 }}>
+      <header style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h1 className="apple-large-title" style={{ fontSize: 28 }}>
-              Chat de Clase
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 className="apple-large-title" style={{ fontSize: 26 }}>
+                Chat de Clase
+              </h1>
+              <span className="apple-badge apple-badge-positive" style={{ fontSize: 11, padding: '2px 8px' }}>
+                En vivo
+              </span>
+            </div>
             <p className="apple-subheadline" style={{ marginTop: 1, fontSize: 13 }}>
-              SMR2 Tarde · Comunidad y sellos de asistencia
+              SMR2 Tarde · Intercambio, código y sellos de clase
             </p>
           </div>
 
-          {/* Botón de la Cantina / Tienda */}
-          <button
-            type="button"
-            onClick={() => setMostrarTienda(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 14px',
-              borderRadius: 9999,
-              backgroundColor: 'var(--color-fill-secondary)',
-              color: 'var(--color-ink)',
-              border: '1px solid var(--color-separator)',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              flexShrink: 0
-            }}
-          >
-            <ShoppingBag size={15} />
-            <span>Tienda ({perfil?.puntos_total || 0} pts)</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Botón Buscador */}
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarBuscador(!mostrarBuscador)
+                if (mostrarBuscador) setQueryBusqueda('')
+              }}
+              title="Buscar mensajes"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 9999,
+                backgroundColor: mostrarBuscador ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                color: mostrarBuscador ? '#FFFFFF' : 'var(--color-ink)',
+                border: '1px solid var(--color-separator)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Search size={16} />
+            </button>
+
+            {/* Botón de la Cantina / Tienda */}
+            <button
+              type="button"
+              onClick={() => setMostrarTienda(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 9999,
+                backgroundColor: 'var(--color-fill-secondary)',
+                color: 'var(--color-ink)',
+                border: '1px solid var(--color-separator)',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                flexShrink: 0
+              }}
+            >
+              <ShoppingBag size={15} />
+              <span>Tienda ({perfil?.puntos_total || 0} pts)</span>
+            </button>
+          </div>
         </div>
+
+        {/* Barra de Búsqueda Desplegable */}
+        {mostrarBuscador && (
+          <div style={{
+            marginTop: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            animation: 'fadeIn 0.15s ease'
+          }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--color-tertiary-ink)' }} />
+              <input
+                type="text"
+                value={queryBusqueda}
+                onChange={(e) => setQueryBusqueda(e.target.value)}
+                placeholder="Buscar mensajes, palabras o alumnos en este canal..."
+                className="apple-input"
+                autoFocus
+                style={{ paddingLeft: 36, minHeight: 38, fontSize: 13, width: '100%' }}
+              />
+              {queryBusqueda && (
+                <button
+                  type="button"
+                  onClick={() => setQueryBusqueda('')}
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    top: 10,
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--color-tertiary-ink)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+            {queryBusqueda && (
+              <span className="apple-caption" style={{ whiteSpace: 'nowrap' }}>
+                {mensajesFiltrados.length} encontrados
+              </span>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Alerta de descanso flotante */}
@@ -427,13 +655,13 @@ export function PantallaChat() {
         </div>
       )}
 
-      {/* Selector de canales */}
+      {/* Selector de canales estilo Apple Segmented Control */}
       <div style={{
         display: 'flex',
-        gap: 8,
-        marginBottom: 10,
+        gap: 6,
+        marginBottom: 8,
         overflowX: 'auto',
-        paddingBottom: 4,
+        paddingBottom: 2,
         scrollbarWidth: 'none',
       }}>
         {CANALES.map((c) => {
@@ -441,36 +669,106 @@ export function PantallaChat() {
           return (
             <button
               key={c.id}
-              onClick={() => setCanal(c.id)}
+              onClick={() => {
+                setCanal(c.id)
+                setMensajeAResponder(null)
+                setQueryBusqueda('')
+              }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
-                padding: '6px 14px',
+                gap: 6,
+                padding: '7px 14px',
                 borderRadius: 9999,
                 border: 'none',
                 backgroundColor: activo ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
                 color: activo ? '#FFFFFF' : 'var(--color-ink)',
-                fontWeight: 600,
+                fontWeight: activo ? 700 : 500,
                 fontSize: 13,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 transition: 'all 0.15s ease',
               }}
             >
-              <Hash size={13} opacity={activo ? 0.9 : 0.6} />
-              {c.label}
+              <Hash size={13} opacity={activo ? 0.95 : 0.6} />
+              <span>{c.label}</span>
             </button>
           )
         })}
       </div>
 
-      {/* Ventana de mensajes del chat */}
+      {/* Banner de Mensaje Fijado en este Canal */}
+      {mensajeFijado && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          padding: '8px 12px',
+          borderRadius: 10,
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid rgba(10, 132, 255, 0.3)',
+          marginBottom: 8,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+            <Pin size={14} color="var(--color-accent)" style={{ flexShrink: 0, transform: 'rotate(45deg)' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--color-accent)', textTransform: 'uppercase', display: 'block' }}>
+                Mensaje fijado {mensajeFijado.fijado_por_nombre ? `por ${mensajeFijado.fijado_por_nombre}` : ''}
+              </span>
+              <p style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--color-ink)',
+                margin: 0,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                {mensajeFijado.texto}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => scrollToMessage(mensajeFijado.id)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 6,
+                backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                color: 'var(--color-accent)',
+                border: 'none',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Ver
+            </button>
+            {perfil?.rol === 'moderador' && (
+              <button
+                type="button"
+                onClick={() => toggleFijado(mensajeFijado.id, perfil)}
+                title="Desfijar mensaje"
+                style={{ background: 'none', border: 'none', color: 'var(--color-tertiary-ink)', cursor: 'pointer', padding: 2 }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Ventana de mensajes del chat estilo iOS */}
       <div
         className="card"
         style={{
-          height: '56vh',
-          minHeight: 400,
+          flex: 1,
+          height: 'calc(100vh - 275px)',
+          minHeight: 460,
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
@@ -481,42 +779,46 @@ export function PantallaChat() {
         <div style={{
           flex: 1,
           overflowY: 'auto',
-          padding: 16,
+          padding: '16px 14px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 12
+          gap: 6
         }}>
           {cargando && mensajes.length === 0 ? (
             <div style={{ textAlign: 'center', margin: 'auto' }}>
-              <p className="apple-caption">Cargando mensajes...</p>
+              <p className="apple-caption">Cargando mensajes de #{canal}...</p>
             </div>
-          ) : mensajes.length === 0 ? (
+          ) : mensajesFiltrados.length === 0 ? (
             <div style={{ textAlign: 'center', margin: 'auto', padding: 24 }}>
               <div style={{ display: 'inline-flex', padding: 12, borderRadius: 14, background: 'var(--color-fill-secondary)', color: 'var(--color-secondary-ink)', marginBottom: 8 }}>
                 <MessageSquare size={24} />
               </div>
               <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                No hay mensajes en #{canal}.
+                {queryBusqueda ? `Sin resultados para "${queryBusqueda}"` : `No hay mensajes en #${canal}.`}
               </p>
               <p className="apple-caption" style={{ marginTop: 2 }}>
-                Escribe un mensaje o estampa un sello de clase.
+                {queryBusqueda ? 'Intenta con otras palabras o limpia la búsqueda.' : 'Escribe un mensaje, haz una pregunta o estampa un sello.'}
               </p>
             </div>
           ) : (
-            mensajes.map((m, idx) => {
+            mensajesFiltrados.map((m, idx) => {
               const esPropio = perfil && m.user_id === perfil.id
-              const esUltimo = idx === mensajes.length - 1
+              const esUltimo = idx === mensajesFiltrados.length - 1
               const hora = m.created_at
                 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : ''
               const isLiked = likedId === m.id
               const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
+              const autorUsername = m.username || m.profiles?.username
               const autorRol = m.rol || m.profiles?.rol || 'alumno'
               const autorColor = m.color_acento || m.profiles?.color_acento
               const autorDigito = m.digito_id || m.profiles?.digito_id
-              
-              // Apodo de clase desbloqueado
               const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
+              const esModerador = autorRol === 'moderador'
+
+              // Agrupación de mensajes consecutivos
+              const mensajeAnterior = idx > 0 ? mensajesFiltrados[idx - 1] : null
+              const mismoEmisor = mensajeAnterior && mensajeAnterior.user_id === m.user_id && (new Date(m.created_at) - new Date(mensajeAnterior.created_at)) < 120000
 
               // 1. Mensaje tipo SELLO FÍSICO DE TINTA
               const selloDetectado = parsearSelloMensaje(m.texto)
@@ -524,21 +826,28 @@ export function PantallaChat() {
                 return (
                   <div
                     key={m.id || idx}
+                    id={`msg-${m.id}`}
                     ref={esUltimo ? ultimoMensajeRef : null}
+                    className={mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}
                     style={{
                       width: '100%',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: esPropio ? 'flex-end' : 'flex-start',
-                      margin: '4px 0'
+                      margin: '6px 0',
+                      borderRadius: 12,
+                      padding: '4px 6px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
-                      {autorDigito && <span className="apple-caption">({autorDigito})</span>}
-                    </div>
+                    {!mismoEmisor && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
+                        {autorUsername && <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>@{autorUsername}</span>}
+                        {autorDigito && <span className="apple-caption">({autorDigito})</span>}
+                      </div>
+                    )}
 
-                    <div className={`sello-tinta ${selloDetectado.clase}`} style={{ fontSize: 14, padding: '8px 18px' }}>
+                    <div className={`sello-tinta ${selloDetectado.clase}`} style={{ fontSize: 13, padding: '8px 18px' }}>
                       ★ {selloDetectado.etiqueta} ★
                     </div>
 
@@ -564,6 +873,7 @@ export function PantallaChat() {
                 return (
                   <div
                     key={m.id || idx}
+                    id={`msg-${m.id}`}
                     ref={esUltimo ? ultimoMensajeRef : null}
                     style={{
                       width: '100%',
@@ -575,6 +885,7 @@ export function PantallaChat() {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: 12,
+                      margin: '4px 0',
                       animation: 'fadeIn 0.2s ease'
                     }}
                   >
@@ -614,20 +925,29 @@ export function PantallaChat() {
                 )
               }
 
-              // 3. Mensaje regular estilo iOS
+              // 3. Mensaje regular estilo iOS con soporte de citas y reacciones
+              const tieneReacciones = m.reacciones && Object.keys(m.reacciones).length > 0
+
               return (
                 <div
                   key={m.id || idx}
+                  id={`msg-${m.id}`}
                   ref={esUltimo ? ultimoMensajeRef : null}
+                  className={`chat-message-row ${mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}`}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: esPropio ? 'flex-end' : 'flex-start',
-                    maxWidth: '85%',
+                    maxWidth: '88%',
                     alignSelf: esPropio ? 'flex-end' : 'flex-start',
+                    marginTop: mismoEmisor ? 2 : 8,
+                    borderRadius: 14,
+                    padding: '2px 4px',
+                    position: 'relative'
                   }}
                 >
-                  {!esPropio && (
+                  {/* Encabezado del remitente */}
+                  {!esPropio && !mismoEmisor && (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -636,10 +956,32 @@ export function PantallaChat() {
                       paddingLeft: 4,
                       flexWrap: 'wrap'
                     }}>
-                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={20} fontSize={9} />
-                      <span className="apple-caption" style={{ fontWeight: 600, color: 'var(--color-secondary-ink)' }}>
+                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} />
+                      <span className="apple-caption" style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
                         {autorNombre}
                       </span>
+                      {autorUsername && (
+                        <span className="apple-caption" style={{ color: 'var(--color-accent)', fontWeight: 600 }}>
+                          @{autorUsername}
+                        </span>
+                      )}
+                      {esModerador && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '1px 6px',
+                          borderRadius: 6,
+                          backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                          color: 'var(--color-accent)',
+                          border: '1px solid rgba(10, 132, 255, 0.25)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}>
+                          <ShieldCheck size={11} />
+                          Profesor
+                        </span>
+                      )}
                       {autorDigito && (
                         <span style={{
                           fontSize: 10,
@@ -659,9 +1001,9 @@ export function PantallaChat() {
                           fontWeight: 700,
                           padding: '1px 6px',
                           borderRadius: 6,
-                          backgroundColor: 'rgba(0, 122, 255, 0.08)',
-                          color: 'var(--color-accent)',
-                          border: '1px solid rgba(0, 122, 255, 0.2)'
+                          backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                          color: 'var(--color-warning)',
+                          border: '1px solid rgba(255, 149, 0, 0.25)'
                         }}>
                           {autorApodo}
                         </span>
@@ -669,56 +1011,273 @@ export function PantallaChat() {
                     </div>
                   )}
 
+                  {/* Burbuja del mensaje */}
                   <div
                     style={{
                       padding: '10px 14px',
                       borderRadius: 18,
                       borderBottomRightRadius: esPropio ? 4 : 18,
                       borderBottomLeftRadius: esPropio ? 18 : 4,
-                      backgroundColor: esPropio ? 'var(--color-accent)' : 'var(--color-surface)',
-                      border: esPropio ? 'none' : '1px solid var(--color-separator)',
+                      backgroundColor: esPropio
+                        ? 'var(--color-accent)'
+                        : esModerador
+                        ? 'var(--color-surface)'
+                        : 'var(--color-surface)',
+                      border: esPropio
+                        ? 'none'
+                        : esModerador
+                        ? '1.5px solid rgba(10, 132, 255, 0.35)'
+                        : '1px solid var(--color-separator)',
                       color: esPropio ? '#FFFFFF' : 'var(--color-ink)',
                       fontSize: 15,
-                      lineHeight: 1.35,
+                      lineHeight: 1.4,
                       wordBreak: 'break-word',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      position: 'relative'
                     }}
                   >
-                    {m.texto}
+                    {/* Indicador de Cita / Mensaje citado */}
+                    {(m.reply_to_texto || m.reply_to) && (
+                      <div
+                        onClick={() => m.reply_to && scrollToMessage(m.reply_to)}
+                        className="chat-reply-quote"
+                        style={{
+                          borderLeftColor: esPropio ? '#FFFFFF' : 'var(--color-accent)',
+                          backgroundColor: esPropio ? 'rgba(255, 255, 255, 0.15)' : 'rgba(120, 120, 128, 0.08)',
+                          color: esPropio ? '#FFFFFF' : 'var(--color-ink)'
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 2 }}>
+                          ↩️ {m.reply_to_nombre || 'Respuesta a compañero'}
+                        </div>
+                        <div style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          opacity: 0.9
+                        }}>
+                          {m.reply_to_texto || 'Mensaje citado'}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Texto formateado del mensaje */}
+                    {renderizarTextoEnriquecido(m.texto, esPropio)}
+
+                    {/* Pin badge si está fijado */}
+                    {m.fijado && (
+                      <div style={{
+                        position: 'absolute',
+                        top: -8,
+                        right: esPropio ? 'auto' : -6,
+                        left: esPropio ? -6 : 'auto',
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--color-accent)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}>
+                        <Pin size={11} style={{ transform: 'rotate(45deg)' }} />
+                      </div>
+                    )}
                   </div>
 
+                  {/* Barra de Reacciones con Emoji Pills */}
+                  {tieneReacciones && (
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 4,
+                      marginTop: 3,
+                      paddingLeft: esPropio ? 0 : 4,
+                      paddingRight: esPropio ? 4 : 0
+                    }}>
+                      {Object.entries(m.reacciones).map(([emoji, userIds]) => {
+                        if (!Array.isArray(userIds) || userIds.length === 0) return null
+                        const reaccionadaPorMi = perfil && userIds.includes(perfil.id)
+                        return (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => manejarReaccionEmoji(m.id, emoji)}
+                            className={`chat-reaction-pill ${reaccionadaPorMi ? 'activa' : ''}`}
+                            title={reaccionadaPorMi ? 'Quitar mi reacción' : 'Reaccionar'}
+                          >
+                            <span>{emoji}</span>
+                            <span className="tabular-nums">{userIds.length}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Acciones y Metadatos debajo de la burbuja */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    gap: 6,
                     marginTop: 3,
-                    padding: '0 4px'
+                    padding: '0 4px',
+                    flexWrap: 'wrap'
                   }}>
                     <span className="apple-caption" style={{ fontSize: 11 }}>
                       {hora}
                     </span>
 
+                    {/* Like clásico rápido */}
                     <button
+                      type="button"
                       onClick={() => manejarLike(m.id)}
                       className={isLiked ? 'heart-pop' : ''}
+                      title="Dar me gusta"
                       style={{
                         background: 'transparent',
                         border: 'none',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 3,
+                        gap: 2,
                         color: (m.likes_count || 0) > 0 ? 'var(--color-negative)' : 'var(--color-tertiary-ink)',
                         fontSize: 12,
                         padding: '2px 4px',
                       }}
                     >
-                      <Heart
-                        size={13}
-                        fill={(m.likes_count || 0) > 0 ? 'currentColor' : 'none'}
-                      />
+                      <Heart size={12} fill={(m.likes_count || 0) > 0 ? 'currentColor' : 'none'} />
                       <span className="tabular-nums font-semibold">{m.likes_count || 0}</span>
                     </button>
+
+                    {/* Botón Responder (Quote) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMensajeAResponder({ id: m.id, texto: m.texto, nombre: autorNombre })
+                        inputRef.current?.focus()
+                        sound.playPop()
+                      }}
+                      title="Citar y responder"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-secondary-ink)',
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        fontSize: 11,
+                        fontWeight: 600
+                      }}
+                    >
+                      <Reply size={12} />
+                      <span>Responder</span>
+                    </button>
+
+                    {/* Selector de Reacciones Populares */}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setMenuReaccionesAbiertoId(menuReaccionesAbiertoId === m.id ? null : m.id)}
+                        title="Añadir reacción"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--color-secondary-ink)',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          display: 'inline-flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Smile size={12} />
+                      </button>
+
+                      {menuReaccionesAbiertoId === m.id && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 24,
+                          left: esPropio ? 'auto' : 0,
+                          right: esPropio ? 0 : 'auto',
+                          display: 'flex',
+                          gap: 6,
+                          padding: '6px 8px',
+                          borderRadius: 20,
+                          backgroundColor: 'var(--color-surface)',
+                          border: '1px solid var(--color-separator)',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                          zIndex: 100,
+                          animation: 'fadeIn 0.15s ease'
+                        }}>
+                          {REACCIONES_POPULARES.map(({ emoji, label }) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => manejarReaccionEmoji(m.id, emoji)}
+                              title={label}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                fontSize: 16,
+                                cursor: 'pointer',
+                                padding: '2px',
+                                transition: 'transform 0.1s ease'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.25)'}
+                              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Fijar en el canal (Solo Moderador) */}
+                    {perfil?.rol === 'moderador' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleFijado(m.id, perfil)
+                          sound.playStamp()
+                        }}
+                        title={m.fijado ? 'Desfijar del canal' : 'Fijar mensaje en canal'}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: m.fijado ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                          cursor: 'pointer',
+                          padding: '2px 4px'
+                        }}
+                      >
+                        <Pin size={12} style={{ transform: 'rotate(45deg)' }} />
+                      </button>
+                    )}
+
+                    {/* Eliminar Mensaje (Autor o Moderador) */}
+                    {(esPropio || perfil?.rol === 'moderador') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('¿Eliminar este mensaje del chat?')) {
+                            eliminarMensaje(m.id)
+                            sound.playPop()
+                          }
+                        }}
+                        title="Eliminar mensaje"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--color-secondary-ink)',
+                          cursor: 'pointer',
+                          padding: '2px 4px'
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -727,7 +1286,106 @@ export function PantallaChat() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Menú de Acciones Rápidas y Sellos */}
+        {/* Indicador de Usuarios Escribiendo (Typing) */}
+        {nombresEscribiendo.length > 0 && (
+          <div style={{ padding: '4px 14px', animation: 'fadeIn 0.2s ease' }}>
+            <div className="chat-typing-dots">
+              <span className="chat-dot-bounce" />
+              <span className="chat-dot-bounce" />
+              <span className="chat-dot-bounce" />
+              <span style={{ marginLeft: 4, fontWeight: 600 }}>
+                {nombresEscribiendo.join(', ')} {nombresEscribiendo.length === 1 ? 'está escribiendo...' : 'están escribiendo...'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Banner de Mensaje al que se responde (Reply Bar) */}
+        {mensajeAResponder && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 14px',
+            backgroundColor: 'var(--color-surface-secondary)',
+            borderTop: '1px solid var(--color-separator)',
+            borderLeft: '4px solid var(--color-accent)',
+            animation: 'fadeIn 0.15s ease'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+              <Reply size={15} color="var(--color-accent)" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)', display: 'block' }}>
+                  Respondiendo a {mensajeAResponder.nombre}
+                </span>
+                <p style={{
+                  fontSize: 12,
+                  color: 'var(--color-secondary-ink)',
+                  margin: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {mensajeAResponder.texto}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMensajeAResponder(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--color-tertiary-ink)', cursor: 'pointer', padding: 4 }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
+        {/* Cajón de Sellos Rápidos de Aula */}
+        {mostrarMenuSellos && (
+          <div style={{
+            padding: '10px 14px',
+            backgroundColor: 'var(--color-surface)',
+            borderTop: '1px solid var(--color-separator)',
+            animation: 'fadeIn 0.15s ease'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span className="apple-caption" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-ink)' }}>
+                Sellos Oficiales de Clase
+              </span>
+              <button
+                type="button"
+                onClick={() => setMostrarMenuSellos(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', cursor: 'pointer' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {SELLOS_RAPIDOS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => manejarEstamparSello(s)}
+                  className={`sello-tinta ${s.clase}`}
+                  style={{
+                    fontSize: 11,
+                    padding: '8px 14px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transform: 'none',
+                    transition: 'all 0.12s ease'
+                  }}
+                >
+                  {s.etiqueta}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Menú de Acciones Rápidas y Efectos de la Cantina */}
         {mostrarMenuEfectos && (
           <div style={{
             padding: '10px 14px',
@@ -740,7 +1398,7 @@ export function PantallaChat() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="apple-caption" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-ink)' }}>
-                Sellos y Efectos de Clase
+                Efectos del Aula (Consumen Puntos)
               </span>
               <button
                 type="button"
@@ -763,12 +1421,29 @@ export function PantallaChat() {
                     key={ef.id}
                     type="button"
                     disabled={!alcanzable || enCooldown}
-                    onClick={() => {
+                    onClick={async () => {
                       if (ef.id === 'sello_tinta_chat') {
                         setMostrarMenuEfectos(false)
-                        setMostrarTienda(true)
+                        setMostrarMenuSellos(true)
                       } else {
-                        dispararEfectoRapido(ef)
+                        // Comprobar puntos y disparar
+                        if (segsCooldown > 0) return
+                        if ((perfil?.puntos_total || 0) < ef.costo) {
+                          alert(`Te faltan ${ef.costo - (perfil?.puntos_total || 0)} pts`)
+                          return
+                        }
+                        if (ef.cooldownMs) {
+                          localStorage.setItem(`muudel_cooldown_${ef.id}`, String(Date.now() + ef.cooldownMs))
+                        }
+                        setMostrarMenuEfectos(false)
+                        const nuevosPuntos = (perfil?.puntos_total || 0) - ef.costo
+                        const updated = { ...perfil, puntos_total: nuevosPuntos }
+                        setPerfil(updated)
+                        localStorage.setItem('racha_local_user', JSON.stringify(updated))
+                        try {
+                          await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
+                          await emitirEfectoChat(ef.efecto, perfil)
+                        } catch (err) {}
                       }
                     }}
                     style={{
@@ -817,7 +1492,10 @@ export function PantallaChat() {
             <button
               key={frase}
               type="button"
-              onClick={() => setTexto(frase)}
+              onClick={() => {
+                setTexto(frase)
+                inputRef.current?.focus()
+              }}
               style={{
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-separator)',
@@ -847,16 +1525,19 @@ export function PantallaChat() {
             gap: 8,
           }}
         >
-          {/* Botón de Sellos y Efectos Rápidos */}
+          {/* Botón de Sellos Rápidos */}
           <button
             type="button"
-            onClick={() => setMostrarMenuEfectos(!mostrarMenuEfectos)}
-            title="Acceso a sellos y efectos"
+            onClick={() => {
+              setMostrarMenuSellos(!mostrarMenuSellos)
+              setMostrarMenuEfectos(false)
+            }}
+            title="Estampar sello de clase"
             style={{
               width: 36,
               height: 36,
               borderRadius: 9999,
-              backgroundColor: mostrarMenuEfectos ? 'var(--color-fill-secondary)' : 'transparent',
+              backgroundColor: mostrarMenuSellos ? 'var(--color-fill-secondary)' : 'transparent',
               color: 'var(--color-ink)',
               border: '1px solid var(--color-separator)',
               display: 'flex',
@@ -869,14 +1550,42 @@ export function PantallaChat() {
             <Stamp size={17} />
           </button>
 
+          {/* Botón de Efectos de Clase */}
+          <button
+            type="button"
+            onClick={() => {
+              setMostrarMenuEfectos(!mostrarMenuEfectos)
+              setMostrarMenuSellos(false)
+            }}
+            title="Efectos de la tienda"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 9999,
+              backgroundColor: mostrarMenuEfectos ? 'var(--color-fill-secondary)' : 'transparent',
+              color: 'var(--color-warning)',
+              border: '1px solid var(--color-separator)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+          >
+            <Sparkles size={16} />
+          </button>
+
           <input
+            ref={inputRef}
             className="apple-input"
             value={texto}
             disabled={estaBloqueadoEnvio}
-            onChange={(e) => setTexto(e.target.value)}
+            onChange={handleInputChange}
             placeholder={
               estaBloqueadoEnvio
                 ? '🔒 Chat silenciado temporalmente por moderación'
+                : mensajeAResponder
+                ? `Respondiendo a @${mensajeAResponder.nombre}...`
                 : `Mensaje en #${canal}...`
             }
             style={{
