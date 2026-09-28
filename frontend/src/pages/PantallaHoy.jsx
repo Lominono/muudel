@@ -294,6 +294,7 @@ export function PantallaHoy() {
               color={perfil.color_acento}
               rol={perfil.rol}
               size={36}
+              marco={perfil.marco_avatar}
               showRoleBadge={true}
             />
           </div>

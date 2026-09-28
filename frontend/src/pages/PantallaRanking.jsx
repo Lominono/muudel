@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 import { useAuth } from '../App'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
+import { AvatarUsuario } from '../components/AvatarUsuario'
 import { Flame, ArrowUp, Trophy, Users } from 'lucide-react'
 import { suscribirEvento } from '../utils/realtimeHub'
 
@@ -225,13 +226,14 @@ export function PantallaRanking() {
                     )}
                   </div>
 
-                  {/* Insignia tipográfica con iniciales */}
+                  {/* Avatar con marco */}
                   <div style={{ marginRight: 12 }}>
-                    <InsigniaIniciales
+                    <AvatarUsuario
                       nombre={estudiante.nombre}
                       color={estudiante.color_acento || medallaColores[i] || '#0A84FF'}
                       size={36}
                       fontSize={14}
+                      marco={estudiante.marco_avatar}
                     />
                   </div>
 
@@ -260,6 +262,22 @@ export function PantallaRanking() {
                           fontVariantNumeric: 'tabular-nums'
                         }}>
                           {estudiante.digito_id}
+                        </span>
+                      )}
+                      {(estudiante.titulo_personalizado || estudiante.titulo_vip) && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: 6,
+                          backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                          color: '#FF9500',
+                          border: '1px solid rgba(255, 149, 0, 0.25)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}>
+                          {estudiante.titulo_personalizado || estudiante.titulo_vip}
                         </span>
                       )}
                     </div>

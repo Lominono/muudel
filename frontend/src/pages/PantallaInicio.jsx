@@ -31,6 +31,7 @@ export function PantallaInicio() {
   } = useAuth()
 
   const [modo, setModo] = useState('login') // 'login' | 'registro'
+  const [nombreRegistro, setNombreRegistro] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -101,7 +102,7 @@ export function PantallaInicio() {
     if (modo === 'login') {
       await iniciarSesionConEmail(email, password)
     } else {
-      await registrarseConEmail(email, password, '', 'alumno')
+      await registrarseConEmail(email, password, nombreRegistro, 'alumno')
     }
     setEnviando(false)
   }
@@ -217,6 +218,24 @@ export function PantallaInicio() {
             </div>
           )}
 
+          {/* Selector de modo estilo iOS Segmented Control */}
+          <div className="segmented-control" style={{ marginBottom: 18 }}>
+            <button
+              type="button"
+              className={`segmented-control-item ${modo === 'login' ? 'active' : ''}`}
+              onClick={() => cambiarModo('login')}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              type="button"
+              className={`segmented-control-item ${modo === 'registro' ? 'active' : ''}`}
+              onClick={() => cambiarModo('registro')}
+            >
+              Crear cuenta
+            </button>
+          </div>
+
           {/* Botón Oficial de Google */}
           <button
             type="button"
@@ -229,7 +248,7 @@ export function PantallaInicio() {
               <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
               <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
             </svg>
-            <span>Continuar con Google</span>
+            <span>{modo === 'login' ? 'Continuar con Google' : 'Registrarse con Google'}</span>
           </button>
 
           {/* Separador sutil */}
@@ -241,13 +260,28 @@ export function PantallaInicio() {
           }}>
             <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
             <span style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
-              o con tu correo
+              {modo === 'login' ? 'o con tus credenciales' : 'o con tu correo de clase'}
             </span>
             <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
           </div>
 
           {/* Formulario */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {modo === 'registro' && (
+              <div style={{ position: 'relative', textAlign: 'left' }}>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  className="apple-input"
+                  placeholder="Nombre y Apellido (ej: Mateo García)"
+                  value={nombreRegistro}
+                  onChange={(e) => setNombreRegistro(e.target.value)}
+                  style={{ minHeight: 44, fontSize: 14 }}
+                  required
+                />
+              </div>
+            )}
+
             {/* Correo */}
             <div style={{ position: 'relative', textAlign: 'left' }}>
               <Mail size={16} style={{
@@ -282,7 +316,7 @@ export function PantallaInicio() {
                 type="password"
                 autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
                 className="apple-input"
-                placeholder="Contraseña"
+                placeholder="Contraseña (mínimo 6 caracteres)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{ paddingLeft: 36, minHeight: 44, fontSize: 14 }}
@@ -317,7 +351,7 @@ export function PantallaInicio() {
                 </>
               ) : (
                 <>
-                  <span>Crear cuenta</span>
+                  <span>Crear mi cuenta</span>
                   <ArrowRight size={15} />
                 </>
               )}
@@ -342,7 +376,7 @@ export function PantallaInicio() {
                     fontSize: 13
                   }}
                 >
-                  Crear cuenta
+                  Regístrate aquí
                 </button>
               </>
             ) : (
@@ -361,28 +395,10 @@ export function PantallaInicio() {
                     fontSize: 13
                   }}
                 >
-                  Iniciar sesión
+                  Inicia sesión aquí
                 </button>
               </>
             )}
-          </div>
-
-          {/* Acceso invitado */}
-          <div style={{ marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={() => entrarComoAlumno('Alumno de Clase')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--color-tertiary-ink)',
-                fontSize: 12,
-                cursor: 'pointer',
-                padding: '4px 8px'
-              }}
-            >
-              Entrar como invitado
-            </button>
           </div>
         </div>
 

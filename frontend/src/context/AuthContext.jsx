@@ -79,7 +79,61 @@ export function AuthProvider({ children }) {
         }
       }
     )
-    return () => subscription?.unsubscribe()
+
+    // 4. Escuchar eventos de moderación de usuarios en tiempo real
+    const handleBaneado = (e) => {
+      const datos = e.detail || {}
+      setPerfil(actual => {
+        if (!actual) return null
+        if (datos.userId === actual.id || datos.email === actual.email) {
+          const baneadoPerfil = {
+            ...actual,
+            baneado: true,
+            motivo_ban: datos.motivo || 'Cuenta suspendida por moderación de clase.'
+          }
+          localStorage.setItem('racha_local_user', JSON.stringify(baneadoPerfil))
+          return baneadoPerfil
+        }
+        return actual
+      })
+    }
+
+    const handleDesbaneado = (e) => {
+      const datos = e.detail || {}
+      setPerfil(actual => {
+        if (!actual) return null
+        if (datos.userId === actual.id || datos.email === actual.email) {
+          const limpioPerfil = { ...actual, baneado: false, motivo_ban: null }
+          localStorage.setItem('racha_local_user', JSON.stringify(limpioPerfil))
+          return limpioPerfil
+        }
+        return actual
+      })
+    }
+
+    const handleEliminado = (e) => {
+      const datos = e.detail || {}
+      setPerfil(actual => {
+        if (!actual) return null
+        if (datos.userId === actual.id || datos.email === actual.email) {
+          localStorage.removeItem('racha_local_user')
+          setSession(null)
+          return null
+        }
+        return actual
+      })
+    }
+
+    window.addEventListener('muudel-rt-usuario_baneado', handleBaneado)
+    window.addEventListener('muudel-rt-usuario_desbaneado', handleDesbaneado)
+    window.addEventListener('muudel-rt-usuario_eliminado', handleEliminado)
+
+    return () => {
+      subscription?.unsubscribe()
+      window.removeEventListener('muudel-rt-usuario_baneado', handleBaneado)
+      window.removeEventListener('muudel-rt-usuario_desbaneado', handleDesbaneado)
+      window.removeEventListener('muudel-rt-usuario_eliminado', handleEliminado)
+    }
   }, [])
 
   const cargarPerfil = async (userId, userMetadata = null, email = null) => {
@@ -98,17 +152,30 @@ export function AuthProvider({ children }) {
         userMetadata?.name?.toLowerCase().includes('lomino') ||
         userId === 'admin-lominono'
 
-      // Recuperar metadatos locales si existen (dígito, nick, onboarding)
+      // Recuperar metadatos locales si existen (dígito, nick, onboarding, ban local)
       let localMeta = {}
       try {
         const guardado = localStorage.getItem('muudel_user_meta_' + userId)
         if (guardado) localMeta = JSON.parse(guardado)
       } catch (e) {}
 
+      // Comprobar si hay baneo en local
+      let esBaneadoLocal = false
+      let motivoBanLocal = null
+      try {
+        const baneadosMap = JSON.parse(localStorage.getItem('muudel_usuarios_baneados') || '{}')
+        if (baneadosMap[userId]) {
+          esBaneadoLocal = true
+          motivoBanLocal = baneadosMap[userId].motivo || 'Cuenta suspendida por moderación'
+        }
+      } catch (e) {}
+
       if (data) {
         let perfilCompleto = {
           ...data,
           email: email || data.email || null,
+          baneado: data.baneado || esBaneadoLocal,
+          motivo_ban: data.motivo_ban || motivoBanLocal,
           ...localMeta
         }
 

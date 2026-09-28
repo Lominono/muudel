@@ -83,6 +83,7 @@ export function TopRanking({ lista = [] }) {
                 color={item.color_acento}
                 size={esPrimero ? 44 : 36}
                 fontSize={esPrimero ? 16 : 13}
+                marco={item.marco_avatar}
               />
 
               <div
@@ -98,6 +99,21 @@ export function TopRanking({ lista = [] }) {
               >
                 {item.nombre}
               </div>
+
+              {(item.titulo_personalizado || item.titulo_vip) && (
+                <div style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: esPrimero ? '#E5A00D' : 'var(--color-accent)',
+                  maxWidth: '100%',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  lineHeight: 1.1
+                }}>
+                  {item.titulo_personalizado || item.titulo_vip}
+                </div>
+              )}
 
               <div className="tabular-nums" style={{
                 fontSize: esPrimero ? 13 : 12,

@@ -33,12 +33,19 @@ import {
   Sparkles,
   Download,
   RotateCcw,
-  Hourglass
+  Hourglass,
+  UserX,
+  UserCheck,
+  Key,
+  Ban
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 
-const PIN_ADMIN_CORRECTO = '2026'
+export const obtenerPinAdmin = () => {
+  return localStorage.getItem('muudel_admin_pin_custom') || '2026'
+}
+
 const TIEMPO_BLOQUEO_SEGUNDOS = 60
 const TIEMPO_INACTIVIDAD_MS = 10 * 60 * 1000 // 10 minutos de inactividad
 
@@ -56,6 +63,13 @@ export function PantallaAdmin() {
   const [intentosFallidos, setIntentosFallidos] = useState(0)
   const [segundosBloqueo, setSegundosBloqueo] = useState(0)
 
+  // Modal para cambiar PIN maestro
+  const [mostrarModalPin, setMostrarModalPin] = useState(false)
+  const [pinActualInput, setPinActualInput] = useState('')
+  const [pinNuevoInput, setPinNuevoInput] = useState('')
+  const [pinConfirmarInput, setPinConfirmarInput] = useState('')
+  const [errorCambioPin, setErrorCambioPin] = useState('')
+
   // 2. Navegación entre pestañas del Panel
   const [tab, setTab] = useState('asistencia') // 'asistencia' | 'canjes' | 'chat' | 'alumnos' | 'retos' | 'seguridad'
   const [cargando, setCargando] = useState(true)
@@ -64,6 +78,10 @@ export function PantallaAdmin() {
   const [checkinsHoy, setCheckinsHoy] = useState([])
   const [solicitudesHoy, setSolicitudesHoy] = useState([])
   const [todosAlumnos, setTodosAlumnos] = useState([])
+  const [filtroAlumnos, setFiltroAlumnos] = useState('todos') // 'todos' | 'activos' | 'baneados' | 'moderadores'
+
+  // Modal para banear alumno con motivo
+  const [modalBaneo, setModalBaneo] = useState(null) // { alumno, motivo: '', preset: '' }
 
   // Canjes de puntos pedidos por alumnos
   const [canjesPedidos, setCanjesPedidos] = useState([])
@@ -237,12 +255,20 @@ export function PantallaAdmin() {
         .order('nombre', { ascending: true })
 
       let listaAlumnos = alumnosData || []
+      const baneadosMap = JSON.parse(localStorage.getItem('muudel_usuarios_baneados') || '{}')
       listaAlumnos = listaAlumnos.map(a => {
+        let meta = {}
         try {
-          const meta = localStorage.getItem('muudel_user_meta_' + a.id)
-          if (meta) return { ...a, ...JSON.parse(meta) }
+          const raw = localStorage.getItem('muudel_user_meta_' + a.id)
+          if (raw) meta = JSON.parse(raw)
         } catch (e) {}
-        return a
+        const banInfo = baneadosMap[a.id]
+        return {
+          ...a,
+          ...meta,
+          baneado: a.baneado || Boolean(banInfo),
+          motivo_ban: a.motivo_ban || (banInfo?.motivo || null)
+        }
       })
 
       setTodosAlumnos(listaAlumnos)
@@ -311,7 +337,7 @@ export function PantallaAdmin() {
     }
   }
 
-  // Desbloqueo seguro por PIN
+  // Desbloqueo seguro por PIN con soporte de PIN dinámico y bloqueo progresivo
   const handleDesbloquearPin = (e) => {
     e.preventDefault()
     setPinError('')
@@ -321,18 +347,22 @@ export function PantallaAdmin() {
       return
     }
 
-    if (pinInput.trim() === PIN_ADMIN_CORRECTO) {
+    const pinValido = obtenerPinAdmin()
+    if (pinInput.trim() === pinValido) {
       sound.playPop()
       setDesbloqueado(true)
       sessionStorage.setItem('muudel_admin_desbloqueado', 'true')
       setPinInput('')
       setIntentosFallidos(0)
-      registrarAuditoria('Acceso al Panel', 'Desbloqueo seguro verificado')
+      registrarAuditoria('Acceso al Panel', 'Desbloqueo seguro verificado con PIN')
     } else {
       sound.playPop()
       const nuevosFallos = intentosFallidos + 1
       setIntentosFallidos(nuevosFallos)
-      if (nuevosFallos >= 3) {
+      if (nuevosFallos >= 5) {
+        setSegundosBloqueo(300)
+        setPinError(`5 intentos fallidos consecutivos. Bloqueo estricto de seguridad de 5 minutos (300s).`)
+      } else if (nuevosFallos >= 3) {
         setSegundosBloqueo(TIEMPO_BLOQUEO_SEGUNDOS)
         setPinError(`3 intentos fallidos. Bloqueado durante ${TIEMPO_BLOQUEO_SEGUNDOS} segundos.`)
       } else {
@@ -345,6 +375,161 @@ export function PantallaAdmin() {
     sessionStorage.removeItem('muudel_admin_desbloqueado')
     setDesbloqueado(false)
     sound.playPop()
+  }
+
+  // Cambiar PIN maestro de moderador
+  const handleGuardarNuevoPin = (e) => {
+    e.preventDefault()
+    setErrorCambioPin('')
+    const pinActual = obtenerPinAdmin()
+
+    if (pinActualInput.trim() !== pinActual) {
+      setErrorCambioPin('El PIN actual introducido es incorrecto.')
+      return
+    }
+    if (pinNuevoInput.trim().length < 4 || pinNuevoInput.trim().length > 8) {
+      setErrorCambioPin('El nuevo PIN debe tener entre 4 y 8 dígitos.')
+      return
+    }
+    if (pinNuevoInput.trim() !== pinConfirmarInput.trim()) {
+      setErrorCambioPin('La confirmación del nuevo PIN no coincide.')
+      return
+    }
+
+    localStorage.setItem('muudel_admin_pin_custom', pinNuevoInput.trim())
+    sound.playStamp()
+    avisar('PIN de administración actualizado con éxito.')
+    registrarAuditoria('Seguridad', 'PIN maestro de administración modificado')
+    setMostrarModalPin(false)
+    setPinActualInput('')
+    setPinNuevoInput('')
+    setPinConfirmarInput('')
+  }
+
+  // 1. INICIAR BANEO DE USUARIO
+  const iniciarBaneo = (alumno) => {
+    setModalBaneo({
+      alumno,
+      motivo: 'Conducta inapropiada en el chat de clase',
+      preset: 'Conducta inapropiada en el chat de clase'
+    })
+  }
+
+  // CONFIRMAR BANEO DE USUARIO
+  const confirmarBaneo = async () => {
+    if (!modalBaneo?.alumno) return
+    const { alumno, motivo } = modalBaneo
+    const motivoFinal = (motivo || 'Cuenta suspendida por moderación').trim()
+    setAccionEnCurso(alumno.id)
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({ baneado: true, motivo_ban: motivoFinal })
+        .eq('id', alumno.id)
+    } catch (e) {}
+
+    try {
+      const baneadosMap = JSON.parse(localStorage.getItem('muudel_usuarios_baneados') || '{}')
+      baneadosMap[alumno.id] = {
+        motivo: motivoFinal,
+        fecha: new Date().toISOString(),
+        nombre: alumno.nombre
+      }
+      localStorage.setItem('muudel_usuarios_baneados', JSON.stringify(baneadosMap))
+    } catch (e) {}
+
+    setTodosAlumnos(prev => prev.map(a => a.id === alumno.id ? { ...a, baneado: true, motivo_ban: motivoFinal } : a))
+
+    // Expulsar la sesión activa del usuario si está en vivo
+    transmitirEvento('usuario_baneado', {
+      userId: alumno.id,
+      email: alumno.email,
+      motivo: motivoFinal
+    })
+
+    sound.playPop()
+    avisar(`Estudiante ${alumno.nombre} sancionado y baneado.`, 'error')
+    registrarAuditoria('Baneo de Alumno', `${alumno.nombre} fue baneado. Motivo: "${motivoFinal}"`)
+    setModalBaneo(null)
+    setAccionEnCurso(null)
+  }
+
+  // 2. LEVANTAR BANEO (DESBANEAR)
+  const handleDesbanearAlumno = async (alumno) => {
+    setModalConfirmacion({
+      titulo: `¿Levantar sanción a ${alumno.nombre}?`,
+      mensaje: `El estudiante podrá volver a entrar a la plataforma, participar en el chat y pasar lista.`,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setAccionEnCurso(alumno.id)
+
+        try {
+          await supabase
+            .from('profiles')
+            .update({ baneado: false, motivo_ban: null })
+            .eq('id', alumno.id)
+        } catch (e) {}
+
+        try {
+          const baneadosMap = JSON.parse(localStorage.getItem('muudel_usuarios_baneados') || '{}')
+          delete baneadosMap[alumno.id]
+          localStorage.setItem('muudel_usuarios_baneados', JSON.stringify(baneadosMap))
+        } catch (e) {}
+
+        setTodosAlumnos(prev => prev.map(a => a.id === alumno.id ? { ...a, baneado: false, motivo_ban: null } : a))
+
+        transmitirEvento('usuario_desbaneado', {
+          userId: alumno.id,
+          email: alumno.email
+        })
+
+        sound.playStamp()
+        avisar(`Sanción levantada para ${alumno.nombre}.`)
+        registrarAuditoria('Desbaneo de Alumno', `Se rehabilitó el acceso a ${alumno.nombre}`)
+        setAccionEnCurso(null)
+      }
+    })
+  }
+
+  // 3. ELIMINAR USUARIO DEFINITIVAMENTE
+  const handleEliminarAlumno = (alumno) => {
+    setModalConfirmacion({
+      titulo: `¿Eliminar permanentemente a ${alumno.nombre}?`,
+      mensaje: `Esta acción borrará de forma irreversible al usuario, sus puntos acumulados (${alumno.puntos_total || 0} pts), sus asistencias y todos sus registros. Esta acción NO se puede deshacer.`,
+      peligroso: true,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setAccionEnCurso(alumno.id)
+
+        // 1. Borrar en Supabase
+        try {
+          await supabase.from('profiles').delete().eq('id', alumno.id)
+        } catch (e) {}
+
+        // 2. Borrar metadatos y baneos locales
+        try {
+          localStorage.removeItem('muudel_user_meta_' + alumno.id)
+          const baneadosMap = JSON.parse(localStorage.getItem('muudel_usuarios_baneados') || '{}')
+          delete baneadosMap[alumno.id]
+          localStorage.setItem('muudel_usuarios_baneados', JSON.stringify(baneadosMap))
+        } catch (e) {}
+
+        // 3. Remover del estado
+        setTodosAlumnos(prev => prev.filter(a => a.id !== alumno.id))
+
+        // 4. Transmitir evento para cerrar sesión remota
+        transmitirEvento('usuario_eliminado', {
+          userId: alumno.id,
+          email: alumno.email
+        })
+
+        sound.playPop()
+        avisar(`Usuario ${alumno.nombre} eliminado definitivamente del aula.`, 'error')
+        registrarAuditoria('Eliminación Permanente', `${alumno.nombre} (${alumno.email || 'id:' + alumno.id}) eliminado de la base de datos`)
+        setAccionEnCurso(null)
+      }
+    })
   }
 
   // Aprobar solicitud individual de las 15:30
@@ -847,27 +1032,57 @@ export function PantallaAdmin() {
             </h1>
           </div>
 
-          <button
-            type="button"
-            onClick={handleBloquear}
-            title="Bloquear sesión de administración"
-            style={{
-              padding: '6px 12px',
-              borderRadius: 9999,
-              border: '1px solid var(--color-separator)',
-              backgroundColor: 'var(--color-surface-secondary)',
-              color: 'var(--color-secondary-ink)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <Lock size={13} />
-            <span>Bloquear</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setErrorCambioPin('')
+                setPinActualInput('')
+                setPinNuevoInput('')
+                setPinConfirmarInput('')
+                setMostrarModalPin(true)
+              }}
+              title="Cambiar PIN maestro de acceso"
+              style={{
+                padding: '6px 12px',
+                borderRadius: 9999,
+                border: '1px solid var(--color-separator)',
+                backgroundColor: 'var(--color-surface-secondary)',
+                color: 'var(--color-secondary-ink)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <Key size={13} />
+              <span>Cambiar PIN</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBloquear}
+              title="Bloquear sesión de administración"
+              style={{
+                padding: '6px 12px',
+                borderRadius: 9999,
+                border: '1px solid var(--color-separator)',
+                backgroundColor: 'var(--color-surface-secondary)',
+                color: 'var(--color-secondary-ink)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <Lock size={13} />
+              <span>Bloquear</span>
+            </button>
+          </div>
         </div>
 
         <p className="apple-subheadline" style={{ fontSize: 13 }}>
@@ -1424,110 +1639,241 @@ export function PantallaAdmin() {
       {/* PESTAÑA 4: ALUMNOS Y COMUNIDAD */}
       {tab === 'alumnos' && (
         <div>
-          <div style={{ position: 'relative', marginBottom: 14 }}>
-            <Search size={16} color="var(--color-secondary-ink)" style={{ position: 'absolute', left: 14, top: 12 }} />
-            <input
-              type="text"
-              className="apple-input"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar por nombre de alumno..."
-              style={{ paddingLeft: 40 }}
-            />
+          {/* Barra de Filtros y Búsqueda */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} color="var(--color-secondary-ink)" style={{ position: 'absolute', left: 14, top: 12 }} />
+              <input
+                type="text"
+                className="apple-input"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, correo o usuario..."
+                style={{ paddingLeft: 40 }}
+              />
+            </div>
+
+            {/* Filtros de estado de usuarios */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+              {[
+                { id: 'todos', label: `Todos (${todosAlumnos.length})` },
+                { id: 'activos', label: `Activos (${todosAlumnos.filter(a => !a.baneado).length})` },
+                { id: 'baneados', label: `Baneados (${todosAlumnos.filter(a => a.baneado).length})` },
+                { id: 'moderadores', label: `Moderadores (${todosAlumnos.filter(a => a.rol === 'moderador').length})` }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFiltroAlumnos(f.id)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 9999,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    backgroundColor: filtroAlumnos === f.id ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: filtroAlumnos === f.id ? '#FFFFFF' : 'var(--color-secondary-ink)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 className="apple-headline" style={{ fontSize: 16 }}>
                 Estudiantes ({alumnosFiltrados.length})
               </h3>
+              <span className="apple-caption">
+                {todosAlumnos.filter(a => a.baneado).length > 0 && (
+                  <strong style={{ color: 'var(--color-negative)' }}>
+                    {todosAlumnos.filter(a => a.baneado).length} sancionado(s)
+                  </strong>
+                )}
+              </span>
             </div>
 
-            {alumnosFiltrados.map((alumno, i) => (
-              <div
-                key={alumno.id}
-                style={{
-                  padding: '14px 16px',
-                  borderBottom: i < alumnosFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento} size={36} />
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</span>
-                        {alumno.digito_id && (
-                          <span style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: '1px 6px',
-                            borderRadius: 6,
-                            backgroundColor: 'rgba(10, 132, 255, 0.12)',
-                            color: 'var(--color-accent)',
-                            fontVariantNumeric: 'tabular-nums'
-                          }}>
-                            {alumno.digito_id}
+            {alumnosFiltrados.length === 0 ? (
+              <div style={{ padding: 36, textAlign: 'center' }}>
+                <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                  No se encontraron estudiantes con este criterio.
+                </p>
+              </div>
+            ) : (
+              alumnosFiltrados.map((alumno, i) => (
+                <div
+                  key={alumno.id}
+                  style={{
+                    padding: '14px 16px',
+                    borderBottom: i < alumnosFiltrados.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
+                    backgroundColor: alumno.baneado ? 'rgba(255, 59, 48, 0.03)' : 'transparent'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <InsigniaIniciales nombre={alumno.nombre} color={alumno.baneado ? '#8E8E93' : alumno.color_acento} size={36} />
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: alumno.baneado ? 'var(--color-secondary-ink)' : 'var(--color-ink)' }}>
+                            {alumno.nombre}
                           </span>
-                        )}
-                        {alumno.username && (
-                          <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                            @{alumno.username}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 1 }}>
-                        {alumno.email ? `${alumno.email} · ` : ''}<strong>{alumno.puntos_total || 0} pts</strong> · {alumno.racha_actual || 0} días racha
+                          {alumno.digito_id && (
+                            <span style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 6,
+                              backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                              color: 'var(--color-accent)',
+                              fontVariantNumeric: 'tabular-nums'
+                            }}>
+                              {alumno.digito_id}
+                            </span>
+                          )}
+                          {alumno.username && (
+                            <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                              @{alumno.username}
+                            </span>
+                          )}
+                          {alumno.baneado && (
+                            <span style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              backgroundColor: 'rgba(255, 59, 48, 0.12)',
+                              color: 'var(--color-negative)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <Ban size={12} />
+                              <span>Sancionado: {alumno.motivo_ban || 'Baneado'}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                          {alumno.email ? `${alumno.email} · ` : ''}<strong>{alumno.puntos_total || 0} pts</strong> · {alumno.racha_actual || 0} días racha
+                        </div>
                       </div>
                     </div>
+
+                    <span className={`apple-badge ${alumno.rol === 'moderador' ? 'apple-badge-accent' : alumno.baneado ? 'apple-badge-negative' : 'apple-badge-neutral'}`} style={{ fontSize: 11 }}>
+                      {alumno.rol === 'moderador' ? 'Moderador' : alumno.baneado ? 'Baneado' : 'Alumno'}
+                    </span>
                   </div>
 
-                  <span className={`apple-badge ${alumno.rol === 'moderador' ? 'apple-badge-accent' : 'apple-badge-neutral'}`} style={{ fontSize: 11 }}>
-                    {alumno.rol === 'moderador' ? 'Moderador' : 'Alumno'}
-                  </span>
-                </div>
+                  {/* Acciones directas de moderador */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id || alumno.baneado}
+                      onClick={() => handleModificarPuntos(alumno.id, 5, 'Participación')}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
+                    >
+                      +5 pts (Participar)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id || alumno.baneado}
+                      onClick={() => handleModificarPuntos(alumno.id, 10, 'Aporte destacado')}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
+                    >
+                      +10 pts (Aporte)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id}
+                      onClick={() => handleModificarPuntos(alumno.id, -10, 'Penalización')}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
+                    >
+                      -10 pts (Sanción)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id}
+                      onClick={() => solicitarCambioRol(alumno, alumno.rol === 'moderador' ? 'alumno' : 'moderador')}
+                      style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: alumno.rol === 'moderador' ? 'var(--color-secondary-ink)' : 'var(--color-accent)' }}
+                    >
+                      {alumno.rol === 'moderador' ? 'Hacer Alumno' : 'Hacer Moderador'}
+                    </button>
 
-                {/* Acciones directas de moderador */}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={accionEnCurso === alumno.id}
-                    onClick={() => handleModificarPuntos(alumno.id, 5, 'Participación')}
-                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
-                  >
-                    +5 pts (Participar)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={accionEnCurso === alumno.id}
-                    onClick={() => handleModificarPuntos(alumno.id, 10, 'Aporte destacado')}
-                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
-                  >
-                    +10 pts (Aporte)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={accionEnCurso === alumno.id}
-                    onClick={() => handleModificarPuntos(alumno.id, -10, 'Penalización')}
-                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
-                  >
-                    -10 pts (Sanción)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={accionEnCurso === alumno.id}
-                    onClick={() => solicitarCambioRol(alumno, alumno.rol === 'moderador' ? 'alumno' : 'moderador')}
-                    style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: alumno.rol === 'moderador' ? 'var(--color-secondary-ink)' : 'var(--color-accent)' }}
-                  >
-                    {alumno.rol === 'moderador' ? 'Hacer Alumno' : 'Hacer Moderador'}
-                  </button>
+                    {/* Botón Banear o Desbanear */}
+                    {alumno.baneado ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={accionEnCurso === alumno.id}
+                        onClick={() => handleDesbanearAlumno(alumno)}
+                        style={{
+                          minHeight: 30,
+                          padding: '3px 10px',
+                          fontSize: 12,
+                          color: 'var(--color-positive)',
+                          backgroundColor: 'rgba(52, 199, 89, 0.08)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <UserCheck size={13} />
+                        <span>Levantar Ban</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={accionEnCurso === alumno.id}
+                        onClick={() => iniciarBaneo(alumno)}
+                        style={{
+                          minHeight: 30,
+                          padding: '3px 10px',
+                          fontSize: 12,
+                          color: 'var(--color-negative)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <Ban size={13} />
+                        <span>Banear</span>
+                      </button>
+                    )}
+
+                    {/* Botón Eliminar Usuario Permanente */}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id}
+                      onClick={() => handleEliminarAlumno(alumno)}
+                      style={{
+                        minHeight: 30,
+                        padding: '3px 10px',
+                        fontSize: 12,
+                        color: 'var(--color-negative)',
+                        backgroundColor: 'rgba(255, 59, 48, 0.08)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                      title="Eliminar usuario definitivamente del sistema"
+                    >
+                      <Trash2 size={13} />
+                      <span>Eliminar</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </section>
         </div>
       )}
@@ -1723,7 +2069,13 @@ export function PantallaAdmin() {
                 type="button"
                 className="btn-primary"
                 onClick={modalConfirmacion.accion}
-                style={{ flex: 1, minHeight: 42, fontSize: 14 }}
+                style={{
+                  flex: 1,
+                  minHeight: 42,
+                  fontSize: 14,
+                  backgroundColor: modalConfirmacion.peligroso ? 'var(--color-negative)' : undefined,
+                  borderColor: modalConfirmacion.peligroso ? 'var(--color-negative)' : undefined
+                }}
               >
                 Confirmar
               </button>
@@ -1736,6 +2088,262 @@ export function PantallaAdmin() {
                 Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA BANEAR ALUMNO CON MOTIVO */}
+      {modalBaneo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 440, width: '100%', padding: '28px 24px', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 59, 48, 0.12)',
+                color: 'var(--color-negative)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Ban size={20} />
+              </div>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                  Suspender y Banear Alumno
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 1 }}>
+                  {modalBaneo.alumno.nombre} {modalBaneo.alumno.email ? `(${modalBaneo.alumno.email})` : ''}
+                </p>
+              </div>
+            </div>
+
+            <p className="apple-subheadline" style={{ fontSize: 13, marginBottom: 16 }}>
+              El usuario será expulsado de la plataforma inmediatamente y no podrá acceder al chat ni a la lista de clase mientras esté suspendido.
+            </p>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 6 }}>
+                Motivos frecuentes:
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  'Conducta inapropiada en el chat de clase',
+                  'Spam o flood reiterado de mensajes',
+                  'Falta injustificada a clase',
+                  'Uso indebido de la plataforma',
+                  'Suplantación de identidad'
+                ].map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setModalBaneo(prev => ({ ...prev, motivo: p, preset: p }))}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: modalBaneo.motivo === p ? 'rgba(255, 59, 48, 0.1)' : 'var(--color-surface-secondary)',
+                      color: modalBaneo.motivo === p ? 'var(--color-negative)' : 'var(--color-ink)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 6 }}>
+                Motivo que verá el estudiante:
+              </label>
+              <textarea
+                className="apple-input"
+                rows={3}
+                value={modalBaneo.motivo}
+                onChange={(e) => setModalBaneo(prev => ({ ...prev, motivo: e.target.value }))}
+                placeholder="Escribe el motivo detallado de la sanción..."
+                style={{ width: '100%', resize: 'none', fontSize: 13 }}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={confirmarBaneo}
+                disabled={!modalBaneo.motivo.trim() || accionEnCurso === modalBaneo.alumno.id}
+                style={{
+                  flex: 1,
+                  minHeight: 42,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  backgroundColor: 'var(--color-negative)',
+                  borderColor: 'var(--color-negative)'
+                }}
+              >
+                Confirmar y Banear
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setModalBaneo(null)}
+                style={{ minHeight: 42, fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA CAMBIAR PIN MAESTRO */}
+      {mostrarModalPin && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 380, width: '100%', padding: '28px 24px', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                color: 'var(--color-accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Key size={20} />
+              </div>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                  Cambiar Clave de Acceso
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 1 }}>
+                  PIN Maestro de Moderación
+                </p>
+              </div>
+            </div>
+
+            <p className="apple-subheadline" style={{ fontSize: 13, marginBottom: 16 }}>
+              Define un nuevo código privado para desbloquear el panel en clase.
+            </p>
+
+            {errorCambioPin && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: 10,
+                backgroundColor: 'rgba(255, 59, 48, 0.12)',
+                color: 'var(--color-negative)',
+                fontSize: 12,
+                fontWeight: 600,
+                marginBottom: 14
+              }}>
+                {errorCambioPin}
+              </div>
+            )}
+
+            <form onSubmit={handleGuardarNuevoPin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  PIN Actual
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="PIN actual (def: 2026)"
+                  value={pinActualInput}
+                  onChange={(e) => setPinActualInput(e.target.value)}
+                  className="apple-input"
+                  style={{ width: '100%', minHeight: 40 }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Nuevo PIN (4 a 8 dígitos)
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="••••"
+                  value={pinNuevoInput}
+                  onChange={(e) => setPinNuevoInput(e.target.value.replace(/\D/g, ''))}
+                  className="apple-input"
+                  style={{ width: '100%', minHeight: 40 }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Confirmar Nuevo PIN
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="••••"
+                  value={pinConfirmarInput}
+                  onChange={(e) => setPinConfirmarInput(e.target.value.replace(/\D/g, ''))}
+                  className="apple-input"
+                  style={{ width: '100%', minHeight: 40 }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ flex: 1, minHeight: 42, fontSize: 14, fontWeight: 700 }}
+                >
+                  Guardar PIN
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setMostrarModalPin(false)}
+                  style={{ minHeight: 42, fontSize: 14 }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
