@@ -300,6 +300,31 @@ export const SVG_BULLET_BILL = `
 </svg>
 `
 
+// 14. Obstáculo terrestre/bomba: Bob-omb (Bomba con mecha encendida y llave de cuerda)
+export const SVG_BOB_OMB = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 44" width="40" height="44" shape-rendering="crispEdges">
+  <!-- Mecha y chispa en la parte superior -->
+  <path d="M19 10 C19 5, 23 4, 25 2" stroke="#9CA3AF" stroke-width="2.5" fill="none" stroke-linecap="round" />
+  <!-- Chispa de fuego parpadeante -->
+  <polygon points="25,2 29,0 28,4 32,2 29,6 31,9 26,7 24,10 24,5" fill="#EF4444" />
+  <polygon points="25,2 28,1 27,4 30,3 28,6 29,7 26,5" fill="#FBBF24" />
+  <!-- Llave de cuerda en la espalda (amarilla/dorada) -->
+  <ellipse cx="6" cy="24" rx="4" ry="7" fill="#FBBF24" stroke="#B45309" stroke-width="1.5" />
+  <rect x="8" y="22" width="6" height="4" fill="#D97706" />
+  <!-- Cuerpo esférico de bomba negra con borde marcado -->
+  <circle cx="22" cy="25" r="14" fill="#1C1C1E" stroke="#000000" stroke-width="2" />
+  <circle cx="18" cy="18" r="3.5" fill="#3A3A3C" />
+  <!-- Ojos blancos ovalados mecánicos -->
+  <ellipse cx="23" cy="24" rx="3.5" ry="5.5" fill="#FFFFFF" stroke="#000000" stroke-width="1" />
+  <ellipse cx="31" cy="24" rx="3.5" ry="5.5" fill="#FFFFFF" stroke="#000000" stroke-width="1" />
+  <ellipse cx="24" cy="24" rx="1.5" ry="3.5" fill="#1C1C1E" />
+  <ellipse cx="32" cy="24" rx="1.5" ry="3.5" fill="#1C1C1E" />
+  <!-- Patitas mecánicas naranjas caminando -->
+  <rect x="13" y="37" width="8" height="6" rx="2" fill="#F97316" stroke="#C2410C" stroke-width="1" />
+  <rect x="23" y="37" width="8" height="6" rx="2" fill="#F97316" stroke="#C2410C" stroke-width="1" />
+</svg>
+`
+
 // Exportar Data URIs listos para usar en Image() de HTML5 Canvas
 export const SPRITES_DATA_URI = {
   yoshiRun1: toDataUri(SVG_YOSHI_RUN_1),
@@ -311,9 +336,11 @@ export const SPRITES_DATA_URI = {
   koopaShell: toDataUri(SVG_KOOPA_SHELL),
   paratroopa: toDataUri(SVG_PARATROOPA),
   bulletBill: toDataUri(SVG_BULLET_BILL),
+  bobOmb: toDataUri(SVG_BOB_OMB),
   yoshiEgg: toDataUri(SVG_YOSHI_EGG),
   goldCoin: toDataUri(SVG_GOLD_COIN),
   superBerry: toDataUri(SVG_SUPER_BERRY),
   cloud: toDataUri(SVG_CLOUD),
 }
+
 

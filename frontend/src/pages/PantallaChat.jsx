@@ -78,7 +78,7 @@ export function PantallaChat() {
     eliminarMensaje,
     emitirTyping,
     usuariosEscribiendo
-  } = useChat(canal)
+  } = useChat(canal, perfil)
 
   const chatEndRef = useRef(null)
   const ultimoMensajeRef = useRef(null)
@@ -1017,8 +1017,12 @@ export function PantallaChat() {
                     </div>
                   )}
 
-                  {/* Burbuja del mensaje */}
+                  {/* Burbuja del mensaje con soporte de doble click/tap para dar me gusta */}
                   <div
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      manejarLike(m.id)
+                    }}
                     style={{
                       padding: '10px 14px',
                       borderRadius: 18,
@@ -1039,13 +1043,18 @@ export function PantallaChat() {
                       lineHeight: 1.4,
                       wordBreak: 'break-word',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                      position: 'relative'
+                      position: 'relative',
+                      cursor: 'pointer'
                     }}
+                    title="Doble clic para dar me gusta ❤️"
                   >
                     {/* Indicador de Cita / Mensaje citado */}
                     {(m.reply_to_texto || m.reply_to) && (
                       <div
-                        onClick={() => m.reply_to && scrollToMessage(m.reply_to)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (m.reply_to) scrollToMessage(m.reply_to)
+                        }}
                         className="chat-reply-quote"
                         style={{
                           borderLeftColor: esPropio ? '#FFFFFF' : 'var(--color-accent)',
@@ -1069,6 +1078,43 @@ export function PantallaChat() {
 
                     {/* Texto formateado del mensaje */}
                     {renderizarTextoEnriquecido(m.texto, esPropio)}
+
+                    {/* Badge flotante de Me Gusta en la esquina de la burbuja */}
+                    {((m.likes_count || 0) > 0 || m.liked_by_me) && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          manejarLike(m.id)
+                        }}
+                        className={`chat-bubble-like-badge ${m.liked_by_me ? 'liked' : ''} ${isLiked ? 'heart-pop' : ''}`}
+                        title={m.likers && m.likers.length > 0 ? `Le gusta a: ${m.likers.join(', ')}` : (m.liked_by_me ? 'Ya no me gusta' : 'Dar me gusta')}
+                        style={{
+                          position: 'absolute',
+                          bottom: -9,
+                          right: esPropio ? 10 : -8,
+                          backgroundColor: 'var(--color-surface)',
+                          border: m.liked_by_me ? '1.5px solid rgba(255, 59, 48, 0.5)' : '1px solid var(--color-separator)',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                          borderRadius: 9999,
+                          padding: '2px 7px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          color: '#FF3B30',
+                          zIndex: 5,
+                          userSelect: 'none',
+                          transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                      >
+                        <Heart size={12} fill="currentColor" />
+                        <span className="tabular-nums" style={{ color: 'var(--color-ink)' }}>
+                          {m.likes_count || 1}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Pin badge si está fijado */}
                     {m.fijado && (
@@ -1098,7 +1144,7 @@ export function PantallaChat() {
                       display: 'flex',
                       flexWrap: 'wrap',
                       gap: 4,
-                      marginTop: 3,
+                      marginTop: 6,
                       paddingLeft: esPropio ? 0 : 4,
                       paddingRight: esPropio ? 4 : 0
                     }}>
@@ -1126,7 +1172,7 @@ export function PantallaChat() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    marginTop: 3,
+                    marginTop: 4,
                     padding: '0 4px',
                     flexWrap: 'wrap'
                   }}>
@@ -1134,7 +1180,7 @@ export function PantallaChat() {
                       {hora}
                     </span>
 
-                    {/* Like interactivo mejorado con estado por usuario y tooltip de likers */}
+                    {/* Botón de Me Gusta mejorado */}
                     <button
                       type="button"
                       onClick={() => manejarLike(m.id)}
@@ -1145,33 +1191,34 @@ export function PantallaChat() {
                           : m.liked_by_me ? 'Ya no me gusta' : 'Dar me gusta'
                       }
                       style={{
-                        background: m.liked_by_me ? 'rgba(255, 59, 48, 0.1)' : 'transparent',
-                        border: m.liked_by_me ? '1px solid rgba(255, 59, 48, 0.25)' : '1px solid transparent',
-                        borderRadius: 12,
+                        background: m.liked_by_me ? 'rgba(255, 59, 48, 0.12)' : 'transparent',
+                        border: m.liked_by_me ? '1px solid rgba(255, 59, 48, 0.3)' : '1px solid transparent',
+                        borderRadius: 10,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 3,
+                        gap: 4,
                         color: m.liked_by_me
-                          ? 'var(--color-negative, #FF3B30)'
-                          : (m.likes_count || 0) > 0
-                          ? 'var(--color-negative, #FF3B30)'
-                          : 'var(--color-tertiary-ink)',
+                          ? '#FF3B30'
+                          : 'var(--color-secondary-ink)',
                         fontSize: 12,
                         fontWeight: 600,
-                        padding: '2px 6px',
-                        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+                        padding: '2px 7px',
+                        transition: 'all 0.16s ease'
                       }}
                     >
                       <Heart
                         size={13}
-                        fill={m.liked_by_me || (m.likes_count || 0) > 0 ? 'currentColor' : 'none'}
+                        fill={m.liked_by_me ? '#FF3B30' : 'none'}
+                        color={m.liked_by_me ? '#FF3B30' : 'currentColor'}
                         style={{
                           transform: isLiked ? 'scale(1.3)' : 'scale(1)',
                           transition: 'transform 0.15s ease'
                         }}
                       />
-                      <span className="tabular-nums font-semibold">{m.likes_count || 0}</span>
+                      <span className="tabular-nums font-semibold">
+                        {m.liked_by_me ? 'Te gusta' : 'Me gusta'}
+                      </span>
                     </button>
 
                     {/* Botón Responder (Quote) */}

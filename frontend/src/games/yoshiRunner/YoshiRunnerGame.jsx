@@ -236,7 +236,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     comboTimer: 0,
     feverTime: 0,
     frameCount: 0,
-    warningBill: null, // { y, timer }
+    alerts: [], // [{ id, tipo, y, timer, maxTimer, icon, label, color }]
     yoshi: {
       x: 64,
       y: GROUND_Y - 48,
@@ -306,7 +306,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     state.comboTimer = 0
     state.feverTime = 0
     state.frameCount = 0
-    state.warningBill = null
+    state.alerts = []
     state.yoshi = {
       x: 64,
       y: GROUND_Y - 48,
@@ -527,29 +527,107 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           })
         }
 
-        // 2. GENERACIÓN DE OBSTÁCULOS
-        const lastObstacle = state.obstacles[state.obstacles.length - 1]
-        const minGap = 190 + Math.random() * 100 + (state.speed * 7)
-        const canSpawn = !lastObstacle || (CANVAS_WIDTH - lastObstacle.x > minGap)
-
-        if (canSpawn && Math.random() < 0.04) {
-          const randType = Math.random()
-          let nuevoObstaculo = null
-
-          if (state.score > 70 && randType > 0.65) {
-            // Paratroopa Aérea: obliga a agacharse o saltar alto
-            nuevoObstaculo = {
-              tipo: 'paratroopa',
-              x: CANVAS_WIDTH,
-              y: GROUND_Y - 54,
-              w: 36,
-              h: 30,
-              sprite: 'paratroopa',
-              speedMod: 1.0
+        // 1.5 PROCESAR ALERTAS ACTIVAS Y GENERAR HAZARDS ANUNCIADOS
+        for (let a = state.alerts.length - 1; a >= 0; a--) {
+          const alert = state.alerts[a]
+          alert.timer--
+          if (alert.timer <= 0) {
+            if (alert.tipo === 'bomb') {
+              state.obstacles.push({
+                tipo: 'bomb',
+                x: CANVAS_WIDTH,
+                y: alert.y,
+                w: 36,
+                h: 38,
+                sprite: 'bobOmb',
+                speedMod: 1.15
+              })
+            } else if (alert.tipo === 'bulletBill') {
+              state.obstacles.push({
+                tipo: 'bulletBill',
+                x: CANVAS_WIDTH,
+                y: alert.y,
+                w: 48,
+                h: 28,
+                sprite: 'bulletBill',
+                speedMod: 1.75
+              })
+            } else if (alert.tipo === 'paratroopa') {
+              state.obstacles.push({
+                tipo: 'paratroopa',
+                x: CANVAS_WIDTH,
+                y: alert.y,
+                w: 38,
+                h: 32,
+                sprite: 'paratroopa',
+                speedMod: 1.05
+              })
             }
-          } else if (randType > 0.35) {
+            state.alerts.splice(a, 1)
+          }
+        }
+
+        // 2. DISPARAR ALERTAS DE AMENAZAS ENTRANTES (BOMBAS, BALAS Y VOLADORES)
+        const hayAlertaActiva = state.alerts.length > 0
+        const ultimoObstaculo = state.obstacles[state.obstacles.length - 1]
+        const espacioSeguro = !ultimoObstaculo || (CANVAS_WIDTH - ultimoObstaculo.x > 210)
+
+        if (!hayAlertaActiva && espacioSeguro) {
+          const randAmenaza = Math.random()
+
+          // A: Bomba Bob-omb (terrestre, con mecha encendida que camina hacia Yoshi)
+          if (state.score > 20 && randAmenaza < 0.015) {
+            state.alerts.push({
+              id: 'alert-bomb-' + Date.now(),
+              tipo: 'bomb',
+              y: GROUND_Y - 38,
+              timer: 38,
+              maxTimer: 38,
+              label: '¡BOMBA!',
+              icon: '💣',
+              color: '#FF3B30'
+            })
+            retroAudio.playWarning()
+          }
+          // B: Bala Bill (rasante supersónica)
+          else if (state.score > 55 && randAmenaza < 0.026) {
+            const billY = Math.random() > 0.5 ? GROUND_Y - 48 : GROUND_Y - 70
+            state.alerts.push({
+              id: 'alert-bill-' + Date.now(),
+              tipo: 'bulletBill',
+              y: billY,
+              timer: 42,
+              maxTimer: 42,
+              label: '¡MISIL!',
+              icon: '⚡',
+              color: '#EF4444'
+            })
+            retroAudio.playWarning()
+          }
+          // C: Paratroopa volador
+          else if (state.score > 35 && randAmenaza < 0.036) {
+            state.alerts.push({
+              id: 'alert-para-' + Date.now(),
+              tipo: 'paratroopa',
+              y: GROUND_Y - 54,
+              timer: 36,
+              maxTimer: 36,
+              label: '¡VOLADOR!',
+              icon: '⚠️',
+              color: '#F59E0B'
+            })
+            retroAudio.playWarning()
+          }
+        }
+
+        // 3. GENERACIÓN DE OBSTÁCULOS BASE (Tuberías y Caparazones)
+        const minGap = 190 + Math.random() * 90 + (state.speed * 6)
+        const canSpawnGround = !hayAlertaActiva && (!ultimoObstaculo || (CANVAS_WIDTH - ultimoObstaculo.x > minGap))
+
+        if (canSpawnGround && Math.random() < 0.04) {
+          if (Math.random() > 0.5) {
             // Tubería con Planta Piraña
-            nuevoObstaculo = {
+            state.obstacles.push({
               tipo: 'pipe',
               x: CANVAS_WIDTH,
               y: GROUND_Y - 48,
@@ -557,47 +635,18 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               h: 48,
               sprite: 'piranhaPipe',
               speedMod: 1.0
-            }
+            })
           } else {
             // Caparazón Koopa Verde
-            nuevoObstaculo = {
+            state.obstacles.push({
               tipo: 'shell',
               x: CANVAS_WIDTH,
               y: GROUND_Y - 24,
-              w: 32,
+              w: 34,
               h: 24,
               sprite: 'koopaShell',
-              speedMod: 1.0
-            }
-          }
-
-          if (nuevoObstaculo) {
-            state.obstacles.push(nuevoObstaculo)
-          }
-        }
-
-        // 3. GENERACIÓN DE BALA BILL (BULLET BILL) CON ADVERTENCIA "!"
-        if (state.score > 90 && !state.warningBill && Math.random() < 0.008) {
-          state.warningBill = {
-            y: GROUND_Y - 48,
-            timer: 55
-          }
-          retroAudio.playWarning()
-        }
-
-        if (state.warningBill) {
-          state.warningBill.timer--
-          if (state.warningBill.timer <= 0) {
-            state.obstacles.push({
-              tipo: 'bulletBill',
-              x: CANVAS_WIDTH,
-              y: state.warningBill.y,
-              w: 44,
-              h: 26,
-              sprite: 'bulletBill',
-              speedMod: 1.65 // Más rápido que la velocidad base
+              speedMod: 1.05
             })
-            state.warningBill = null
           }
         }
 
@@ -790,33 +839,61 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               continue
             }
 
-            // CASO B: Aplastado desde arriba (Stomp auténtico sobre caparazones o paratroopas)
-            const cayendoSobreObs = yoshi.vy > 0 && yoshiBox.bottom <= obsBox.top + 16 && (obs.tipo === 'shell' || obs.tipo === 'paratroopa')
+            // CASO B: Aplastado desde arriba (Stomp auténtico sobre caparazones, paratroopas o bombas)
+            const esAplastable = obs.tipo === 'shell' || obs.tipo === 'paratroopa' || obs.tipo === 'bomb'
+            const cayendoSobreObs = yoshi.vy > 0 && yoshiBox.bottom <= obsBox.top + 18 && esAplastable
 
             if (cayendoSobreObs) {
               retroAudio.playStomp()
-              yoshi.vy = -10.5 // Rebote alto
+              yoshi.vy = -11.5 // Rebote alto
               yoshi.flutterFramesLeft = 26
-              state.score += 15 * state.combo
-              state.floatingTexts.push({
-                text: `+${15 * state.combo} ¡STOMP!`,
-                x: obs.x,
-                y: obs.y - 10,
-                vy: -1.2,
-                color: '#34C759',
-                opacity: 1
-              })
-              for (let p = 0; p < 8; p++) {
-                state.particles.push({
-                  x: obs.x + obs.w / 2,
-                  y: obs.y + obs.h / 2,
-                  vx: (Math.random() - 0.5) * 5,
-                  vy: -Math.random() * 4,
-                  color: '#22C55E',
-                  size: 3.5,
-                  life: 16,
-                  maxLife: 16
+
+              if (obs.tipo === 'bomb') {
+                const pts = 30 * state.combo
+                state.score += pts
+                state.floatingTexts.push({
+                  text: `+${pts} ¡BOMBA DESACTIVADA!`,
+                  x: obs.x,
+                  y: obs.y - 12,
+                  vy: -1.2,
+                  color: '#FBBF24',
+                  opacity: 1
                 })
+                for (let p = 0; p < 12; p++) {
+                  state.particles.push({
+                    x: obs.x + obs.w / 2,
+                    y: obs.y + obs.h / 2,
+                    vx: (Math.random() - 0.5) * 7,
+                    vy: -Math.random() * 5,
+                    color: '#F59E0B',
+                    size: 3.5,
+                    life: 18,
+                    maxLife: 18
+                  })
+                }
+              } else {
+                const pts = 15 * state.combo
+                state.score += pts
+                state.floatingTexts.push({
+                  text: `+${pts} ¡STOMP!`,
+                  x: obs.x,
+                  y: obs.y - 10,
+                  vy: -1.2,
+                  color: '#34C759',
+                  opacity: 1
+                })
+                for (let p = 0; p < 8; p++) {
+                  state.particles.push({
+                    x: obs.x + obs.w / 2,
+                    y: obs.y + obs.h / 2,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: -Math.random() * 4,
+                    color: '#22C55E',
+                    size: 3.5,
+                    life: 16,
+                    maxLife: 16
+                  })
+                }
               }
               state.obstacles.splice(i, 1)
               continue
@@ -976,31 +1053,77 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       ctx.fillRect(x + 7, GROUND_Y + 12, 6, 2)
     }
 
-    // Dibujar Coleccionables
+    // Dibujar Coleccionables con halos de contraste
     state.collectibles.forEach((item) => {
       const spr = spritesRef.current[item.sprite]
       if (spr) {
         const bob = Math.sin(state.frameCount * 0.12) * 3
+        ctx.save()
+        if (item.tipo === 'superBerry') {
+          ctx.shadowColor = '#FF3B30'
+          ctx.shadowBlur = 12
+        } else if (item.tipo === 'egg') {
+          ctx.shadowColor = '#30D158'
+          ctx.shadowBlur = 8
+        } else {
+          ctx.shadowColor = '#F59E0B'
+          ctx.shadowBlur = 6
+        }
         ctx.drawImage(spr, item.x, item.y + bob, item.w, item.h)
+        ctx.restore()
       }
     })
 
-    // Advertencia de Bala Bill entrante
-    if (state.warningBill) {
-      const blink = Math.floor(state.frameCount / 6) % 2 === 0
-      if (blink) {
-        ctx.fillStyle = '#FF3B30'
-        ctx.font = '900 15px -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif'
-        ctx.textAlign = 'right'
-        ctx.fillText('⚠️ ¡PELIGRO!', CANVAS_WIDTH - 20, state.warningBill.y + 18)
-      }
+    // DIBUJAR ALERTAS DE PELIGRO INMINENTE (BOMBAS, BALAS Y VOLADORES)
+    if (state.alerts && state.alerts.length > 0) {
+      state.alerts.forEach((alert) => {
+        const blink = Math.floor(state.frameCount / 4) % 2 === 0
+        if (blink) {
+          ctx.save()
+          const alertW = 104
+          const alertH = 26
+          const alertX = CANVAS_WIDTH - alertW - 10
+          const alertY = Math.max(18, Math.min(CANVAS_HEIGHT - 32, alert.y + 4))
+
+          ctx.fillStyle = alert.color === '#FF3B30' ? 'rgba(255, 59, 48, 0.92)' : 'rgba(245, 158, 11, 0.92)'
+          ctx.shadowColor = alert.color || '#FF3B30'
+          ctx.shadowBlur = 12
+          ctx.beginPath()
+          if (ctx.roundRect) {
+            ctx.roundRect(alertX, alertY - alertH / 2, alertW, alertH, 13)
+          } else {
+            ctx.rect(alertX, alertY - alertH / 2, alertW, alertH)
+          }
+          ctx.fill()
+
+          const slide = Math.sin(state.frameCount * 0.35) * 3
+          ctx.fillStyle = '#FFFFFF'
+          ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(`${alert.icon} ${alert.label} ◀`, alertX + alertW / 2 - slide, alertY)
+          ctx.restore()
+        }
+      })
     }
 
-    // Dibujar Obstáculos
+    // Dibujar Obstáculos con contraste diferenciado
     state.obstacles.forEach((obs) => {
       const spr = spritesRef.current[obs.sprite]
       if (spr) {
+        ctx.save()
+        if (obs.tipo === 'bomb') {
+          ctx.shadowColor = '#FF3B30'
+          ctx.shadowBlur = 8
+        } else if (obs.tipo === 'bulletBill') {
+          ctx.shadowColor = '#000000'
+          ctx.shadowBlur = 8
+        } else if (obs.tipo === 'paratroopa') {
+          ctx.shadowColor = '#EF4444'
+          ctx.shadowBlur = 6
+        }
         ctx.drawImage(spr, obs.x, obs.y, obs.w, obs.h)
+        ctx.restore()
       }
     })
 
@@ -1126,7 +1249,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               Yoshi Runner
             </h3>
             <span className="apple-caption" style={{ fontSize: 11 }}>
-              Frenético · Salto + Aleteo (Flutter) + Modo Fiebre
+              Salto · Aleteo · Aplaste · Fiebre
             </span>
           </div>
         </div>
@@ -1294,9 +1417,9 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           >
             <img src={SPRITES_DATA_URI.yoshiRun1} alt="Yoshi" style={{ width: 56, height: 56 }} />
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>¡Yoshi Runner Frenético!</div>
+              <div style={{ fontSize: 20, fontWeight: 900 }}>Yoshi Runner</div>
               <div style={{ fontSize: 13, opacity: 0.9 }}>
-                Espacio: Saltar · Mantén en el aire: <strong>¡Aleteo Flutter!</strong> · Abajo: Agacharse / Aplastar
+                Espacio: Salto / Aleteo · Abajo: Agacharse / Aplastar
               </div>
             </div>
             <button
@@ -1313,7 +1436,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               }}
             >
               <Play size={16} fill="#FFFFFF" />
-              <span>Empezar Partida</span>
+              <span>Jugar</span>
             </button>
           </div>
         )}
@@ -1338,7 +1461,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             }}
           >
             <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: '#FF3B30' }}>
-              GAME OVER
+              FIN DE PARTIDA
             </div>
 
             <div style={{ display: 'flex', gap: 18, fontSize: 13 }}>
@@ -1346,7 +1469,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 Distancia: <strong>{puntos}m</strong>
               </div>
               <div style={{ color: '#FBBF24' }}>
-                Recompensa: <strong>+{monedasPartida} pts</strong>
+                Puntos: <strong>+{monedasPartida} pts</strong>
               </div>
             </div>
 
@@ -1366,7 +1489,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 }}
               >
                 <CheckCircle2 size={14} />
-                <span>¡Reto diario conseguido!</span>
+                <span>¡Reto superado!</span>
               </div>
             )}
 
@@ -1385,7 +1508,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               }}
             >
               <RotateCcw size={15} />
-              <span>Jugar de Nuevo</span>
+              <span>Jugar de nuevo</span>
             </button>
           </div>
         )}
@@ -1403,7 +1526,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         }}
       >
         <span className="apple-caption" style={{ fontSize: 11 }}>
-          💡 Pista: Mantén presionado Saltar para el <strong>Aleteo de Yoshi</strong> en el aire. ¡Aplasta los caparazones desde arriba!
+          💡 Atento a las alertas 💣 y ⚡ en el borde derecho. Cae sobre caparazones y bombas para aplastarlos.
         </span>
 
         {/* Botones de acción táctiles */}

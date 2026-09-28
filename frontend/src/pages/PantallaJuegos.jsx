@@ -199,7 +199,7 @@ export function PantallaJuegos() {
           </h1>
         </div>
         <p className="apple-subheadline" style={{ fontSize: 13 }}>
-          Mini-juegos para ganar monedas escolares, despejar la mente y completar retos interactivos.
+          Juegos y retos de clase SMR2.
         </p>
       </header>
 
@@ -246,19 +246,19 @@ export function PantallaJuegos() {
                     color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)'
                   }}
                 >
-                  {retoArcadeCompletado ? '¡Reto Completado y Comprobado!' : 'Reto Arcade de Hoy'}
+                  {retoArcadeCompletado ? '¡Reto Completado!' : 'Reto Arcade de Hoy'}
                 </span>
                 <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
                   +{RECOMPENSA_RETO} pts
                 </span>
               </div>
               <h3 className="apple-headline" style={{ fontSize: 16, marginTop: 2 }}>
-                Desafío Yoshi: Alcanza al menos {OBJETIVO_RETO}m en Yoshi Runner
+                Desafío Yoshi: Alcanza {OBJETIVO_RETO}m en Yoshi Runner
               </h3>
               <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
                 {retoArcadeCompletado
-                  ? 'Has demostrado tus reflejos y la recompensa ya se acreditó a tu cuenta.'
-                  : 'Se comprueba automáticamente durante tu partida sin necesidad de enviar capturas.'}
+                  ? 'Reto superado. Puntos acreditados a tu cuenta.'
+                  : 'Llega a 100m en tu partida para completarlo automáticamente.'}
               </p>
             </div>
           </div>
@@ -323,11 +323,11 @@ export function PantallaJuegos() {
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 12 }}>
-              Puedes canjear hasta 60 monedas diarias jugando limpiamente en el recreo.
+              Hasta 60 puntos diarios en recreos.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span className="apple-caption">Ganadas hoy:</span>
+              <span className="apple-caption">Ganados hoy:</span>
               <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} / 60 pts</strong>
             </div>
 
@@ -351,7 +351,7 @@ export function PantallaJuegos() {
             </div>
 
             <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.4 }}>
-              💡 Recoger huevos de Yoshi te otorga <strong>+5 pts</strong> cada uno, y cada moneda dorada suma <strong>+1 pt</strong> directo a tu perfil para usar en la tienda escolar.
+              Huevos Yoshi: <strong>+5 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Aplastar bombas/caparazones: <strong>+30 pts</strong>.
             </div>
           </section>
 
