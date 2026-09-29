@@ -256,11 +256,11 @@ export function PantallaChat() {
   }
 
   const parsearSelloMensaje = (textoMsg) => {
-    if (!textoMsg.startsWith('[SELLO:')) return null
+    if (!textoMsg || !textoMsg.startsWith('[SELLO:')) return null
     const match = textoMsg.match(/\[SELLO:([A-Z0-9_]+)\]/i)
     if (!match) return null
     const selloId = match[1].toUpperCase()
-    return SELLOS_OFICIALES.find(s => s.id === selloId) || SELLOS_OFICIALES[0]
+    return SELLOS_RAPIDOS.find(s => s.id === selloId) || SELLOS_RAPIDOS[0]
   }
 
   // Formateo enriquecido de texto: código monospace, enlaces y menciones
