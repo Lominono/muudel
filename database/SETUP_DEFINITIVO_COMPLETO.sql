@@ -249,7 +249,8 @@ create table if not exists public.canjes_tienda (
 -- ==============================================================================
 -- 11. VISTAS PARA RANKINGS DIARIO Y SEMANAL
 -- ==============================================================================
-create or replace view public.ranking_diario as
+drop view if exists public.ranking_diario cascade;
+create view public.ranking_diario as
 select p.id, p.nombre, p.username, p.avatar_emoji, p.color_acento, p.puntos_total,
        p.racha_actual, p.mejor_racha, count(c.id) as checkins_hoy
 from public.profiles p
@@ -257,7 +258,8 @@ left join public.checkins c on c.user_id = p.id and c.fecha = current_date
 group by p.id, p.nombre, p.username, p.avatar_emoji, p.color_acento, p.puntos_total, p.racha_actual, p.mejor_racha
 order by p.puntos_total desc;
 
-create or replace view public.ranking_semanal as
+drop view if exists public.ranking_semanal cascade;
+create view public.ranking_semanal as
 select p.id, p.nombre, p.username, p.avatar_emoji, p.color_acento, p.puntos_total,
        p.racha_actual, p.mejor_racha, count(c.id) as checkins_semana
 from public.profiles p
