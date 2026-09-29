@@ -30,11 +30,13 @@ const BLACK_NUMBERS = new Set([
 
 const FICHAS_DISPONIBLES = [
   { valor: 1, color: '#8E8E93', borde: '#636366', texto: '#FFF' },
+  { valor: 2, color: '#30D158', borde: '#248A3D', texto: '#FFF' },
   { valor: 5, color: '#FF3B30', borde: '#D70015', texto: '#FFF' },
   { valor: 10, color: '#007AFF', borde: '#0051A8', texto: '#FFF' },
-  { valor: 25, color: '#34C759', borde: '#248A3D', texto: '#FFF' },
-  { valor: 50, color: '#FF9500', borde: '#C97500', texto: '#FFF' },
+  { valor: 20, color: '#FF9500', borde: '#C97500', texto: '#FFF' },
 ]
+
+export const APUESTA_MAXIMA_MESA = 25 // Nerf: Máximo 25 puntos por tirada en la mesa
 
 export function RuletaCasinoGame({ perfil, setPerfil }) {
   const canvasRef = useRef(null)
@@ -42,7 +44,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
 
   // Estados del juego
   const [girando, setGirando] = useState(false)
-  const [fichaSeleccionada, setFichaSeleccionada] = useState(5)
+  const [fichaSeleccionada, setFichaSeleccionada] = useState(1) // Empezar en ficha de 1 pt
   const [apuestas, setApuestas] = useState({}) // { 'rojo': 10, '17': 5, 'par': 5 }
   const [ultimaApuesta, setUltimaApuesta] = useState(null)
   const [ultimoNumero, setUltimoNumero] = useState(null)
@@ -56,6 +58,15 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
   })
   const [resultadoGanancia, setResultadoGanancia] = useState(null)
   const [solicitandoBono, setSolicitandoBono] = useState(false)
+  const fechaHoy = new Date().toISOString().slice(0, 10)
+  const bonoStorageKey = `muudel_bono_ruleta_${fechaHoy}_${perfil?.id || 'anon'}`
+  const [yaReclamoBonoHoy, setYaReclamoBonoHoy] = useState(() => {
+    try {
+      return !!localStorage.getItem(`muudel_bono_ruleta_${new Date().toISOString().slice(0, 10)}_${perfil?.id || 'anon'}`)
+    } catch (e) {
+      return false
+    }
+  })
 
   // Referencias para la animación física en Canvas
   const physicsRef = useRef({
@@ -458,11 +469,16 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     }
   }
 
-  // Añadir ficha a una casilla
+  // Añadir ficha a una casilla (nerf: límite máximo APUESTA_MAXIMA_MESA)
   const handleApostar = (tipo) => {
     if (girando) return
     const apostadoActual = apuestas[tipo] || 0
     const disponibleParaApostar = saldoActual - totalApostado
+
+    if (totalApostado + fichaSeleccionada > APUESTA_MAXIMA_MESA) {
+      sound.playPop()
+      return
+    }
 
     if (disponibleParaApostar < fichaSeleccionada) {
       sound.playPop()
@@ -484,9 +500,13 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     setResultadoGanancia(null)
   }
 
-  // Doblar apuestas actuales
+  // Doblar apuestas actuales (nerf: sin superar APUESTA_MAXIMA_MESA)
   const doblarApuestas = () => {
     if (girando || totalApostado === 0) return
+    if (totalApostado * 2 > APUESTA_MAXIMA_MESA) {
+      sound.playPop()
+      return
+    }
     if (saldoActual - totalApostado < totalApostado) {
       sound.playPop()
       return
@@ -499,10 +519,14 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     setApuestas(dobladas)
   }
 
-  // Repetir última apuesta
+  // Repetir última apuesta (nerf: sin superar APUESTA_MAXIMA_MESA)
   const repetirUltima = () => {
     if (girando || !ultimaApuesta) return
     const requeridos = Object.values(ultimaApuesta).reduce((a, b) => a + b, 0)
+    if (requeridos > APUESTA_MAXIMA_MESA) {
+      sound.playPop()
+      return
+    }
     if (saldoActual < requeridos) {
       sound.playPop()
       return
@@ -511,16 +535,20 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     setApuestas({ ...ultimaApuesta })
   }
 
-  // Solicitar bono de cortesía si el alumno se quedó a 0 puntos
+  // Solicitar bono de emergencia único diario si el alumno se quedó a 0 puntos (+5 pts)
   const solicitarBono = async () => {
-    if (solicitandoBono || saldoActual > 5) return
+    if (solicitandoBono || saldoActual > 0 || yaReclamoBonoHoy) return
     setSolicitandoBono(true)
     sound.playStamp()
 
-    const nuevosPuntos = saldoActual + 15
+    const nuevosPuntos = 5 // Nerf: +5 pts de emergencia (no 15 infinitos)
     const actualizado = { ...perfil, puntos_total: nuevosPuntos }
     setPerfil(actualizado)
-    localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
+    try {
+      localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
+      localStorage.setItem(bonoStorageKey, '1')
+    } catch (e) {}
+    setYaReclamoBonoHoy(true)
 
     try {
       await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
@@ -607,7 +635,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
               Apuesta Mesa
             </span>
             <strong style={{ fontSize: 18, color: totalApostado > 0 ? '#FF9500' : 'var(--color-secondary-ink)', fontWeight: 800 }}>
-              {totalApostado} pts
+              {totalApostado} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>/ {APUESTA_MAXIMA_MESA} pts máx</span>
             </strong>
           </div>
         </div>
@@ -823,30 +851,43 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
             <span>{girando ? 'GIRANDO...' : `GIRAR RULETA (${totalApostado} pts)`}</span>
           </button>
 
-          {/* Si no tiene puntos suficientes, botón de auxilio */}
-          {saldoActual < 5 && (
-            <button
-              type="button"
-              onClick={solicitarBono}
-              disabled={solicitandoBono}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px dashed #34C759',
-                backgroundColor: 'rgba(52, 199, 89, 0.08)',
-                color: '#34C759',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6
-              }}
-            >
-              <Coins size={16} />
-              <span>Bono de cortesía de clase (+15 pts)</span>
-            </button>
+          {/* Si no tiene puntos suficientes (saldo 0), auxilio con estricto límite diario */}
+          {saldoActual <= 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', width: '100%' }}>
+              <button
+                type="button"
+                onClick={solicitarBono}
+                disabled={solicitandoBono || yaReclamoBonoHoy}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: yaReclamoBonoHoy ? '1px dashed var(--color-separator)' : '1px dashed #34C759',
+                  backgroundColor: yaReclamoBonoHoy ? 'rgba(142, 142, 147, 0.08)' : 'rgba(52, 199, 89, 0.08)',
+                  color: yaReclamoBonoHoy ? 'var(--color-secondary-ink)' : '#34C759',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: yaReclamoBonoHoy ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  opacity: yaReclamoBonoHoy ? 0.7 : 1
+                }}
+              >
+                <Coins size={16} />
+                <span>
+                  {yaReclamoBonoHoy
+                    ? 'Bono de emergencia agotado hoy (Vuelve mañana)'
+                    : 'Bono de emergencia (+5 pts, 1 vez al día)'}
+                </span>
+              </button>
+              <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)', textAlign: 'center' }}>
+                {yaReclamoBonoHoy
+                  ? 'Gana puntos asistiendo a clase a las 15:30, en el reto de Yoshi o en el chat.'
+                  : 'Fondo de rescate único por día para evitar bancarrota total.'}
+              </span>
+            </div>
           )}
         </div>
       </div>

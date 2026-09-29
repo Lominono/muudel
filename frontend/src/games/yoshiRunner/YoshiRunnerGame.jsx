@@ -399,10 +399,10 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
     const fecha = new Date().toISOString().split('T')[0]
     const hoyActuales = Number(localStorage.getItem(`muudel_arcade_monedas_${fecha}_${p?.id}`) || 0)
-    const LIMITE = 120
+    const LIMITE = 20 // Nerf económico: máximo 20 puntos diarios de recreo
     const margen = Math.max(0, LIMITE - hoyActuales)
-    const bonus = esVictoria ? 30 : 0
-    const monedasAcreditar = Math.min(coinsFinales + bonus, margen)
+    const bonus = esVictoria ? 5 : 0
+    const monedasAcreditar = Math.min(Math.floor(coinsFinales / 3) + bonus, margen)
 
     if (monedasAcreditar > 0 && p) {
       const nuevoHoy = hoyActuales + monedasAcreditar
@@ -977,11 +977,11 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             const r2 = Math.random()
             if (r2 < 0.08 && state.overdriveTime <= 0) {
               // Super Batería Turbo SMR (Llena Adrenalina al 100%)
-              state.collectibles.push({ tipo: 'turboBattery', valor: 15, x: CANVAS_W, y: GROUND_Y - 72 - Math.random() * 20, w: 26, h: 26, sprite: 'superBerry', recogido: false })
+              state.collectibles.push({ tipo: 'turboBattery', valor: 3, x: CANVAS_W, y: GROUND_Y - 72 - Math.random() * 20, w: 26, h: 26, sprite: 'superBerry', recogido: false })
             } else if (r2 < 0.18 && state.feverTime <= 0) {
-              state.collectibles.push({ tipo: 'superBerry', valor: 10, x: CANVAS_W, y: GROUND_Y - 70 - Math.random() * 25, w: 26, h: 26, sprite: 'superBerry', recogido: false })
+              state.collectibles.push({ tipo: 'superBerry', valor: 2, x: CANVAS_W, y: GROUND_Y - 70 - Math.random() * 25, w: 26, h: 26, sprite: 'superBerry', recogido: false })
             } else if (r2 < 0.5) {
-              state.collectibles.push({ tipo: 'egg', valor: 5, x: CANVAS_W, y: GROUND_Y - 65 - Math.random() * 25, w: 24, h: 28, sprite: 'yoshiEgg', recogido: false })
+              state.collectibles.push({ tipo: 'egg', valor: 1, x: CANVAS_W, y: GROUND_Y - 65 - Math.random() * 25, w: 24, h: 28, sprite: 'yoshiEgg', recogido: false })
             } else {
               state.collectibles.push({ tipo: 'coin', valor: 1, x: CANVAS_W, y: GROUND_Y - 55 - Math.random() * 30, w: 22, h: 22, sprite: 'goldCoin', recogido: false })
             }
@@ -1000,7 +1000,9 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               state.comboTimer = 180
               setComboActual(state.combo)
 
-              const pts = item.valor * state.combo * (enOverdrive ? 3 : 1)
+              // Nerf: Las monedas son moderadas (sin multiplicadores desproporcionados)
+              const comboBonus = state.combo >= 4 ? 1 : 0
+              const pts = item.valor + comboBonus
               state.coins += pts
               setMonedasPartida(state.coins)
 
@@ -1022,7 +1024,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 state.floatingTexts.push({ text: '★ ¡FIEBRE!', x: yoshi.x + 20, y: yoshi.y - 12, vy: -1.2, color: '#FF3B30', opacity: 1 })
               } else if (item.tipo === 'egg') {
                 retroAudio.playEgg()
-                state.floatingTexts.push({ text: `+${pts} x${state.combo}`, x: item.x, y: item.y, vy: -1.0, color: '#30D158', opacity: 1 })
+                state.floatingTexts.push({ text: `+${pts}`, x: item.x, y: item.y, vy: -1.0, color: '#30D158', opacity: 1 })
               } else {
                 retroAudio.playCoin()
                 state.floatingTexts.push({ text: `+${pts}`, x: item.x, y: item.y, vy: -1.0, color: '#FBBF24', opacity: 1 })

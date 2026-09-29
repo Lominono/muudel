@@ -32,8 +32,9 @@ export function PantallaJuegos() {
   const pageRef = useRef(null)
 
   const fechaHoy = new Date().toISOString().split('T')[0]
-  const OBJETIVO_RETO = 100
-  const RECOMPENSA_RETO = 30
+  const OBJETIVO_RETO = 250 // Nerf: requiere llegar a 250m
+  const RECOMPENSA_RETO = 10 // Nerf: recompensa moderada de 10 pts
+  const LIMITE_BOLSA = 20 // Nerf: máximo 20 pts diarios en juegos
 
   useEffect(() => {
     if (pageRef.current) {
@@ -323,7 +324,7 @@ export function PantallaJuegos() {
                   <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
                     {retoArcadeCompletado
                       ? 'Reto superado. Puntos acreditados a tu cuenta.'
-                      : 'Llega a 100m en tu partida para completarlo automáticamente.'}
+                      : `Llega a ${OBJETIVO_RETO}m en tu partida para completarlo automáticamente.`}
                   </p>
                 </div>
               </div>
@@ -390,12 +391,12 @@ export function PantallaJuegos() {
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 12 }}>
-              Hasta 60 puntos diarios en recreos para canjear en la tienda o subir en el ranking.
+              Hasta {LIMITE_BOLSA} puntos diarios en recreos para canjear en la tienda o subir en el ranking.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span className="apple-caption">Ganados hoy:</span>
-              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} / 60 pts</strong>
+              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} / {LIMITE_BOLSA} pts</strong>
             </div>
 
             <div
@@ -409,7 +410,7 @@ export function PantallaJuegos() {
               <div
                 style={{
                   height: '100%',
-                  width: `${Math.min(100, (monedasHoy / 60) * 100)}%`,
+                  width: `${Math.min(100, (monedasHoy / LIMITE_BOLSA) * 100)}%`,
                   backgroundColor: '#F59E0B',
                   borderRadius: 9999,
                   transition: 'width 0.3s ease'
@@ -418,7 +419,7 @@ export function PantallaJuegos() {
             </div>
 
             <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.4 }}>
-              Huevos Yoshi: <strong>+5 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Aplastar bombas/caparazones: <strong>+30 pts</strong>.
+              Frutas y huevos Yoshi: <strong>+1 a +3 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Límite de recreo: <strong>{LIMITE_BOLSA} pts/día</strong>.
             </div>
           </section>
 
