@@ -481,21 +481,21 @@ h3.apple-headline {
   width: 100%;
   max-width: 540px;
   margin: 0 auto;
-  padding: 20px 16px 80px;
+  padding: 16px 14px calc(80px + env(safe-area-inset-bottom, 16px));
   box-sizing: border-box;
 }
 
 @media (min-width: 768px) {
   .app-container {
     max-width: 680px;
-    padding: 28px 24px 90px;
+    padding: 24px 20px calc(90px + env(safe-area-inset-bottom, 20px));
   }
 }
 
 @media (min-width: 1024px) {
   .app-container {
     max-width: 780px;
-    padding: 32px 32px 100px;
+    padding: 28px 24px calc(100px + env(safe-area-inset-bottom, 24px));
   }
 }
 
@@ -546,41 +546,45 @@ h3.apple-headline {
   animation: fadeIn 0.2s ease;
 }
 
-/* Sellos físicos estilo tampón de tinta - Anti-IA */
+/* Insignias y etiquetas estilo Apple HIG */
 .sello-tinta {
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 6px 14px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 9999px;
   user-select: none;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   text-transform: uppercase;
-  font-weight: 900;
-  letter-spacing: 1.5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transform: none;
+  transition: all 0.15s ease;
 }
 
 .sello-tinta-rojo {
-  border: 2px double var(--color-negative);
+  border: 1px solid rgba(255, 59, 48, 0.28);
   color: var(--color-negative);
   background-color: var(--color-negative-bg);
-  transform: rotate(-2.5deg);
+  transform: none;
 }
 
 .sello-tinta-azul {
-  border: 2px double var(--color-accent);
+  border: 1px solid rgba(0, 122, 255, 0.28);
   color: var(--color-accent);
   background-color: rgba(0, 122, 255, 0.08);
-  transform: rotate(1.8deg);
+  transform: none;
 }
 
 .sello-tinta-verde {
-  border: 2px double var(--color-positive);
+  border: 1px solid rgba(52, 199, 89, 0.28);
   color: var(--color-positive);
   background-color: var(--color-positive-bg);
-  transform: rotate(-1.2deg);
+  transform: none;
 }
 
 /* Ticket de papel para canjes de clase */

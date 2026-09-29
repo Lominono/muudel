@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
 import { YoshiRunnerGame } from '../games/yoshiRunner/YoshiRunnerGame'
-import { DustRacingGame } from '../games/dustRacing/DustRacingGame'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
@@ -13,18 +12,13 @@ import {
   Coins,
   Flame,
   Target,
-  Sparkles,
-  Award,
   CheckCircle2,
-  Clock,
-  Car,
-  Compass
+  Clock
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
 export function PantallaJuegos() {
   const { perfil, setPerfil } = useAuth()
-  const [juegoSeleccionado, setJuegoSeleccionado] = useState('dust') // 'dust' | 'yoshi'
   const [rankingArcade, setRankingArcade] = useState([])
   const [cargandoRanking, setCargandoRanking] = useState(false)
   const [monedasHoy, setMonedasHoy] = useState(() => {
@@ -35,28 +29,25 @@ export function PantallaJuegos() {
   const pageRef = useRef(null)
 
   const fechaHoy = new Date().toISOString().split('T')[0]
-  const OBJETIVO_RETO = juegoSeleccionado === 'dust' ? 150 : 100
-  const RECOMPENSA_RETO = juegoSeleccionado === 'dust' ? 35 : 30
+  const OBJETIVO_RETO = 100
+  const RECOMPENSA_RETO = 30
 
   useEffect(() => {
     if (pageRef.current) {
       animarEscalonado(pageRef.current.children, { stagger: 0.05, duration: 0.35 })
     }
-  }, [juegoSeleccionado])
+  }, [])
 
-  // Comprobar si el reto del juego actual ya fue completado hoy
+  // Comprobar si el reto de arcade ya fue completado hoy
   useEffect(() => {
-    const key = `muudel_reto_arcade_${juegoSeleccionado}_${perfil?.id}_${fechaHoy}`
-    const legacyKey = `muudel_reto_arcade_${perfil?.id}_${fechaHoy}`
-    if (localStorage.getItem(key) || (juegoSeleccionado === 'yoshi' && localStorage.getItem(legacyKey))) {
+    const key = `muudel_reto_arcade_${perfil?.id}_${fechaHoy}`
+    if (localStorage.getItem(key)) {
       setRetoArcadeCompletado(true)
-    } else {
-      setRetoArcadeCompletado(false)
     }
 
     cargarRankingArcade()
 
-    // Escuchar nuevos récords en tiempo real
+    // Escuchar récords en tiempo real
     const desuscribirRecord = suscribirEvento('arcade_record', (data) => {
       if (data) {
         cargarRankingArcade()
@@ -64,35 +55,33 @@ export function PantallaJuegos() {
     })
 
     return () => desuscribirRecord()
-  }, [perfil?.id, fechaHoy, juegoSeleccionado])
+  }, [perfil?.id, fechaHoy])
 
   const cargarRankingArcade = async () => {
     setCargandoRanking(true)
-    const juegoDbNombre = juegoSeleccionado === 'dust' ? 'dust_racing' : 'yoshi_runner'
-
     try {
-      // 1. Intentar en tabla arcade_scores
+      // 1. Intentar desde juegos_puntuaciones
       let res = await supabase
-        .from('arcade_scores')
-        .select('puntuacion, created_at, profiles(id, nombre, color_acento, digito_id)')
-        .eq('juego', juegoDbNombre)
-        .order('puntuacion', { ascending: false })
-        .limit(15)
+        .from('juegos_puntuaciones')
+        .select('puntos, created_at, profiles(id, nombre, color_acento, digito_id)')
+        .eq('juego', 'yoshi_runner')
+        .order('puntos', { ascending: false })
+        .limit(10)
 
       let filas = res.data
 
-      // 2. Si no hay en arcade_scores, intentar en juegos_puntuaciones
+      // 2. Si no hay en juegos_puntuaciones, probar arcade_scores
       if (!filas || filas.length === 0) {
         const resAlt = await supabase
-          .from('juegos_puntuaciones')
-          .select('puntos, created_at, profiles(id, nombre, color_acento, digito_id)')
-          .eq('juego', juegoDbNombre)
-          .order('puntos', { ascending: false })
-          .limit(15)
+          .from('arcade_scores')
+          .select('puntuacion, created_at, profiles(id, nombre, color_acento, digito_id)')
+          .eq('juego', 'yoshi_runner')
+          .order('puntuacion', { ascending: false })
+          .limit(10)
 
         if (resAlt.data && resAlt.data.length > 0) {
           filas = resAlt.data.map(item => ({
-            puntuacion: item.puntos,
+            puntos: item.puntuacion,
             profiles: item.profiles,
             created_at: item.created_at
           }))
@@ -100,18 +89,16 @@ export function PantallaJuegos() {
       }
 
       if (filas && filas.length > 0) {
-        // Agrupar por usuario única mejor puntuación
         const mapa = {}
         filas.forEach(item => {
-          const uId = item.profiles?.id || 'anon'
-          const pts = item.puntuacion || 0
-          if (!mapa[uId] || pts > mapa[uId].puntos) {
+          const uId = item.profiles?.id || item.user_id
+          if (!mapa[uId] || item.puntos > mapa[uId].puntos) {
             mapa[uId] = {
               id: uId,
-              nombre: item.profiles?.nombre || 'Piloto SMR2',
-              color: item.profiles?.color_acento || '#0A84FF',
+              nombre: item.profiles?.nombre || 'Alumno SMR2',
+              color: item.profiles?.color_acento || '#007AFF',
               digito: item.profiles?.digito_id || '',
-              puntos: pts
+              puntos: item.puntos
             }
           }
         })
@@ -121,14 +108,13 @@ export function PantallaJuegos() {
       }
     } catch (_) {}
 
-    // Fallback local si el servidor no tiene datos aún
-    const highKey = juegoSeleccionado === 'dust' ? 'muudel_dust_highscore' : 'muudel_yoshi_highscore'
-    const high = Number(localStorage.getItem(highKey) || 0)
+    // Fallback a localStorage local
+    const high = Number(localStorage.getItem('muudel_yoshi_highscore') || 0)
     if (high > 0 && perfil) {
       setRankingArcade([{
         id: perfil.id,
         nombre: perfil.nombre || 'Tú',
-        color: perfil.color_acento || '#0A84FF',
+        color: perfil.color_acento || '#007AFF',
         puntos: high,
         digito: perfil.digito_id || '#01'
       }])
@@ -152,11 +138,11 @@ export function PantallaJuegos() {
     }
   }
 
-  // Validación automática del reto de clase
+  // Validación automática del reto al superar los 100m
   const handleRetoSuperado = async (score) => {
     if (retoArcadeCompletado) return
 
-    const key = `muudel_reto_arcade_${juegoSeleccionado}_${perfil?.id}_${fechaHoy}`
+    const key = `muudel_reto_arcade_${perfil?.id}_${fechaHoy}`
     localStorage.setItem(key, 'true')
     setRetoArcadeCompletado(true)
 
@@ -166,7 +152,6 @@ export function PantallaJuegos() {
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
 
-    // Guardar en Supabase o local
     try {
       await supabase
         .from('profiles')
@@ -174,30 +159,27 @@ export function PantallaJuegos() {
         .eq('id', perfil.id)
 
       await supabase.from('reto_completado').upsert({
-        reto_id: `reto-arcade-${juegoSeleccionado}`,
+        reto_id: 'reto-arcade-yoshi',
         user_id: perfil.id,
         validado: true,
         estado: 'aprobado',
-        evidencia: `Auto-comprobado por motor de ${juegoSeleccionado === 'dust' ? 'Dust Racing 2D' : 'Yoshi Runner'} (Récord: ${score} pts)`,
+        evidencia: `Auto-comprobado por motor de Yoshi Runner (Récord: ${score}m)`,
         fecha: new Date().toISOString()
       })
     } catch (_) {}
 
-    // Guardar en tabla local de entregas para que el profesor/moderador lo vea verificado
     try {
       const entregas = JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
       entregas.unshift({
         id: 'ent-' + Date.now(),
-        retoId: `reto-arcade-${juegoSeleccionado}`,
-        retoTitulo: juegoSeleccionado === 'dust'
-          ? 'Desafío Dust Racing: 3 Vueltas al Circuito SMR2'
-          : 'Desafío Yoshi: Supera 100m en el Runner',
+        retoId: 'reto-arcade-yoshi',
+        retoTitulo: 'Desafío Yoshi: Supera 100m en el Runner',
         puntos: RECOMPENSA_RETO,
         userId: perfil.id,
         nombre: perfil.nombre,
         username: perfil.username || '',
         color: perfil.color_acento,
-        evidencia: `Auto-validado por el juego: Puntuación de ${score} pts alcanzada`,
+        evidencia: `Auto-validado por el juego: Puntuación de ${score}m alcanzada`,
         estado: 'aprobado',
         fecha: new Date().toLocaleDateString('es-ES'),
         hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -208,7 +190,7 @@ export function PantallaJuegos() {
     transmitirEvento('puntos_actualizados', { userId: perfil?.id, nuevosPuntos })
     transmitirEvento('reto_completado_notif', {
       nombre: perfil?.nombre,
-      retoTitulo: juegoSeleccionado === 'dust' ? 'Gran Premio Dust Racing SMR2' : 'Desafío Yoshi Runner 100m',
+      retoTitulo: 'Desafío Yoshi Runner 100m',
       puntos: RECOMPENSA_RETO
     })
 
@@ -217,117 +199,56 @@ export function PantallaJuegos() {
   }
 
   return (
-    <main className="app-container" style={{ maxWidth: 880 }}>
-      {/* Encabezado Principal estilo Apple HIG */}
-      <header style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <main className="app-container" style={{ maxWidth: 840, padding: 'clamp(12px, 3vw, 24px)' }}>
+      {/* Encabezado Apple HIG */}
+      <header style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                backgroundColor: 'rgba(52, 199, 89, 0.15)',
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                backgroundColor: 'rgba(52, 199, 89, 0.12)',
                 color: '#34C759',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(52, 199, 89, 0.15)'
               }}
             >
               <Gamepad2 size={24} />
             </div>
             <div>
-              <h1 className="apple-large-title" style={{ fontSize: 26, margin: 0 }}>
+              <h1 className="apple-large-title" style={{ fontSize: 'clamp(22px, 4vw, 28px)', margin: 0 }}>
                 Recreo Arcade
               </h1>
               <p className="apple-subheadline" style={{ fontSize: 13, margin: '2px 0 0' }}>
-                Juegos de habilidad, física 60 FPS y bolsa de puntos diarios SMR2.
+                Pausa activa de clase SMR2 y bolsa de puntos diarios.
               </p>
             </div>
           </div>
 
-          <div className="sello-tinta sello-tinta-verde" style={{ fontSize: 10, padding: '4px 10px' }}>
-            REGISTRO OFICIAL CLASE SMR2
-          </div>
-        </div>
-
-        {/* Apple Segmented Control para Alternar Entre Juegos */}
-        <div
-          role="tablist"
-          style={{
-            display: 'inline-flex',
-            padding: 3,
-            backgroundColor: 'var(--color-fill-secondary)',
-            borderRadius: 12,
-            marginTop: 10,
-            gap: 2,
-            width: '100%',
-            maxWidth: 440
-          }}
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={juegoSeleccionado === 'dust'}
-            onClick={() => {
-              sound.playPop()
-              setJuegoSeleccionado('dust')
-            }}
+          <span
             style={{
-              flex: 1,
-              padding: '8px 16px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: juegoSeleccionado === 'dust' ? 700 : 500,
-              border: 'none',
-              cursor: 'pointer',
-              backgroundColor: juegoSeleccionado === 'dust' ? 'var(--color-surface)' : 'transparent',
-              color: juegoSeleccionado === 'dust' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-              boxShadow: juegoSeleccionado === 'dust' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
-              transition: 'all 0.15s ease',
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: 7
+              gap: 6,
+              padding: '4px 12px',
+              borderRadius: 9999,
+              backgroundColor: 'rgba(0, 122, 255, 0.1)',
+              color: 'var(--color-accent)',
+              fontSize: 12,
+              fontWeight: 600
             }}
           >
-            <Car size={16} color={juegoSeleccionado === 'dust' ? '#F59E0B' : 'currentColor'} />
-            <span>🏎️ Dust Racing 2D</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={juegoSeleccionado === 'yoshi'}
-            onClick={() => {
-              sound.playPop()
-              setJuegoSeleccionado('yoshi')
-            }}
-            style={{
-              flex: 1,
-              padding: '8px 16px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: juegoSeleccionado === 'yoshi' ? 700 : 500,
-              border: 'none',
-              cursor: 'pointer',
-              backgroundColor: juegoSeleccionado === 'yoshi' ? 'var(--color-surface)' : 'transparent',
-              color: juegoSeleccionado === 'yoshi' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-              boxShadow: juegoSeleccionado === 'yoshi' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
-              transition: 'all 0.15s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 7
-            }}
-          >
-            <span>🦖 Yoshi Runner SMR2</span>
-          </button>
+            🦖 Yoshi Runner SMR2
+          </span>
         </div>
       </header>
 
       <div ref={pageRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* RETO DEL DÍA INTEGRADO SEGÚN EL JUEGO ACTIVO */}
+        {/* RETO DEL DÍA INTEGRADO */}
         <section
           className="card"
           style={{
@@ -363,7 +284,7 @@ export function PantallaJuegos() {
                 <span
                   style={{
                     fontSize: 11,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
                     color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)'
@@ -376,16 +297,12 @@ export function PantallaJuegos() {
                 </span>
               </div>
               <h3 className="apple-headline" style={{ fontSize: 16, marginTop: 2 }}>
-                {juegoSeleccionado === 'dust'
-                  ? 'Gran Premio SMR2: Completa 3 vueltas en Dust Racing 2D'
-                  : `Desafío Yoshi: Alcanza ${OBJETIVO_RETO}m en Yoshi Runner`}
+                Desafío Yoshi: Alcanza {OBJETIVO_RETO}m en Yoshi Runner
               </h3>
               <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
                 {retoArcadeCompletado
-                  ? 'Reto superado y homologado. Puntos acreditados a tu cuenta.'
-                  : juegoSeleccionado === 'dust'
-                    ? 'Supera 150 pts de carrera o cruza la meta en 3 vueltas para validarlo automáticamente.'
-                    : 'Llega a 100m en tu partida para completarlo automáticamente.'}
+                  ? 'Reto superado. Puntos acreditados a tu cuenta.'
+                  : 'Llega a 100m en tu partida para completarlo automáticamente.'}
               </p>
             </div>
           </div>
@@ -429,27 +346,19 @@ export function PantallaJuegos() {
           </div>
         </section>
 
-        {/* RENDERIZADO DEL JUEGO SELECCIONADO */}
+        {/* JUEGO ARCADE YOSHI RUNNER */}
         <section>
-          {juegoSeleccionado === 'dust' ? (
-            <DustRacingGame
-              perfil={perfil}
-              onMonedasGanadas={handleMonedasGanadas}
-              onRetoCompletado={handleRetoSuperado}
-            />
-          ) : (
-            <YoshiRunnerGame
-              perfil={perfil}
-              onMonedasGanadas={handleMonedasGanadas}
-              onRetoCompletado={handleRetoSuperado}
-              retoActivo={{ objetivo_puntuacion: OBJETIVO_RETO }}
-            />
-          )}
+          <YoshiRunnerGame
+            perfil={perfil}
+            onMonedasGanadas={handleMonedasGanadas}
+            onRetoCompletado={handleRetoSuperado}
+            retoActivo={{ objetivo_puntuacion: OBJETIVO_RETO }}
+          />
         </section>
 
-        {/* PANEL INFERIOR: BOLSA DE GANANCIAS Y RÉCORDS DEL AULA */}
+        {/* PANEL INFERIOR: ESTADÍSTICAS Y RÉCORDS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-          {/* Tarjeta: Límite y Puntos del Recreo */}
+          {/* Bolsa de Monedas Diarias */}
           <section className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <Coins size={18} color="#D97706" />
@@ -485,42 +394,34 @@ export function PantallaJuegos() {
               />
             </div>
 
-            <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.45 }}>
-              {juegoSeleccionado === 'dust' ? (
-                <>
-                  Monedas en pista: <strong>+1 pt</strong> · Vuelta rápida: <strong>+10 pts</strong> · Derrapes continuados: <strong>+1 pt/s</strong>.
-                </>
-              ) : (
-                <>
-                  Huevos Yoshi: <strong>+5 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Aplastar bombas: <strong>+30 pts</strong>.
-                </>
-              )}
+            <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.4 }}>
+              Huevos Yoshi: <strong>+5 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Aplastar bombas/caparazones: <strong>+30 pts</strong>.
             </div>
           </section>
 
-          {/* Tarjeta: Top Récords de la Clase */}
+          {/* Récords de la Clase */}
           <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Trophy size={16} color="#FF9500" />
                 <h3 className="apple-headline" style={{ fontSize: 15 }}>
-                  Récords: {juegoSeleccionado === 'dust' ? 'Dust Racing 2D' : 'Yoshi Runner'}
+                  Récords de Yoshi Runner
                 </h3>
               </div>
               <span className="apple-caption" style={{ fontSize: 11 }}>
-                Servidor SMR2
+                Aula SMR2
               </span>
             </div>
 
             {cargandoRanking ? (
               <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)', fontSize: 13 }}>
-                Cargando marcas del servidor...
+                Cargando marcas del aula...
               </div>
             ) : rankingArcade.length === 0 ? (
               <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)', fontSize: 13 }}>
                 <Clock size={24} style={{ margin: '0 auto 8px', opacity: 0.6 }} />
-                <p style={{ margin: 0, fontWeight: 600 }}>Aún no hay puntuaciones registradas para este juego hoy.</p>
-                <p style={{ margin: '4px 0 0', fontSize: 11, opacity: 0.8 }}>¡Juega una carrera para inscribir la primera marca oficial en la pizarra!</p>
+                <p style={{ margin: 0, fontWeight: 600 }}>Aún no hay puntuaciones registradas hoy.</p>
+                <p style={{ margin: '4px 0 0', fontSize: 11, opacity: 0.8 }}>¡Juega una partida para registrar la primera marca!</p>
               </div>
             ) : (
               rankingArcade.map((jugador, i) => (
@@ -560,7 +461,7 @@ export function PantallaJuegos() {
                   </div>
 
                   <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-accent)' }}>
-                    {jugador.puntos} {juegoSeleccionado === 'dust' ? 'pts' : 'm'}
+                    {jugador.puntos}m
                   </span>
                 </div>
               ))

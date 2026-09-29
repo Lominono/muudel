@@ -20,7 +20,12 @@ import {
   Smile,
   ExternalLink,
   ChevronDown,
-  CheckCircle2
+  CheckCircle2,
+  Zap,
+  Sparkles,
+  Megaphone,
+  Coffee,
+  Radio
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
@@ -665,8 +670,42 @@ export function PantallaChat() {
           gap: 6
         }}>
           {cargando && mensajes.length === 0 ? (
-            <div style={{ textAlign: 'center', margin: 'auto' }}>
-              <p className="apple-caption">Cargando mensajes de #{canal}...</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 6px', width: '100%' }}>
+              {[
+                { w: '62%', own: false },
+                { w: '48%', own: true },
+                { w: '74%', own: false },
+                { w: '52%', own: true },
+                { w: '38%', own: false }
+              ].map((sk, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignSelf: sk.own ? 'flex-end' : 'flex-start',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: sk.w,
+                    opacity: 0.7
+                  }}
+                >
+                  {!sk.own && (
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-fill-secondary)', flexShrink: 0 }} />
+                  )}
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 38,
+                      borderRadius: 16,
+                      backgroundColor: sk.own ? 'rgba(0, 122, 255, 0.16)' : 'var(--color-fill-secondary)',
+                      animation: 'pulse 1.5s ease-in-out infinite'
+                    }}
+                  />
+                </div>
+              ))}
+              <p className="apple-caption" style={{ textAlign: 'center', marginTop: 10 }}>
+                Sincronizando mensajes de #{canal}...
+              </p>
             </div>
           ) : mensajesFiltrados.length === 0 ? (
             <div style={{ textAlign: 'center', margin: 'auto', padding: 24 }}>
@@ -677,69 +716,85 @@ export function PantallaChat() {
                 {queryBusqueda ? `Sin resultados para "${queryBusqueda}"` : `No hay mensajes en #${canal}.`}
               </p>
               <p className="apple-caption" style={{ marginTop: 2 }}>
-                {queryBusqueda ? 'Intenta con otras palabras o limpia la búsqueda.' : 'Escribe un mensaje, haz una pregunta o estampa un sello.'}
+                {queryBusqueda ? 'Intenta con otras palabras o limpia la búsqueda.' : 'Escribe un mensaje, comparte un enlace o resuelve una duda.'}
               </p>
             </div>
           ) : (
             mensajesFiltrados.map((m, idx) => {
-              const esPropio = perfil && m.user_id === perfil.id
-              const esUltimo = idx === mensajesFiltrados.length - 1
-              const hora = m.created_at
-                ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : ''
-              const isLiked = likedId === m.id
-              const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
-              const autorUsername = m.username || m.profiles?.username
-              const autorRol = m.rol || m.profiles?.rol || 'alumno'
-              const autorColor = m.color_acento || m.profiles?.color_acento
-              const autorDigito = m.digito_id || m.profiles?.digito_id
-              const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
-              const autorMarco = m.marco_avatar || m.profiles?.marco_avatar || (esPropio ? perfil?.marco_avatar : null)
-              const autorBurbuja = m.burbuja_chat || m.profiles?.burbuja_chat || (esPropio ? perfil?.burbuja_chat : null)
-              const autorPin = m.insignia_activa || m.profiles?.insignia_activa || (esPropio ? perfil?.insignia_activa : null)
-              const esModerador = autorRol === 'moderador'
+              try {
+                const esPropio = perfil && m.user_id === perfil.id
+                const esUltimo = idx === mensajesFiltrados.length - 1
+                const hora = m.created_at
+                  ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : ''
+                const isLiked = likedId === m.id
+                const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
+                const autorUsername = m.username || m.profiles?.username
+                const autorRol = m.rol || m.profiles?.rol || 'alumno'
+                const autorColor = m.color_acento || m.profiles?.color_acento
+                const autorDigito = m.digito_id || m.profiles?.digito_id
+                const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
+                const autorMarco = m.marco_avatar || m.profiles?.marco_avatar || (esPropio ? perfil?.marco_avatar : null)
+                const autorBurbuja = m.burbuja_chat || m.profiles?.burbuja_chat || (esPropio ? perfil?.burbuja_chat : null)
+                const autorPin = m.insignia_activa || m.profiles?.insignia_activa || (esPropio ? perfil?.insignia_activa : null)
+                const esModerador = autorRol === 'moderador'
 
-              // Agrupación de mensajes consecutivos
-              const mensajeAnterior = idx > 0 ? mensajesFiltrados[idx - 1] : null
-              const mismoEmisor = mensajeAnterior && mensajeAnterior.user_id === m.user_id && (new Date(m.created_at) - new Date(mensajeAnterior.created_at)) < 120000
+                // Agrupación de mensajes consecutivos
+                const mensajeAnterior = idx > 0 ? mensajesFiltrados[idx - 1] : null
+                const mismoEmisor = mensajeAnterior && mensajeAnterior.user_id === m.user_id && (new Date(m.created_at) - new Date(mensajeAnterior.created_at)) < 120000
 
-              // 1. Mensaje tipo SELLO FÍSICO DE TINTA
-              const selloDetectado = parsearSelloMensaje(m.texto)
-              if (selloDetectado) {
-                return (
-                  <div
-                    key={m.id || idx}
-                    id={`msg-${m.id}`}
-                    ref={esUltimo ? ultimoMensajeRef : null}
-                    className={mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: esPropio ? 'flex-end' : 'flex-start',
-                      margin: '6px 0',
-                      borderRadius: 12,
-                      padding: '4px 6px'
-                    }}
-                  >
-                    {!mismoEmisor && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
-                        {autorUsername && <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>@{autorUsername}</span>}
-                        {autorDigito && <span className="apple-caption">({autorDigito})</span>}
+                // 1. Mensaje tipo ETIQUETA / CONFIRMACIÓN RÁPIDA
+                const selloDetectado = parsearSelloMensaje(m.texto)
+                if (selloDetectado) {
+                  const colorTag = selloDetectado.id === 'PRESENTE' ? '#FF3B30' : selloDetectado.id === 'ENTENDIDO' ? '#34C759' : '#007AFF'
+                  return (
+                    <div
+                      key={m.id || idx}
+                      id={`msg-${m.id}`}
+                      ref={esUltimo ? ultimoMensajeRef : null}
+                      className={mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: esPropio ? 'flex-end' : 'flex-start',
+                        margin: '6px 0',
+                        borderRadius: 12,
+                        padding: '4px 6px'
+                      }}
+                    >
+                      {!mismoEmisor && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
+                          {autorUsername && <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>@{autorUsername}</span>}
+                          {autorDigito && <span className="apple-caption">({autorDigito})</span>}
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                          borderRadius: 9999,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          backgroundColor: `${colorTag}18`,
+                          color: colorTag,
+                          border: `1px solid ${colorTag}33`
+                        }}
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>{selloDetectado.etiqueta}</span>
                       </div>
-                    )}
 
-                    <div className={`sello-tinta ${selloDetectado.clase}`} style={{ fontSize: 13, padding: '8px 18px' }}>
-                      ★ {selloDetectado.etiqueta} ★
+                      <span className="apple-caption" style={{ fontSize: 10, marginTop: 4 }}>
+                        {hora}
+                      </span>
                     </div>
-
-                    <span className="apple-caption" style={{ fontSize: 10, marginTop: 4 }}>
-                      {hora}
-                    </span>
-                  </div>
-                )
-              }
+                  )
+                }
 
               // 2. Mensaje tipo EFECTO DE CLASE
               const efectoInfo = parsearEfectoMensaje(m.texto)
@@ -1345,8 +1400,26 @@ export function PantallaChat() {
                   </div>
                 </div>
               )
-            })
-          )}
+            } catch (err) {
+              console.error('Error renderizando mensaje:', err)
+              return (
+                <div
+                  key={m.id || idx}
+                  style={{
+                    padding: '8px 14px',
+                    margin: '4px 0',
+                    borderRadius: 14,
+                    backgroundColor: 'var(--color-fill-secondary)',
+                    fontSize: 13,
+                    color: 'var(--color-ink)'
+                  }}
+                >
+                  {m.texto || 'Mensaje de clase'}
+                </div>
+              )
+            }
+          })
+        )}
           <div ref={chatEndRef} />
         </div>
 
@@ -1432,24 +1505,29 @@ export function PantallaChat() {
                   key={s.id}
                   type="button"
                   onClick={() => manejarEstamparSello(s)}
-                  className={`sello-tinta ${s.clase}`}
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
+                    fontWeight: 600,
                     padding: '8px 14px',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
-                    transform: 'none',
+                    borderRadius: 9999,
+                    border: '1px solid var(--color-separator)',
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    color: 'var(--color-ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
                     transition: 'all 0.12s ease'
                   }}
                 >
-                  {s.etiqueta}
+                  <CheckCircle2 size={13} color="var(--color-accent)" />
+                  <span>{s.etiqueta}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
-
-
 
         {/* Respuestas rápidas */}
         <div style={{
@@ -1472,7 +1550,7 @@ export function PantallaChat() {
               style={{
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-separator)',
-                padding: '4px 10px',
+                padding: '5px 12px',
                 borderRadius: 9999,
                 fontSize: 12,
                 fontWeight: 500,
@@ -1486,41 +1564,12 @@ export function PantallaChat() {
           ))}
         </div>
 
-        {/* Banner de Verificación Anti-IA en vivo */}
-        {estadoAntiIa && (
-          <div
-            style={{
-              padding: '6px 14px',
-              backgroundColor: estadoAntiIa.esIaProbable ? 'rgba(255, 149, 0, 0.12)' : 'rgba(52, 199, 89, 0.08)',
-              borderTop: `1px solid ${estadoAntiIa.esIaProbable ? 'rgba(255, 149, 0, 0.3)' : 'rgba(52, 199, 89, 0.25)'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: 11,
-              fontWeight: 600,
-              color: estadoAntiIa.esIaProbable ? 'var(--color-warning)' : 'var(--color-positive)',
-              animation: 'fadeIn 0.15s ease'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>{estadoAntiIa.esIaProbable ? '⚠️' : '✍️'}</span>
-              <span>
-                {estadoAntiIa.esIaProbable
-                  ? `Patrón de redacción sintética detectado (${estadoAntiIa.patronDetectado}). En clase preferimos tus palabras.`
-                  : 'Redacción humana auténtica verificada (+10 XP en Documentación Técnica)'}
-              </span>
-            </div>
-            <span className="sello-tinta sello-tinta-azul" style={{ fontSize: 8, padding: '1px 5px' }}>
-              ANTI-IA
-            </span>
-          </div>
-        )}
-
         {/* Barra de entrada de texto */}
         <form
           onSubmit={manejarEnvio}
           style={{
             padding: '10px 12px',
+            paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
             backgroundColor: 'var(--color-surface)',
             borderTop: '0.5px solid var(--color-separator)',
             display: 'flex',
@@ -1528,14 +1577,14 @@ export function PantallaChat() {
             gap: 8,
           }}
         >
-          {/* Botón de Sellos Rápidos */}
+          {/* Botón de Confirmaciones Rápidas */}
           <button
             type="button"
             onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
-            title="Estampar sello de clase"
+            title="Confirmaciones rápidas de clase"
             style={{
-              width: 36,
-              height: 36,
+              width: 42,
+              height: 42,
               borderRadius: 9999,
               backgroundColor: mostrarMenuSellos ? 'var(--color-fill-secondary)' : 'transparent',
               color: 'var(--color-ink)',
@@ -1547,7 +1596,7 @@ export function PantallaChat() {
               flexShrink: 0
             }}
           >
-            <Stamp size={17} />
+            <CheckCircle2 size={19} color={mostrarMenuSellos ? 'var(--color-accent)' : 'currentColor'} />
           </button>
 
           <input
@@ -1564,10 +1613,10 @@ export function PantallaChat() {
                 : `Mensaje en #${canal}...`
             }
             style={{
-              minHeight: 40,
-              borderRadius: 20,
+              minHeight: 42,
+              borderRadius: 22,
               padding: '8px 16px',
-              fontSize: 15,
+              fontSize: 16,
               opacity: estaBloqueadoEnvio ? 0.6 : 1
             }}
           />
@@ -1576,8 +1625,8 @@ export function PantallaChat() {
             type="submit"
             disabled={!texto.trim() || estaBloqueadoEnvio}
             style={{
-              width: 36,
-              height: 36,
+              width: 42,
+              height: 42,
               borderRadius: 9999,
               backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
               color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
@@ -1590,7 +1639,7 @@ export function PantallaChat() {
               transition: 'all 0.15s ease',
             }}
           >
-            <ArrowUp size={18} strokeWidth={2.5} />
+            <ArrowUp size={20} strokeWidth={2.6} />
           </button>
         </form>
       </div>

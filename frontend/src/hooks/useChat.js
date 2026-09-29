@@ -16,7 +16,14 @@ const generarUUID = () => {
 }
 
 export function useChat(canal, perfil = null) {
-  const [mensajes, setMensajes] = useState([])
+  const [mensajes, setMensajes] = useState(() => {
+    try {
+      const cached = localStorage.getItem('racha_chat_' + canal)
+      return cached ? JSON.parse(cached) : []
+    } catch (e) {
+      return []
+    }
+  })
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState(null)
   const [usuariosEscribiendo, setUsuariosEscribiendo] = useState({})
@@ -25,6 +32,10 @@ export function useChat(canal, perfil = null) {
 
   useEffect(() => {
     if (!canal) return
+    try {
+      const cached = localStorage.getItem('racha_chat_' + canal)
+      if (cached) setMensajes(JSON.parse(cached))
+    } catch (e) {}
     cargar()
     suscribirse()
 
