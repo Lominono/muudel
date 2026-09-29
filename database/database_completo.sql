@@ -318,3 +318,49 @@ from profiles p
 left join checkins c on c.user_id = p.id and c.fecha >= current_date - interval '7 days'
 group by p.id, p.nombre, p.avatar_emoji, p.puntos_total, p.racha_actual, p.mejor_racha
 order by p.puntos_total desc;
+
+-- ==============================================================================
+-- 6. MENSAJES DIRECTOS (DMs) PRIVADOS 1 A 1
+-- ==============================================================================
+
+create table if not exists direct_messages (
+  id uuid default gen_random_uuid() primary key,
+  sender_id uuid references profiles(id) on delete cascade not null,
+  receiver_id uuid references profiles(id) on delete cascade not null,
+  texto text not null check (length(texto) >= 1 and length(texto) <= 2000),
+  leido boolean default false,
+  reply_to uuid references direct_messages(id) on delete set null,
+  sello text default null,
+  reacciones jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_dm_pair on direct_messages(sender_id, receiver_id, created_at);
+create index if not exists idx_dm_receiver_unread on direct_messages(receiver_id, leido);
+create index if not exists idx_dm_created on direct_messages(created_at desc);
+
+alter table direct_messages enable row level security;
+
+drop policy if exists "lectura mensajes propios o recibidos" on direct_messages;
+create policy "lectura mensajes propios o recibidos" on direct_messages
+  for select using (
+    auth.uid() = sender_id or auth.uid() = receiver_id or auth.uid() is null
+  );
+
+drop policy if exists "insertar mensaje como remitente" on direct_messages;
+create policy "insertar mensaje como remitente" on direct_messages
+  for insert with check (
+    auth.uid() = sender_id or auth.uid() is null
+  );
+
+drop policy if exists "actualizar estado leido o reacciones" on direct_messages;
+create policy "actualizar estado leido o reacciones" on direct_messages
+  for update using (
+    auth.uid() = receiver_id or auth.uid() = sender_id or auth.uid() is null
+  );
+
+drop policy if exists "eliminar propios mensajes dm" on direct_messages;
+create policy "eliminar propios mensajes dm" on direct_messages
+  for delete using (
+    auth.uid() = sender_id
+  );

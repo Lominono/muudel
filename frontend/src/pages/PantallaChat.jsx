@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
+import { useDirectMessages } from '../hooks/useDirectMessages'
+import { PanelMensajesDirectos } from '../components/PanelMensajesDirectos'
 import {
   ArrowUp,
   Heart,
@@ -69,6 +71,18 @@ export function PantallaChat() {
   const [canal, setCanal] = useState('general')
   const [texto, setTexto] = useState('')
   const [likedId, setLikedId] = useState(null)
+
+  // Modo de vista: 'canales' o 'dms'
+  const [modoVista, setModoVista] = useState('canales')
+  const [destinatarioDmSeleccionado, setDestinatarioDmSeleccionado] = useState(null)
+  const dmHook = useDirectMessages(perfil, destinatarioDmSeleccionado)
+
+  const abrirChatPrivadoCon = (contacto) => {
+    sound.playPop()
+    setDestinatarioDmSeleccionado(contacto)
+    setModoVista('dms')
+  }
+
   const {
     mensajes,
     cargando,
@@ -669,15 +683,110 @@ export function PantallaChat() {
         </div>
       )}
 
-      {/* Selector de canales estilo Apple Segmented Control */}
+      {/* Selector Principal de Modo: Canales de Aula vs Mensajes Directos */}
       <div style={{
         display: 'flex',
-        gap: 6,
-        marginBottom: 8,
-        overflowX: 'auto',
-        paddingBottom: 2,
-        scrollbarWidth: 'none',
+        alignItems: 'center',
+        backgroundColor: 'var(--color-fill-tertiary)',
+        padding: 3,
+        borderRadius: 12,
+        marginBottom: 10,
+        gap: 4
       }}>
+        <button
+          type="button"
+          onClick={() => {
+            sound.playPop()
+            setModoVista('canales')
+          }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            padding: '7px 12px',
+            borderRadius: 9,
+            border: 'none',
+            backgroundColor: modoVista === 'canales' ? 'var(--color-surface)' : 'transparent',
+            color: modoVista === 'canales' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+            fontWeight: modoVista === 'canales' ? 700 : 500,
+            fontSize: 13,
+            cursor: 'pointer',
+            boxShadow: modoVista === 'canales' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Hash size={14} color={modoVista === 'canales' ? 'var(--color-accent)' : 'currentColor'} />
+          <span>Canales de Clase</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            sound.playPop()
+            setModoVista('dms')
+          }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            padding: '7px 12px',
+            borderRadius: 9,
+            border: 'none',
+            backgroundColor: modoVista === 'dms' ? 'var(--color-surface)' : 'transparent',
+            color: modoVista === 'dms' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+            fontWeight: modoVista === 'dms' ? 700 : 500,
+            fontSize: 13,
+            cursor: 'pointer',
+            boxShadow: modoVista === 'dms' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease',
+            position: 'relative'
+          }}
+        >
+          <MessageSquare size={14} color={modoVista === 'dms' ? 'var(--color-accent)' : 'currentColor'} />
+          <span>Mensajes Directos</span>
+          {dmHook.totalNoLeidos > 0 && (
+            <span style={{
+              minWidth: 18,
+              height: 18,
+              borderRadius: 9,
+              backgroundColor: 'var(--color-destructive)',
+              color: '#FFFFFF',
+              fontSize: 11,
+              fontWeight: 800,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0 5px',
+              lineHeight: 1
+            }}>
+              {dmHook.totalNoLeidos}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {modoVista === 'dms' ? (
+        <PanelMensajesDirectos
+          perfil={perfil}
+          destinatarioInicial={destinatarioDmSeleccionado}
+          useDmHook={dmHook}
+          onCerrar={() => setModoVista('canales')}
+        />
+      ) : (
+        <>
+          {/* Selector de canales estilo Apple Segmented Control */}
+          <div style={{
+            display: 'flex',
+            gap: 6,
+            marginBottom: 8,
+            overflowX: 'auto',
+            paddingBottom: 2,
+            scrollbarWidth: 'none',
+          }}>
         {CANALES.map((c) => {
           const activo = canal === c.id
           return (
@@ -963,7 +1072,7 @@ export function PantallaChat() {
                     position: 'relative'
                   }}
                 >
-                  {/* Encabezado del remitente */}
+                  {/* Encabezado del remitente con botón para iniciar DM */}
                   {!esPropio && !mismoEmisor && (
                     <div style={{
                       display: 'flex',
@@ -973,15 +1082,57 @@ export function PantallaChat() {
                       paddingLeft: 4,
                       flexWrap: 'wrap'
                     }}>
-                      <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} marco={autorMarco} />
-                      <span className="apple-caption" style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
-                        {autorNombre}
-                      </span>
-                      {autorUsername && (
-                        <span className="apple-caption" style={{ color: 'var(--color-accent)', fontWeight: 600 }}>
-                          @{autorUsername}
+                      <div
+                        onClick={() => abrirChatPrivadoCon({
+                          id: m.user_id,
+                          nombre: autorNombre,
+                          username: autorUsername,
+                          rol: autorRol,
+                          color_acento: autorColor,
+                          digito_id: autorDigito,
+                          marco_avatar: autorMarco,
+                          insignia_activa: autorPin
+                        })}
+                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        title={`Abrir chat privado con ${autorNombre}`}
+                      >
+                        <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} marco={autorMarco} />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => abrirChatPrivadoCon({
+                          id: m.user_id,
+                          nombre: autorNombre,
+                          username: autorUsername,
+                          rol: autorRol,
+                          color_acento: autorColor,
+                          digito_id: autorDigito,
+                          marco_avatar: autorMarco,
+                          insignia_activa: autorPin
+                        })}
+                        title={`Enviar mensaje directo a ${autorNombre}`}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: '1px 4px',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <span className="apple-caption" style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
+                          {autorNombre}
                         </span>
-                      )}
+                        {autorUsername && (
+                          <span className="apple-caption" style={{ color: 'var(--color-accent)', fontWeight: 600 }}>
+                            @{autorUsername}
+                          </span>
+                        )}
+                        <MessageSquare size={11} color="var(--color-secondary-ink)" style={{ marginLeft: 2 }} />
+                      </button>
                       {autorPin === 'pin_oro' && <span title="Pin de Oro Coleccionista SMR2" style={{ fontSize: 12 }}>👑</span>}
                       {autorPin === 'pin_hacker' && <span title="Insignia Hacker Ético" style={{ fontSize: 12 }}>🛡️</span>}
                       {autorPin === 'pin_arcade' && <span title="Medalla Estrella Yoshi" style={{ fontSize: 12 }}>⭐</span>}
@@ -1805,6 +1956,8 @@ export function PantallaChat() {
           </button>
         </form>
       </div>
+      </>
+    )}
 
       {/* MODAL DE LA CANTINA / TIENDA DE RECOMPENSAS */}
       {mostrarTienda && (

@@ -187,6 +187,34 @@ class RetroAudio {
       osc.start(); osc.stop(ctx.currentTime + 0.3)
     })
   }
+
+  playOverdrive() {
+    this._play(ctx => {
+      [440, 554.37, 659.25, 880, 1108.73, 1318.51].forEach((freq, idx) => {
+        const osc = ctx.createOscillator(), g = ctx.createGain()
+        osc.type = 'sawtooth'
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.05)
+        g.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.05)
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + idx * 0.05 + 0.2)
+        osc.connect(g); g.connect(ctx.destination)
+        osc.start(ctx.currentTime + idx * 0.05)
+        osc.stop(ctx.currentTime + idx * 0.05 + 0.2)
+      })
+    })
+  }
+
+  playNearMiss() {
+    this._play(ctx => {
+      const osc = ctx.createOscillator(), g = ctx.createGain()
+      osc.type = 'square'
+      osc.frequency.setValueAtTime(880, ctx.currentTime)
+      osc.frequency.linearRampToValueAtTime(1760, ctx.currentTime + 0.09)
+      g.gain.setValueAtTime(0.14, ctx.currentTime)
+      g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.09)
+      osc.connect(g); g.connect(ctx.destination)
+      osc.start(); osc.stop(ctx.currentTime + 0.09)
+    })
+  }
 }
 
 const retroAudio = new RetroAudio()
@@ -197,8 +225,8 @@ const CANVAS_H = 230
 const GROUND_Y = 186
 const GRAVITY = 0.65
 const JUMP_FORCE = -11.8
-const SPEED_INITIAL = 5.5
-const SPEED_MAX = 14.0
+const SPEED_INITIAL = 6.0
+const SPEED_MAX = 18.0
 // Duración base del juego en segundos (6 minutos = 360s). Se escala con victorias.
 const BASE_DURATION_S = 360
 
@@ -255,6 +283,25 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   function crearEstadoInicial(winsCount) {
     // La duración aumenta 90s por cada victoria (máx 900s = 15 min)
     const duracion = Math.min(BASE_DURATION_S + winsCount * 90, 900)
+
+    const stars = []
+    for (let i = 0; i < 35; i++) {
+      stars.push({
+        x: Math.random() * CANVAS_W,
+        y: Math.random() * (GROUND_Y - 50),
+        size: Math.random() * 1.8 + 0.6,
+        twinkleSpeed: 0.04 + Math.random() * 0.06,
+        phase: Math.random() * Math.PI * 2
+      })
+    }
+
+    const serverRacks = [
+      { x: 70, w: 26, h: 52, leds: [true, false, true] },
+      { x: 260, w: 32, h: 64, leds: [true, true, false] },
+      { x: 470, w: 24, h: 48, leds: [false, true, true] },
+      { x: 670, w: 34, h: 58, leds: [true, false, true] }
+    ]
+
     return {
       score: 0,
       speed: SPEED_INITIAL,
@@ -265,6 +312,14 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       feverTime: 0,
       feverElapsed: 0,
       feverUnstable: false,
+      adrenalina: 0, // 0 a 100
+      overdriveTime: 0,
+      screenShake: 0,
+      ghostTrails: [],
+      kineticLines: [],
+      stars,
+      serverRacks,
+      lastSpeedTier: 0,
       frameCount: 0,
       duracionFrames: duracion * 60, // convertido a frames
       timerFrames: 0,
@@ -485,14 +540,134 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           state.speed = Math.min(state.speed, 7) // bajar velocidad para la cinemática
         }
 
-        // ── Física de score y velocidad ─────────────────────────────────
-        const speedFactor = state.feverTime > 0 ? 1.3 : 1.0
+        // ── Física de score y velocidad frenética ─────────────────────────────────
+        const enOverdrive = state.overdriveTime > 0
+        const speedFactor = (state.feverTime > 0 ? 1.25 : 1.0) * (enOverdrive ? 1.45 : 1.0)
+
         if (state.fase === 'normal') {
           state.distance += (state.speed * speedFactor) / 10
           state.score = Math.floor(state.distance)
           setPuntos(state.score)
-          if (state.speed < SPEED_MAX) state.speed += 0.002
+
+          // Aceleración continua más dinámica y desafiante
+          if (state.speed < SPEED_MAX) {
+            state.speed += 0.0032
+          }
+
+          // Aceleración por tramos de 50 metros con anuncio visual
+          const tierActual = Math.floor(state.score / 50)
+          if (tierActual > state.lastSpeedTier) {
+            state.lastSpeedTier = tierActual
+            state.screenShake = 6
+            retroAudio.playWarning()
+            state.floatingTexts.push({
+              text: `⚡ ¡ACELERACIÓN! ${(state.speed * speedFactor).toFixed(1)}x`,
+              x: CANVAS_W / 2,
+              y: 55,
+              vy: -1.2,
+              color: '#FBBF24',
+              opacity: 1.3
+            })
+          }
         }
+
+        // ── OVERDRIVE / HIPER-FRENESÍ ──────────────────────────────────
+        if (state.overdriveTime > 0) {
+          state.overdriveTime--
+          state.screenShake = Math.max(state.screenShake, 1.8)
+
+          // Efecto Imán gravitacional: atraer monedas y coleccionables hacia Yoshi
+          state.collectibles.forEach(item => {
+            if (item.recogido) return
+            const dx = (yoshi.x + yoshi.w / 2) - item.x
+            const dy = (yoshi.y + yoshi.h / 2) - item.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < 280) {
+              item.x += (dx / dist) * 9.5
+              item.y += (dy / dist) * 9.5
+            }
+          })
+
+          // Partículas continuas de overdrive
+          if (state.frameCount % 2 === 0) {
+            state.particles.push({
+              x: yoshi.x + Math.random() * yoshi.w,
+              y: yoshi.y + Math.random() * yoshi.h,
+              vx: -state.speed * 0.5 - Math.random() * 4,
+              vy: (Math.random() - 0.5) * 3,
+              color: Math.random() > 0.5 ? '#38BDF8' : '#FBBF24',
+              size: 4 + Math.random() * 2,
+              life: 14,
+              maxLife: 14
+            })
+          }
+
+          if (state.overdriveTime === 0) {
+            state.adrenalina = 0
+            state.floatingTexts.push({
+              text: '⚡ OVERDRIVE FINALIZADO',
+              x: yoshi.x + 20,
+              y: yoshi.y - 14,
+              vy: -1.0,
+              color: '#9CA3AF',
+              opacity: 1
+            })
+          }
+        } else {
+          // Activar Overdrive automáticamente si la adrenalina llega a 100
+          if (state.adrenalina >= 100) {
+            state.overdriveTime = 480 // 8 segundos de frenesí absoluto
+            state.screenShake = 9
+            retroAudio.playOverdrive()
+            triggerConfetti()
+            state.floatingTexts.push({
+              text: '🔥 ¡HIPER-OVERDRIVE! x3 🔥',
+              x: CANVAS_W / 2,
+              y: 70,
+              vy: -1.4,
+              color: '#38BDF8',
+              opacity: 1.5
+            })
+          }
+        }
+
+        // ── Estela fantasma de Yoshi (Ghost Trail) ────────────────────
+        if (state.speed > 8 || state.overdriveTime > 0 || state.feverTime > 0) {
+          if (state.frameCount % 3 === 0) {
+            let sprActual = sprites.yoshiRun1
+            if (yoshi.isFluttering) sprActual = sprites.yoshiFlutter || sprites.yoshiJump
+            else if (!yoshi.isGrounded) sprActual = sprites.yoshiJump || sprActual
+            else if (yoshi.isDucking) sprActual = sprites.yoshiDuck || sprActual
+            else sprActual = Math.floor(yoshi.animTick / 6) % 2 === 0 ? sprites.yoshiRun1 : sprites.yoshiRun2
+
+            state.ghostTrails.unshift({
+              x: yoshi.x,
+              y: yoshi.y,
+              w: yoshi.w,
+              h: yoshi.h,
+              spr: sprActual,
+              color: state.overdriveTime > 0 ? '#38BDF8' : state.feverTime > 0 ? '#F59E0B' : 'rgba(255,255,255,0.4)',
+              life: 12,
+              maxLife: 12
+            })
+            if (state.ghostTrails.length > 5) state.ghostTrails.pop()
+          }
+        }
+        state.ghostTrails.forEach(g => { g.life-- })
+        state.ghostTrails = state.ghostTrails.filter(g => g.life > 0)
+
+        // ── Líneas cinéticas de velocidad horizontal ──────────────────
+        if ((state.speed > 8.5 || state.overdriveTime > 0) && Math.random() < 0.35) {
+          state.kineticLines.push({
+            x: CANVAS_W + 20,
+            y: 20 + Math.random() * (GROUND_Y - 30),
+            length: 40 + Math.random() * 90,
+            speed: (state.speed * speedFactor) * (1.3 + Math.random() * 0.4),
+            color: state.overdriveTime > 0 ? 'rgba(56, 189, 248, 0.7)' : 'rgba(255, 255, 255, 0.5)'
+          })
+        }
+        state.kineticLines.forEach(k => { k.x -= k.speed })
+        state.kineticLines = state.kineticLines.filter(k => k.x + k.length > -20)
 
         // ── FIEBRE con desactivación aleatoria ──────────────────────────
         if (state.feverTime > 0) {
@@ -580,12 +755,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         yoshi.w = yoshi.isDucking ? 52 : 48
 
         // Partículas de carrera
-        if (yoshi.isGrounded && state.frameCount % 8 === 0 && state.fase === 'normal') {
+        if (yoshi.isGrounded && state.frameCount % 6 === 0 && state.fase === 'normal') {
           state.particles.push({
             x: yoshi.x + 6, y: GROUND_Y - 2,
             vx: -state.speed * 0.4 - Math.random(), vy: -Math.random() * 1.5,
-            color: state.feverTime > 0 ? '#FBBF24' : '#E5E7EB',
-            size: state.feverTime > 0 ? 4 : 2.5, life: 12, maxLife: 12
+            color: state.overdriveTime > 0 ? '#38BDF8' : state.feverTime > 0 ? '#FBBF24' : '#E5E7EB',
+            size: state.overdriveTime > 0 ? 4.5 : state.feverTime > 0 ? 4 : 2.5, life: 12, maxLife: 12
           })
         }
 
@@ -618,6 +793,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             if (m.y >= GROUND_Y - m.r && !m.exploded) {
               m.exploded = true
               retroAudio.playMeteor()
+              state.screenShake = 3
               for (let p = 0; p < 8; p++) {
                 state.particles.push({
                   x: m.x, y: GROUND_Y,
@@ -746,14 +922,43 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               // Pared baja: hay que saltar Y agacharse según altura
               const altoBajo = Math.random() > 0.5
               if (altoBajo) {
-                // Obstáculo alto → saltar
                 state.obstacles.push({ tipo: 'pipe', x: CANVAS_W, y: GROUND_Y - 72, w: 28, h: 72, sprite: 'piranhaPipe', speedMod: 1.0 })
               } else {
-                // Obstáculo bajo → agacharse
                 state.obstacles.push({ tipo: 'lowWall', x: CANVAS_W, y: GROUND_Y - 26, w: 60, h: 26, sprite: 'koopaShell', speedMod: 1.0 })
               }
             }
           }
+
+          // Detección de Roce Épico (Near Miss)
+          state.obstacles.forEach(obs => {
+            if (!obs.nearMissChecked && obs.x + obs.w < yoshi.x && obs.x + obs.w > yoshi.x - 36) {
+              obs.nearMissChecked = true
+              const distY = Math.abs((yoshi.y + yoshi.h) - obs.y)
+              if (distY < 24) {
+                retroAudio.playNearMiss()
+                state.screenShake = 4
+                state.score += 15
+                state.coins += 2
+                setMonedasPartida(state.coins)
+                state.adrenalina = Math.min(100, state.adrenalina + 25)
+                state.floatingTexts.push({
+                  text: '⚡ ¡ROCE ÉPICO! +15',
+                  x: yoshi.x + 20,
+                  y: yoshi.y - 16,
+                  vy: -1.3,
+                  color: '#FBBF24',
+                  opacity: 1
+                })
+                for (let p = 0; p < 8; p++) {
+                  state.particles.push({
+                    x: obs.x, y: obs.y,
+                    vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 4,
+                    color: '#38BDF8', size: 3.5, life: 14, maxLife: 14
+                  })
+                }
+              }
+            }
+          })
 
           // Mover obstáculos
           state.obstacles.forEach(obs => { obs.x -= state.speed * (obs.speedMod || 1) * speedFactor })
@@ -761,11 +966,14 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
           // ── COLECCIONABLES ────────────────────────────────────────────
           const lastC = state.collectibles[state.collectibles.length - 1]
-          if ((!lastC || CANVAS_W - lastC.x > 160) && Math.random() < 0.038) {
+          if ((!lastC || CANVAS_W - lastC.x > 160) && Math.random() < 0.04) {
             const r2 = Math.random()
-            if (r2 < 0.12 && state.feverTime <= 0) {
+            if (r2 < 0.08 && state.overdriveTime <= 0) {
+              // Super Batería Turbo SMR (Llena Adrenalina al 100%)
+              state.collectibles.push({ tipo: 'turboBattery', valor: 15, x: CANVAS_W, y: GROUND_Y - 72 - Math.random() * 20, w: 26, h: 26, sprite: 'superBerry', recogido: false })
+            } else if (r2 < 0.18 && state.feverTime <= 0) {
               state.collectibles.push({ tipo: 'superBerry', valor: 10, x: CANVAS_W, y: GROUND_Y - 70 - Math.random() * 25, w: 26, h: 26, sprite: 'superBerry', recogido: false })
-            } else if (r2 < 0.45) {
+            } else if (r2 < 0.5) {
               state.collectibles.push({ tipo: 'egg', valor: 5, x: CANVAS_W, y: GROUND_Y - 65 - Math.random() * 25, w: 24, h: 28, sprite: 'yoshiEgg', recogido: false })
             } else {
               state.collectibles.push({ tipo: 'coin', valor: 1, x: CANVAS_W, y: GROUND_Y - 55 - Math.random() * 30, w: 22, h: 22, sprite: 'goldCoin', recogido: false })
@@ -785,11 +993,21 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               state.comboTimer = 180
               setComboActual(state.combo)
 
-              const pts = item.valor * state.combo
+              const pts = item.valor * state.combo * (enOverdrive ? 3 : 1)
               state.coins += pts
               setMonedasPartida(state.coins)
 
-              if (item.tipo === 'superBerry') {
+              // Subir barra de adrenalina
+              state.adrenalina = Math.min(100, state.adrenalina + (item.tipo === 'superBerry' ? 35 : item.tipo === 'egg' ? 12 : 6))
+
+              if (item.tipo === 'turboBattery') {
+                state.adrenalina = 100
+                state.overdriveTime = 480
+                state.screenShake = 10
+                retroAudio.playOverdrive()
+                triggerConfetti()
+                state.floatingTexts.push({ text: '⚡ ¡BATERÍA TURBO! OVERDRIVE', x: yoshi.x + 20, y: yoshi.y - 14, vy: -1.4, color: '#38BDF8', opacity: 1.5 })
+              } else if (item.tipo === 'superBerry') {
                 state.feverTime = 360; state.feverElapsed = 0; state.feverUnstable = false
                 setFeverActivo(true)
                 retroAudio.playFever()
@@ -807,7 +1025,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 state.particles.push({
                   x: item.x + item.w / 2, y: item.y + item.h / 2,
                   vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
-                  color: item.tipo === 'superBerry' ? '#FF3B30' : '#FBBF24',
+                  color: item.tipo === 'turboBattery' ? '#38BDF8' : item.tipo === 'superBerry' ? '#FF3B30' : '#FBBF24',
                   size: 3.5, life: 14, maxLife: 14
                 })
               }
@@ -822,13 +1040,19 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             const oBox = { l: obs.x + mx, r: obs.x + obs.w - mx, t: obs.y + my, b: obs.y + obs.h }
 
             if (yBox.l < oBox.r && yBox.r > oBox.l && yBox.t < oBox.b && yBox.b > oBox.t) {
-              // Fiebre → destruye todo
-              if (state.feverTime > 0) {
+              // Fiebre o Overdrive → destruye todo con impacto masivo
+              if (state.feverTime > 0 || state.overdriveTime > 0) {
                 retroAudio.playStomp()
-                state.score += 20
-                state.floatingTexts.push({ text: '+20 ¡DESTRUIDO!', x: obs.x, y: obs.y, vy: -1.4, color: '#FF9500', opacity: 1 })
-                for (let p = 0; p < 10; p++) {
-                  state.particles.push({ x: obs.x + obs.w / 2, y: obs.y + obs.h / 2, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, color: '#FF3B30', size: 4, life: 18, maxLife: 18 })
+                state.screenShake = 6
+                state.score += 30
+                state.floatingTexts.push({ text: '+30 ¡DESTRUIDO!', x: obs.x, y: obs.y, vy: -1.5, color: '#38BDF8', opacity: 1.2 })
+                for (let p = 0; p < 12; p++) {
+                  state.particles.push({
+                    x: obs.x + obs.w / 2, y: obs.y + obs.h / 2,
+                    vx: (Math.random() - 0.5) * 7, vy: (Math.random() - 0.5) * 7,
+                    color: Math.random() > 0.5 ? '#38BDF8' : '#FF9500',
+                    size: 4, life: 18, maxLife: 18
+                  })
                 }
                 state.obstacles.splice(i, 1); continue
               }
@@ -839,6 +1063,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
               if (cayendo) {
                 retroAudio.playStomp()
+                state.screenShake = 5
+                state.adrenalina = Math.min(100, state.adrenalina + 20)
                 yoshi.vy = -11.5; yoshi.flutterFramesLeft = 26
                 const pts2 = obs.tipo === 'bomb' ? 30 * state.combo : 15 * state.combo
                 state.score += pts2
@@ -860,6 +1086,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
               // Colisión fatal
               state.isRunning = false
+              state.screenShake = 12
               retroAudio.playGameOver()
               juegoEstadoRef.current = 'muerto'
               setJuegoEstado('muerto')
@@ -907,30 +1134,63 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     if (!state) return
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
+    // Screen Shake dinámico
+    let shakeX = 0, shakeY = 0
+    if (state.screenShake > 0) {
+      shakeX = (Math.random() - 0.5) * state.screenShake * 1.6
+      shakeY = (Math.random() - 0.5) * state.screenShake * 1.6
+      state.screenShake = Math.max(0, state.screenShake - 0.35)
+    }
+
+    ctx.save()
+    ctx.translate(shakeX, shakeY)
+
     const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
     const enFiebre = state.feverTime > 0
+    const enOverdrive = state.overdriveTime > 0
     const enFinal = state.fase === 'meteoros' || state.fase === 'victoria'
 
-    // Fondo
+    // Fondo dinámico degradado arcade
     const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H)
     if (enFinal) {
-      grad.addColorStop(0, 'rgba(15, 0, 30, 0.9)')
-      grad.addColorStop(1, 'rgba(40, 0, 60, 0.4)')
+      grad.addColorStop(0, 'rgba(15, 0, 30, 0.95)')
+      grad.addColorStop(1, 'rgba(40, 0, 60, 0.5)')
+    } else if (enOverdrive) {
+      grad.addColorStop(0, 'rgba(14, 165, 233, 0.35)')
+      grad.addColorStop(1, 'rgba(3, 105, 161, 0.12)')
     } else if (enFiebre) {
-      grad.addColorStop(0, 'rgba(255, 149, 0, 0.25)')
-      grad.addColorStop(1, 'rgba(255, 59, 48, 0.06)')
+      grad.addColorStop(0, 'rgba(255, 149, 0, 0.3)')
+      grad.addColorStop(1, 'rgba(255, 59, 48, 0.08)')
     } else if (dark) {
-      grad.addColorStop(0, 'rgba(10, 132, 255, 0.16)')
-      grad.addColorStop(1, 'rgba(28, 28, 30, 0.02)')
+      grad.addColorStop(0, 'rgba(15, 23, 42, 0.9)')
+      grad.addColorStop(1, 'rgba(30, 41, 59, 0.4)')
     } else {
-      grad.addColorStop(0, 'rgba(10, 132, 255, 0.08)')
+      grad.addColorStop(0, 'rgba(10, 132, 255, 0.12)')
       grad.addColorStop(1, 'rgba(255, 255, 255, 0)')
     }
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
+    // Estrellas parpadeantes lejanas
+    state.stars?.forEach(star => {
+      const alpha = 0.25 + 0.55 * Math.sin(state.frameCount * star.twinkleSpeed + star.phase)
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+      ctx.fillRect(star.x, star.y, star.size, star.size)
+    })
+
+    // Racks de servidores SMR en silueta con leds
+    state.serverRacks?.forEach(rack => {
+      ctx.fillStyle = dark ? 'rgba(30, 41, 59, 0.35)' : 'rgba(148, 163, 184, 0.25)'
+      ctx.fillRect(rack.x, GROUND_Y - rack.h, rack.w, rack.h)
+      rack.leds.forEach((on, idx) => {
+        const blink = Math.floor(state.frameCount / 18 + idx) % 2 === 0
+        ctx.fillStyle = (on && blink) ? '#34C759' : '#0A84FF'
+        ctx.fillRect(rack.x + 4 + idx * 7, GROUND_Y - rack.h + 6, 3, 3)
+      })
+    })
+
     // Colinas
-    ctx.fillStyle = enFinal ? 'rgba(80,0,120,0.3)' : (enFiebre ? 'rgba(251,191,36,0.16)' : (dark ? 'rgba(48,209,88,0.08)' : 'rgba(52,199,89,0.12)'))
+    ctx.fillStyle = enFinal ? 'rgba(80,0,120,0.3)' : enOverdrive ? 'rgba(56,189,248,0.18)' : enFiebre ? 'rgba(251,191,36,0.16)' : (dark ? 'rgba(48,209,88,0.08)' : 'rgba(52,199,89,0.12)')
     state.hills.forEach(h => {
       ctx.beginPath()
       ctx.ellipse(h.x, GROUND_Y, h.w / 2, h.h, 0, Math.PI, 0)
@@ -941,19 +1201,28 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     const cloudImg = sprites.cloud
     if (cloudImg) state.clouds.forEach(c => ctx.drawImage(cloudImg, c.x, c.y, 48, 22))
 
-    // Suelo
-    ctx.strokeStyle = enFiebre ? '#F59E0B' : (dark ? 'rgba(255,255,255,0.18)' : '#D1D5DB')
+    // Líneas cinéticas de velocidad horizontal
+    state.kineticLines?.forEach(k => {
+      ctx.strokeStyle = k.color
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(k.x, k.y)
+      ctx.lineTo(k.x + k.length, k.y)
+      ctx.stroke()
+    })
+
+    // Suelo con cuadrícula animada de alta velocidad
+    ctx.strokeStyle = enOverdrive ? '#38BDF8' : enFiebre ? '#F59E0B' : (dark ? 'rgba(255,255,255,0.22)' : '#CBD5E1')
     ctx.lineWidth = 2
     ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(CANVAS_W, GROUND_Y); ctx.stroke()
-    ctx.fillStyle = enFiebre ? '#D97706' : (dark ? 'rgba(255,255,255,0.12)' : '#9CA3AF')
-    for (let x = -state.groundOffset; x < CANVAS_W; x += 18) {
-      ctx.fillRect(x, GROUND_Y + 4, 8, 2)
-      ctx.fillRect(x + 7, GROUND_Y + 12, 6, 2)
+    ctx.fillStyle = enOverdrive ? 'rgba(56, 189, 248, 0.45)' : enFiebre ? '#D97706' : (dark ? 'rgba(255,255,255,0.15)' : '#94A3B8')
+    for (let x = -state.groundOffset; x < CANVAS_W; x += 16) {
+      ctx.fillRect(x, GROUND_Y + 4, 9, 2)
+      ctx.fillRect(x + 7, GROUND_Y + 12, 7, 2)
     }
 
     // ── FASE METEOROS ─────────────────────────────────────────────────
     if (state.fase === 'meteoros' || state.fase === 'victoria') {
-      // Meteoros
       state.meteoros.forEach(m => {
         if (m.exploded && m.y >= GROUND_Y - m.r) return
         ctx.save()
@@ -963,7 +1232,6 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.beginPath()
         ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2)
         ctx.fill()
-        // Cola de meteoro
         ctx.strokeStyle = m.color
         ctx.lineWidth = m.r * 0.6
         ctx.globalAlpha = 0.4
@@ -975,12 +1243,10 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.restore()
       })
 
-      // Patata salvadora
       if (state.patataSalvadora) {
         const pat = state.patataSalvadora
         const bob = Math.sin(state.frameCount * 0.15) * 5
 
-        // Halo heroico
         ctx.save()
         ctx.shadowColor = '#FFD700'
         ctx.shadowBlur = 30 + Math.sin(state.frameCount * 0.1) * 10
@@ -990,11 +1256,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.fill()
         ctx.restore()
 
-        // Cuerpo de patata (SVG-like con canvas)
         ctx.save()
         ctx.translate(pat.x, pat.y + bob)
-
-        // Cuerpo marrón redondeado
         ctx.fillStyle = '#C8762A'
         ctx.shadowColor = '#FFD700'
         ctx.shadowBlur = 20
@@ -1002,23 +1265,19 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.ellipse(30, 35, 28, 22, 0, 0, Math.PI * 2)
         ctx.fill()
 
-        // Detalle piel
         ctx.fillStyle = '#E8943A'
         ctx.beginPath()
         ctx.ellipse(28, 32, 20, 14, -0.2, 0, Math.PI * 2)
         ctx.fill()
 
-        // Ojos
         ctx.fillStyle = '#1C1C1E'
         ctx.beginPath(); ctx.arc(20, 28, 4, 0, Math.PI * 2); ctx.fill()
         ctx.beginPath(); ctx.arc(36, 26, 4, 0, Math.PI * 2); ctx.fill()
 
-        // Brillo en ojos
         ctx.fillStyle = '#FFF'
         ctx.beginPath(); ctx.arc(21.5, 26.5, 1.5, 0, Math.PI * 2); ctx.fill()
         ctx.beginPath(); ctx.arc(37.5, 24.5, 1.5, 0, Math.PI * 2); ctx.fill()
 
-        // Capa de héroe
         ctx.fillStyle = '#DC2626'
         ctx.beginPath()
         ctx.moveTo(8, 30)
@@ -1027,14 +1286,11 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.lineTo(8, 52)
         ctx.closePath(); ctx.fill()
 
-        // Estrella en la capa
         ctx.fillStyle = '#FFD700'
         ctx.font = '12px sans-serif'
         ctx.fillText('★', -10, 42)
-
         ctx.restore()
 
-        // Mensaje de la patata
         if (state.patataMensaje) {
           ctx.save()
           ctx.fillStyle = '#FFD700'
@@ -1047,7 +1303,6 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         }
       }
 
-      // Texto de lluvia de meteoros
       if (!state.patataSalvadora) {
         const parpadeo = Math.floor(state.frameCount / 20) % 2 === 0
         if (parpadeo) {
@@ -1069,8 +1324,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       if (spr) {
         const bob = Math.sin(state.frameCount * 0.12) * 3
         ctx.save()
-        ctx.shadowColor = item.tipo === 'superBerry' ? '#FF3B30' : item.tipo === 'egg' ? '#30D158' : '#F59E0B'
-        ctx.shadowBlur = item.tipo === 'superBerry' ? 12 : 8
+        ctx.shadowColor = item.tipo === 'turboBattery' ? '#38BDF8' : item.tipo === 'superBerry' ? '#FF3B30' : item.tipo === 'egg' ? '#30D158' : '#F59E0B'
+        ctx.shadowBlur = item.tipo === 'turboBattery' ? 16 : item.tipo === 'superBerry' ? 12 : 8
         ctx.drawImage(spr, item.x, item.y + bob, item.w, item.h)
         ctx.restore()
       }
@@ -1109,12 +1364,10 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       const spr = sprites[obs.sprite]
       if (!spr) return
       ctx.save()
-      // Color del glow diferenciado por tipo
       const glowMap = { bomb: '#FF3B30', bulletBill: '#000', lowBill: '#8B5CF6', paratroopa: '#EF4444', lowWall: '#F59E0B', pipe: '#10B981', shell: '#60A5FA' }
       ctx.shadowColor = glowMap[obs.tipo] || '#888'
       ctx.shadowBlur = obs.tipo === 'lowBill' || obs.tipo === 'lowWall' ? 14 : 8
 
-      // Marca visual especial para obstáculos bajos (hay que agacharse)
       if (obs.tipo === 'lowBill' || obs.tipo === 'lowWall') {
         ctx.fillStyle = 'rgba(139,92,246,0.25)'
         ctx.fillRect(obs.x - 2, obs.y - 4, obs.w + 4, obs.h + 6)
@@ -1123,7 +1376,6 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         ctx.setLineDash([4, 3])
         ctx.strokeRect(obs.x - 2, obs.y - 4, obs.w + 4, obs.h + 6)
         ctx.setLineDash([])
-        // Flecha de agacharse
         ctx.fillStyle = '#8B5CF6'
         ctx.font = '700 12px sans-serif'
         ctx.textAlign = 'center'
@@ -1132,6 +1384,18 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
       ctx.drawImage(spr, obs.x, obs.y, obs.w, obs.h)
       ctx.restore()
+    })
+
+    // ── Estelas fantasmas de Yoshi ──────────────────────────────────
+    state.ghostTrails?.forEach(g => {
+      if (g.spr) {
+        ctx.save()
+        ctx.globalAlpha = (g.life / g.maxLife) * 0.42
+        ctx.shadowColor = g.color
+        ctx.shadowBlur = 14
+        ctx.drawImage(g.spr, g.x, g.y, g.w, g.h)
+        ctx.restore()
+      }
     })
 
     // ── Yoshi ─────────────────────────────────────────────────────────
@@ -1147,7 +1411,13 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       spr = Math.floor(yoshi.animTick / 6) % 2 === 0 ? sprites.yoshiRun1 : sprites.yoshiRun2
     }
 
-    if (enFiebre && spr) {
+    if (enOverdrive && spr) {
+      ctx.save()
+      ctx.shadowColor = '#38BDF8'
+      ctx.shadowBlur = 24
+      ctx.drawImage(spr, yoshi.x, yoshi.y, yoshi.w, yoshi.h)
+      ctx.restore()
+    } else if (enFiebre && spr) {
       ctx.save()
       const parpadeo = state.feverUnstable && Math.floor(state.frameCount / 3) % 2 === 0
       ctx.shadowColor = parpadeo ? '#FF3B30' : '#FBBF24'
@@ -1176,7 +1446,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     })
     ctx.globalAlpha = 1
 
-    // ── HUD ───────────────────────────────────────────────────────────
+    // ── HUD Arcade ───────────────────────────────────────────────────
     ctx.fillStyle = dark ? '#FFF' : '#1C1C1E'
     ctx.font = '800 14px -apple-system, sans-serif'
     ctx.textAlign = 'right'
@@ -1188,6 +1458,33 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       ctx.font = '900 13px -apple-system, sans-serif'
       ctx.fillText(`x${state.combo} COMBO 🔥`, CANVAS_W - 16, 66)
     }
+
+    // Medidor de Adrenalina Overdrive
+    const adrW = 96, adrH = 9
+    const adrX = 16, adrY = 16
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'
+    ctx.beginPath()
+    ctx.roundRect ? ctx.roundRect(adrX, adrY, adrW, adrH, 4) : ctx.rect(adrX, adrY, adrW, adrH)
+    ctx.fill()
+    ctx.strokeStyle = enOverdrive ? '#38BDF8' : '#FBBF24'
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    const fillW = Math.max(0, Math.min(adrW - 2, (state.adrenalina / 100) * (adrW - 2)))
+    if (fillW > 0) {
+      ctx.fillStyle = enOverdrive ? '#38BDF8' : '#F59E0B'
+      ctx.shadowColor = enOverdrive ? '#38BDF8' : '#F59E0B'
+      ctx.shadowBlur = 8
+      ctx.beginPath()
+      ctx.roundRect ? ctx.roundRect(adrX + 1, adrY + 1, fillW, adrH - 2, 3) : ctx.rect(adrX + 1, adrY + 1, fillW, adrH - 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+    }
+
+    ctx.fillStyle = enOverdrive ? '#38BDF8' : dark ? '#FFF' : '#1C1C1E'
+    ctx.font = '800 10px -apple-system, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText(enOverdrive ? '⚡ OVERDRIVE x3' : `⚡ ADRENALINA ${Math.round(state.adrenalina)}%`, adrX, adrY + 22)
 
     // Timer visual
     if (state.fase === 'normal' && state.timerFrames < state.duracionFrames - 1200) {
@@ -1204,8 +1501,11 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       ctx.fillStyle = parpadeo ? '#FF3B30' : '#34C759'
       ctx.font = '900 13px -apple-system, sans-serif'
       ctx.textAlign = 'left'
-      ctx.fillText(state.feverUnstable ? '⚡ ¡INESTABLE!' : '★ ¡FIEBRE!', 18, 26)
+      ctx.fillText(state.feverUnstable ? '⚡ ¡INESTABLE!' : '★ ¡FIEBRE!', 18, 50)
     }
+
+    // Restaurar transformación de screen shake
+    ctx.restore()
   }
 
   const toggleSonido = () => {
