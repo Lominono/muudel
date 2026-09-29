@@ -11,7 +11,11 @@ import {
   Calendar,
   Clock,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Search,
+  UserCheck,
+  Users,
+  Sparkles
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 import { sound } from '../utils/haptics'
@@ -28,6 +32,10 @@ export function PantallaInicio() {
     loginError,
     loginNotice,
     limpiarErrores,
+    obtenerCuentasGuardadas,
+    eliminarCuentaGuardada,
+    seleccionarCuentaGuardada,
+    buscarCuentasClase,
   } = useAuth()
 
   const [modo, setModo] = useState('login') // 'login' | 'registro'
@@ -37,6 +45,22 @@ export function PantallaInicio() {
   const [enviando, setEnviando] = useState(false)
   const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
 
+  // Cuentas guardadas en este dispositivo para acceso rápido con 1 toque
+  const [cuentasGuardadas, setCuentasGuardadas] = useState(() => {
+    try {
+      return obtenerCuentasGuardadas ? obtenerCuentasGuardadas() : []
+    } catch (e) {
+      return []
+    }
+  })
+  const [mostrarFormularioManual, setMostrarFormularioManual] = useState(false)
+
+  // Buscador de perfiles de clase si el alumno olvidó sus credenciales
+  const [mostrarBuscadorClase, setMostrarBuscadorClase] = useState(false)
+  const [queryBusqueda, setQueryBusqueda] = useState('')
+  const [resultadosBusqueda, setResultadosBusqueda] = useState([])
+  const [buscando, setBuscando] = useState(false)
+
   // Acceso secreto para lominoño mediante triple toque en el logo
   const [toquesLogo, setToquesLogo] = useState(0)
   const [ultimoToqueTiempo, setUltimoToqueTiempo] = useState(0)
@@ -45,6 +69,14 @@ export function PantallaInicio() {
   const [errorPinSecreto, setErrorPinSecreto] = useState('')
 
   const cardRef = useRef(null)
+
+  useEffect(() => {
+    const handleActualizacion = (e) => {
+      setCuentasGuardadas(e.detail || (obtenerCuentasGuardadas ? obtenerCuentasGuardadas() : []))
+    }
+    window.addEventListener('muudel-cuentas-actualizadas', handleActualizacion)
+    return () => window.removeEventListener('muudel-cuentas-actualizadas', handleActualizacion)
+  }, [obtenerCuentasGuardadas])
 
   const fechaHoy = new Date()
   const diaSemana = fechaHoy.getDay() // 1: Lun, ... 5: Vie
@@ -92,6 +124,45 @@ export function PantallaInicio() {
       sound.playPop()
       setErrorPinSecreto('PIN incorrecto')
     }
+  }
+
+  const handleSeleccionarCuenta = async (cuenta) => {
+    sound.playPop()
+    setEnviando(true)
+    const ok = await seleccionarCuentaGuardada(cuenta)
+    if (!ok) {
+      setEmail(cuenta.username ? `@${cuenta.username}` : (cuenta.email || ''))
+      setMostrarFormularioManual(true)
+    }
+    setEnviando(false)
+  }
+
+  const handleEliminarCuenta = (id) => {
+    sound.playPop()
+    const rest = eliminarCuentaGuardada(id)
+    setCuentasGuardadas(rest)
+  }
+
+  const handleBuscarPerfiles = async (texto) => {
+    setQueryBusqueda(texto)
+    if (!texto || texto.trim().length < 2) {
+      setResultadosBusqueda([])
+      return
+    }
+    setBuscando(true)
+    try {
+      const res = await buscarCuentasClase(texto)
+      setResultadosBusqueda(res || [])
+    } finally {
+      setBuscando(false)
+    }
+  }
+
+  const handleElegirPerfilDeBusqueda = (p) => {
+    sound.playStamp()
+    setEmail(p.username ? `@${p.username}` : (p.email || p.nombre))
+    setMostrarBuscadorClase(false)
+    setMostrarFormularioManual(true)
   }
 
   const handleSubmit = async (e) => {
@@ -236,127 +307,444 @@ export function PantallaInicio() {
             </button>
           </div>
 
-          {/* Botón Oficial de Google */}
-          <button
-            type="button"
-            onClick={inicioSesion}
-            className="apple-google-btn"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
-              <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-              <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-            </svg>
-            <span>{modo === 'login' ? 'Continuar con Google' : 'Registrarse con Google'}</span>
-          </button>
-
-          {/* Separador sutil */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            margin: '20px 0 16px'
-          }}>
-            <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
-            <span style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
-              {modo === 'login' ? 'o con tus credenciales' : 'o con tu correo de clase'}
-            </span>
-            <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
-          </div>
-
-          {/* Formulario */}
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {modo === 'registro' && (
-              <div style={{ position: 'relative', textAlign: 'left' }}>
-                <input
-                  type="text"
-                  autoComplete="name"
-                  className="apple-input"
-                  placeholder="Nombre y Apellido (ej: Mateo García)"
-                  value={nombreRegistro}
-                  onChange={(e) => setNombreRegistro(e.target.value)}
-                  style={{ minHeight: 44, fontSize: 14 }}
-                  required
-                />
-              </div>
-            )}
-
-            {/* Correo */}
-            <div style={{ position: 'relative', textAlign: 'left' }}>
-              <Mail size={16} style={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--color-secondary-ink)',
-              }} />
-              <input
-                type="text"
-                autoComplete="email"
-                className="apple-input"
-                placeholder={modo === 'login' ? 'Correo o usuario' : 'Correo electrónico'}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ paddingLeft: 36, minHeight: 44, fontSize: 14 }}
-                required
-              />
-            </div>
-
-            {/* Contraseña */}
-            <div style={{ position: 'relative', textAlign: 'left' }}>
-              <Lock size={16} style={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--color-secondary-ink)',
-              }} />
-              <input
-                type="password"
-                autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
-                className="apple-input"
-                placeholder="Contraseña (mínimo 6 caracteres)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: 36, minHeight: 44, fontSize: 14 }}
-                minLength={6}
-                required
-              />
-            </div>
-
-            {/* Botón principal */}
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={enviando}
-              style={{
-                width: '100%',
-                minHeight: 44,
-                fontSize: 14,
-                fontWeight: 700,
-                marginTop: 4,
+          {/* SECCIÓN DE CUENTAS GUARDADAS EN ESTE DISPOSITIVO */}
+          {modo === 'login' && cuentasGuardadas.length > 0 && !mostrarFormularioManual ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6
-              }}
-            >
-              {enviando ? (
-                <span>Un momento...</span>
-              ) : modo === 'login' ? (
-                <>
-                  <span>Entrar</span>
-                  <ArrowRight size={15} />
-                </>
-              ) : (
-                <>
-                  <span>Crear mi cuenta</span>
-                  <ArrowRight size={15} />
-                </>
+                justifyContent: 'space-between',
+                padding: '0 2px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <UserCheck size={14} color="var(--color-accent)" />
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                    color: 'var(--color-secondary-ink)'
+                  }}>
+                    Cuentas en este equipo
+                  </span>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
+                  Acceso con 1 toque
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {cuentasGuardadas.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => handleSeleccionarCuenta(c)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      borderRadius: 14,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: 'var(--color-cell-bg)',
+                      cursor: 'pointer',
+                      transition: 'transform 0.1s ease, border-color 0.15s ease',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-separator)')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 12,
+                          backgroundColor: `${c.color_acento || '#0A84FF'}22`,
+                          color: c.color_acento || '#0A84FF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 18,
+                          fontWeight: 700,
+                          border: `1.5px solid ${c.color_acento || '#0A84FF'}44`
+                        }}
+                      >
+                        {c.avatar_emoji || '🧑‍🎓'}
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)' }}>
+                            {c.nombre}
+                          </span>
+                          {c.rol === 'moderador' && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: 6,
+                              backgroundColor: 'rgba(0,122,255,0.12)',
+                              color: 'var(--color-accent)'
+                            }}>
+                              Profe
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                          {c.username ? `@${c.username}` : (c.email || 'Alumno SMR2')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={enviando}
+                        style={{
+                          fontSize: 12,
+                          padding: '6px 14px',
+                          borderRadius: 9999,
+                          fontWeight: 700
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSeleccionarCuenta(c)
+                        }}
+                      >
+                        Entrar
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Eliminar de este equipo"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEliminarCuenta(c.id)
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--color-tertiary-ink)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Botón para usar otra cuenta */}
+              <button
+                type="button"
+                onClick={() => setMostrarFormularioManual(true)}
+                style={{
+                  background: 'none',
+                  border: '1px dashed var(--color-separator)',
+                  padding: '10px',
+                  borderRadius: 12,
+                  color: 'var(--color-accent)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  marginTop: 2
+                }}
+              >
+                <Users size={15} />
+                <span>Usar otra cuenta o contraseña</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={inicioSesion}
+                className="apple-google-btn"
+                style={{ marginTop: 2 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+                <span>Continuar con Google</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              {modo === 'login' && cuentasGuardadas.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarFormularioManual(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--color-accent)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <span>← Volver a cuentas guardadas</span>
+                  </button>
+                </div>
               )}
-            </button>
-          </form>
+
+              {/* Botón Oficial de Google */}
+              <button
+                type="button"
+                onClick={inicioSesion}
+                className="apple-google-btn"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+                <span>{modo === 'login' ? 'Continuar con Google' : 'Registrarse con Google'}</span>
+              </button>
+
+              {/* Separador sutil */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                margin: '18px 0 14px'
+              }}>
+                <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
+                <span style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
+                  {modo === 'login' ? 'o con usuario o correo' : 'o con tu correo de clase'}
+                </span>
+                <div style={{ flex: 1, height: '0.5px', backgroundColor: 'var(--color-separator)' }} />
+              </div>
+
+              {/* Formulario */}
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {modo === 'registro' && (
+                  <div style={{ position: 'relative', textAlign: 'left' }}>
+                    <input
+                      type="text"
+                      autoComplete="name"
+                      className="apple-input"
+                      placeholder="Nombre y Apellido (ej: Mateo García)"
+                      value={nombreRegistro}
+                      onChange={(e) => setNombreRegistro(e.target.value)}
+                      style={{ minHeight: 44, fontSize: 14 }}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Correo o Usuario */}
+                <div style={{ position: 'relative', textAlign: 'left' }}>
+                  <Mail size={16} style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--color-secondary-ink)',
+                  }} />
+                  <input
+                    type="text"
+                    autoComplete={modo === 'login' ? 'username' : 'email'}
+                    className="apple-input"
+                    placeholder={modo === 'login' ? 'Correo, @usuario o tu nombre' : 'Correo electrónico'}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    style={{ paddingLeft: 36, minHeight: 44, fontSize: 14 }}
+                    required
+                  />
+                </div>
+
+                {/* Contraseña */}
+                <div style={{ position: 'relative', textAlign: 'left' }}>
+                  <Lock size={16} style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--color-secondary-ink)',
+                  }} />
+                  <input
+                    type="password"
+                    autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
+                    className="apple-input"
+                    placeholder="Contraseña (mínimo 6 caracteres)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={{ paddingLeft: 36, minHeight: 44, fontSize: 14 }}
+                    minLength={6}
+                    required
+                  />
+                </div>
+
+                {/* Botón principal */}
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={enviando}
+                  style={{
+                    width: '100%',
+                    minHeight: 44,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    marginTop: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                >
+                  {enviando ? (
+                    <span>Un momento...</span>
+                  ) : modo === 'login' ? (
+                    <>
+                      <span>Entrar a mi cuenta</span>
+                      <ArrowRight size={15} />
+                    </>
+                  ) : (
+                    <>
+                      <span>Crear mi cuenta</span>
+                      <ArrowRight size={15} />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Buscador asistido de cuentas existentes de clase */}
+              {modo === 'login' && (
+                <div style={{ marginTop: 12 }}>
+                  {!mostrarBuscadorClase ? (
+                    <button
+                      type="button"
+                      onClick={() => setMostrarBuscadorClase(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '4px 8px',
+                        color: 'var(--color-accent)',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5
+                      }}
+                    >
+                      <Search size={13} />
+                      <span>¿Olvidaste tu correo? Busca tu cuenta de clase</span>
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '12px',
+                        borderRadius: 14,
+                        border: '1px solid var(--color-separator)',
+                        backgroundColor: 'var(--color-cell-bg)',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-ink)' }}>
+                          Buscar mi cuenta en la clase:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMostrarBuscadorClase(false)
+                            setResultadosBusqueda([])
+                            setQueryBusqueda('')
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-tertiary-ink)', cursor: 'pointer', padding: 2 }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      <div style={{ position: 'relative', marginBottom: 8 }}>
+                        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-tertiary-ink)' }} />
+                        <input
+                          type="text"
+                          className="apple-input"
+                          placeholder="Escribe tu nombre o @usuario..."
+                          value={queryBusqueda}
+                          onChange={(e) => handleBuscarPerfiles(e.target.value)}
+                          style={{ paddingLeft: 32, minHeight: 36, fontSize: 13 }}
+                          autoFocus
+                        />
+                      </div>
+
+                      {buscando && (
+                        <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', margin: '4px 0' }}>Buscando alumnos...</p>
+                      )}
+
+                      {resultadosBusqueda.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+                          {resultadosBusqueda.map((res) => (
+                            <div
+                              key={res.id}
+                              onClick={() => handleElegirPerfilDeBusqueda(res)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                padding: '6px 8px',
+                                borderRadius: 8,
+                                backgroundColor: 'var(--color-background)',
+                                cursor: 'pointer',
+                                border: '1px solid var(--color-separator)'
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 8,
+                                  backgroundColor: `${res.color_acento || '#0A84FF'}22`,
+                                  color: res.color_acento || '#0A84FF',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 14
+                                }}
+                              >
+                                {res.avatar_emoji || '🧑‍🎓'}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <strong style={{ fontSize: 13, color: 'var(--color-ink)', display: 'block', lineHeight: 1.2 }}>
+                                  {res.nombre}
+                                </strong>
+                                <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+                                  {res.username ? `@${res.username}` : res.email}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--color-accent)', fontWeight: 600 }}>
+                                Seleccionar
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
           {/* Alternar modo Login / Registro */}
           <div style={{ marginTop: 18, fontSize: 13, color: 'var(--color-secondary-ink)' }}>

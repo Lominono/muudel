@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
 import { YoshiRunnerGame } from '../games/yoshiRunner/YoshiRunnerGame'
+import { RuletaCasinoGame } from '../games/ruleta/RuletaCasinoGame'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
@@ -13,12 +14,14 @@ import {
   Flame,
   Target,
   CheckCircle2,
-  Clock
+  Clock,
+  Sparkles
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
 export function PantallaJuegos() {
   const { perfil, setPerfil } = useAuth()
+  const [juegoSeleccionado, setJuegoSeleccionado] = useState('ruleta') // 'ruleta' | 'yoshi'
   const [rankingArcade, setRankingArcade] = useState([])
   const [cargandoRanking, setCargandoRanking] = useState(false)
   const [monedasHoy, setMonedasHoy] = useState(() => {
@@ -221,140 +224,160 @@ export function PantallaJuegos() {
             </div>
             <div>
               <h1 className="apple-large-title" style={{ fontSize: 'clamp(22px, 4vw, 28px)', margin: 0 }}>
-                Recreo Arcade
+                Recreo y Juegos SMR2
               </h1>
               <p className="apple-subheadline" style={{ fontSize: 13, margin: '2px 0 0' }}>
-                Pausa activa de clase SMR2 y bolsa de puntos diarios.
+                Ruleta europea de apuestas de clase y pausa activa arcade.
               </p>
             </div>
           </div>
 
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 12px',
-              borderRadius: 9999,
-              backgroundColor: 'rgba(0, 122, 255, 0.1)',
-              color: 'var(--color-accent)',
-              fontSize: 12,
-              fontWeight: 600
-            }}
-          >
-            🦖 Yoshi Runner SMR2
-          </span>
+          {/* Selector de Juego estilo Apple Segmented Control */}
+          <div className="segmented-control" style={{ maxWidth: 360 }}>
+            <button
+              type="button"
+              className={`segmented-control-item ${juegoSeleccionado === 'ruleta' ? 'active' : ''}`}
+              onClick={() => {
+                sound.playPop()
+                setJuegoSeleccionado('ruleta')
+              }}
+            >
+              🎰 Ruleta SMR2
+            </button>
+            <button
+              type="button"
+              className={`segmented-control-item ${juegoSeleccionado === 'yoshi' ? 'active' : ''}`}
+              onClick={() => {
+                sound.playPop()
+                setJuegoSeleccionado('yoshi')
+              }}
+            >
+              🦖 Yoshi Runner
+            </button>
+          </div>
         </div>
       </header>
 
       <div ref={pageRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* RETO DEL DÍA INTEGRADO */}
-        <section
-          className="card"
-          style={{
-            padding: '16px',
-            backgroundColor: retoArcadeCompletado ? 'rgba(52, 199, 89, 0.08)' : 'rgba(0, 122, 255, 0.06)',
-            border: retoArcadeCompletado ? '1px solid rgba(52, 199, 89, 0.25)' : '1px solid rgba(0, 122, 255, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 12
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div
+        {/* VISTA 1: RULETA DE APUESTAS CASINO */}
+        {juegoSeleccionado === 'ruleta' && (
+          <section>
+            <RuletaCasinoGame perfil={perfil} setPerfil={setPerfil} />
+          </section>
+        )}
+
+        {/* VISTA 2: YOSHI RUNNER CON RETO INTEGRADO */}
+        {juegoSeleccionado === 'yoshi' && (
+          <>
+            {/* RETO DEL DÍA INTEGRADO */}
+            <section
+              className="card"
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: 12,
-                backgroundColor: retoArcadeCompletado ? 'rgba(52, 199, 89, 0.18)' : 'rgba(0, 122, 255, 0.15)',
-                color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)',
+                padding: '16px',
+                backgroundColor: retoArcadeCompletado ? 'rgba(52, 199, 89, 0.08)' : 'rgba(0, 122, 255, 0.06)',
+                border: retoArcadeCompletado ? '1px solid rgba(52, 199, 89, 0.25)' : '1px solid rgba(0, 122, 255, 0.2)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12
               }}
             >
-              {retoArcadeCompletado ? <CheckCircle2 size={24} /> : <Target size={24} />}
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
                   style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                    color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)'
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    backgroundColor: retoArcadeCompletado ? 'rgba(52, 199, 89, 0.18)' : 'rgba(0, 122, 255, 0.15)',
+                    color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
                   }}
                 >
-                  {retoArcadeCompletado ? '¡Reto Completado!' : 'Reto Arcade de Hoy'}
-                </span>
-                <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
-                  +{RECOMPENSA_RETO} pts
-                </span>
+                  {retoArcadeCompletado ? <CheckCircle2 size={24} /> : <Target size={24} />}
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.5,
+                        color: retoArcadeCompletado ? 'var(--color-positive)' : 'var(--color-accent)'
+                      }}
+                    >
+                      {retoArcadeCompletado ? '¡Reto Completado!' : 'Reto Arcade de Hoy'}
+                    </span>
+                    <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
+                      +{RECOMPENSA_RETO} pts
+                    </span>
+                  </div>
+                  <h3 className="apple-headline" style={{ fontSize: 16, marginTop: 2 }}>
+                    Desafío Yoshi: Alcanza {OBJETIVO_RETO}m en Yoshi Runner
+                  </h3>
+                  <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
+                    {retoArcadeCompletado
+                      ? 'Reto superado. Puntos acreditados a tu cuenta.'
+                      : 'Llega a 100m en tu partida para completarlo automáticamente.'}
+                  </p>
+                </div>
               </div>
-              <h3 className="apple-headline" style={{ fontSize: 16, marginTop: 2 }}>
-                Desafío Yoshi: Alcanza {OBJETIVO_RETO}m en Yoshi Runner
-              </h3>
-              <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
-                {retoArcadeCompletado
-                  ? 'Reto superado. Puntos acreditados a tu cuenta.'
-                  : 'Llega a 100m en tu partida para completarlo automáticamente.'}
-              </p>
-            </div>
-          </div>
 
-          <div>
-            {retoArcadeCompletado ? (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 14px',
-                  borderRadius: 9999,
-                  backgroundColor: 'rgba(52, 199, 89, 0.15)',
-                  color: 'var(--color-positive)',
-                  fontWeight: 700,
-                  fontSize: 13
-                }}
-              >
-                <CheckCircle2 size={16} />
-                <span>Superado</span>
-              </span>
-            ) : (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 14px',
-                  borderRadius: 9999,
-                  backgroundColor: 'rgba(0, 122, 255, 0.12)',
-                  color: 'var(--color-accent)',
-                  fontWeight: 700,
-                  fontSize: 13
-                }}
-              >
-                <Flame size={15} />
-                <span>En progreso</span>
-              </span>
-            )}
-          </div>
-        </section>
+              <div>
+                {retoArcadeCompletado ? (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 14px',
+                      borderRadius: 9999,
+                      backgroundColor: 'rgba(52, 199, 89, 0.15)',
+                      color: 'var(--color-positive)',
+                      fontWeight: 700,
+                      fontSize: 13
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Superado</span>
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 14px',
+                      borderRadius: 9999,
+                      backgroundColor: 'rgba(0, 122, 255, 0.12)',
+                      color: 'var(--color-accent)',
+                      fontWeight: 700,
+                      fontSize: 13
+                    }}
+                  >
+                    <Flame size={15} />
+                    <span>En progreso</span>
+                  </span>
+                )}
+              </div>
+            </section>
 
-        {/* JUEGO ARCADE YOSHI RUNNER */}
-        <section>
-          <YoshiRunnerGame
-            perfil={perfil}
-            onMonedasGanadas={handleMonedasGanadas}
-            onRetoCompletado={handleRetoSuperado}
-            retoActivo={{ objetivo_puntuacion: OBJETIVO_RETO }}
-          />
-        </section>
+            {/* JUEGO ARCADE YOSHI RUNNER */}
+            <section>
+              <YoshiRunnerGame
+                perfil={perfil}
+                onMonedasGanadas={handleMonedasGanadas}
+                onRetoCompletado={handleRetoSuperado}
+                retoActivo={{ objetivo_puntuacion: OBJETIVO_RETO }}
+              />
+            </section>
+          </>
+        )}
 
         {/* PANEL INFERIOR: ESTADÍSTICAS Y RÉCORDS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>

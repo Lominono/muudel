@@ -82,6 +82,76 @@ class SoundEngine {
       osc.stop(this.ctx.currentTime + 0.1)
     } catch (e) {}
   }
+
+  // Clic suave y mecánico de aguja o casilla de ruleta
+  playRouletteClick() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(520, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(160, this.ctx.currentTime + 0.03)
+
+      gain.gain.setValueAtTime(0.09, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.03)
+
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.03)
+    } catch (e) {}
+  }
+
+  // Sonido de colocar ficha de casino en el tapete
+  playChipSound() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(750, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(350, this.ctx.currentTime + 0.045)
+
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.045)
+
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.045)
+    } catch (e) {}
+  }
+
+  // Fanfarria armónica al ganar en la ruleta o récord
+  playWinFanfare() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const now = this.ctx.currentTime
+      const notes = [523.25, 659.25, 783.99, 1046.50]
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator()
+        const gain = this.ctx.createGain()
+        osc.type = 'triangle'
+        osc.frequency.setValueAtTime(freq, now + idx * 0.07)
+        gain.gain.setValueAtTime(0.14, now + idx * 0.07)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.28)
+        osc.connect(gain)
+        gain.connect(this.ctx.destination)
+        osc.start(now + idx * 0.07)
+        osc.stop(now + idx * 0.07 + 0.28)
+      })
+    } catch (e) {}
+  }
 }
 
 export const sound = new SoundEngine()

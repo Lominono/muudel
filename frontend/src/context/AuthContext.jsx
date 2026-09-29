@@ -34,6 +34,52 @@ const registrarAccesoBD = async (userId, email = null, metodo = 'login') => {
   } catch (e) {}
 }
 
+export const guardarCuentaEnDispositivo = (cuenta) => {
+  if (!cuenta || !cuenta.id) return
+  try {
+    const raw = localStorage.getItem('muudel_cuentas_guardadas')
+    const lista = raw ? JSON.parse(raw) : []
+    const elemento = {
+      id: cuenta.id,
+      nombre: cuenta.nombre || 'Alumno SMR2',
+      username: cuenta.username || '',
+      email: cuenta.email || '',
+      avatar_emoji: cuenta.avatar_emoji || '🧑‍🎓',
+      color_acento: cuenta.color_acento || '#0A84FF',
+      rol: cuenta.rol || 'alumno',
+      digito_id: cuenta.digito_id || '',
+      puntos_total: cuenta.puntos_total || 0,
+      racha_actual: cuenta.racha_actual || 0,
+      ultimo_acceso: new Date().toISOString()
+    }
+    const filtradas = lista.filter(item => item.id !== cuenta.id && (!cuenta.email || item.email !== cuenta.email))
+    const nuevaLista = [elemento, ...filtradas].slice(0, 6)
+    localStorage.setItem('muudel_cuentas_guardadas', JSON.stringify(nuevaLista))
+    window.dispatchEvent(new CustomEvent('muudel-cuentas-actualizadas', { detail: nuevaLista }))
+  } catch (e) {}
+}
+
+export const obtenerCuentasGuardadas = () => {
+  try {
+    const raw = localStorage.getItem('muudel_cuentas_guardadas')
+    return raw ? JSON.parse(raw) : []
+  } catch (e) {
+    return []
+  }
+}
+
+export const eliminarCuentaGuardada = (id) => {
+  try {
+    const prev = obtenerCuentasGuardadas()
+    const filtradas = prev.filter(c => c.id !== id)
+    localStorage.setItem('muudel_cuentas_guardadas', JSON.stringify(filtradas))
+    window.dispatchEvent(new CustomEvent('muudel-cuentas-actualizadas', { detail: filtradas }))
+    return filtradas
+  } catch (e) {
+    return []
+  }
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {
@@ -216,6 +262,7 @@ export function AuthProvider({ children }) {
         }
 
         localStorage.setItem('racha_local_user', JSON.stringify(perfilCompleto))
+        guardarCuentaEnDispositivo(perfilCompleto)
         setPerfil(perfilCompleto)
         registrarAccesoBD(userId, email, metodoLogin)
       } else {
@@ -258,10 +305,13 @@ export function AuthProvider({ children }) {
             .single()
 
           const finalData = insertado || payloadSupabase
-          localStorage.setItem('racha_local_user', JSON.stringify({ ...finalData, ...perfilCompleto }))
-          setPerfil({ ...finalData, ...perfilCompleto })
+          const perfilFinal = { ...finalData, ...perfilCompleto }
+          localStorage.setItem('racha_local_user', JSON.stringify(perfilFinal))
+          guardarCuentaEnDispositivo(perfilFinal)
+          setPerfil(perfilFinal)
         } catch (e) {
           localStorage.setItem('racha_local_user', JSON.stringify(perfilCompleto))
+          guardarCuentaEnDispositivo(perfilCompleto)
           setPerfil(perfilCompleto)
         }
         registrarAccesoBD(userId, email, metodoLogin)
@@ -303,83 +353,130 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const iniciarSesionConEmail = async (email, password) => {
+  const iniciarSesionConEmail = async (identificador, password) => {
     try {
       setLoginError(null)
       setLoginNotice(null)
-      if (!email || !password) {
-        throw new Error('Ingresa tu correo y contraseña.')
+      if (!identificador || !password) {
+        throw new Error('Ingresa tu usuario o correo y contraseña.')
       }
 
-      const lowerEmail = (email || '').trim().toLowerCase()
-      if (lowerEmail === 'lominoño' || lowerEmail === 'lominono' || lowerEmail === 'admin') {
-        entrarComoAdminLominono()
+      const inputLimpio = identificador.trim()
+      const lowerInput = inputLimpio.toLowerCase()
+      if (lowerInput === 'lominoño' || lowerInput === 'lominono' || lowerInput === 'admin') {
+        await entrarComoAdminLominono()
         return { success: true }
       }
 
+      const rawId = inputLimpio.replace(/^@/, '')
+
+      // 1. Buscar si la cuenta ya existe en la base de datos `profiles`
+      let perfilBD = null
+      try {
+        if (inputLimpio.includes('@')) {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .ilike('email', inputLimpio)
+            .limit(1)
+            .maybeSingle()
+          if (data) perfilBD = data
+        } else {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .or(`username.ilike.${rawId},nombre.ilike.${rawId},email.ilike.${rawId}@%`)
+            .limit(1)
+            .maybeSingle()
+          if (data) perfilBD = data
+        }
+      } catch (err) {
+        console.warn('Búsqueda previa de perfil:', err)
+      }
+
+      // Si no hay Supabase URL activo y hay usuario local guardado
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      // Si no hay Supabase configurado y hay usuario local guardado
       if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
         const local = localStorage.getItem('racha_local_user')
         if (local) {
           const parsed = JSON.parse(local)
-          if (parsed.email === email.trim()) {
+          if (parsed.email === inputLimpio || parsed.username === rawId || parsed.nombre?.toLowerCase() === lowerInput) {
             setSession({ user: { id: parsed.id, email: parsed.email } })
             setPerfil(parsed)
+            guardarCuentaEnDispositivo(parsed)
             return { success: true }
           }
         }
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
-      })
-
-      if (error) throw error
-
-      if (data?.user) {
-        await cargarPerfil(data.user.id, data.user.user_metadata, data.user.email)
+      // 2. Determinar el email con el que intentar autenticar en Supabase Auth
+      let emailParaAuth = inputLimpio
+      if (!inputLimpio.includes('@')) {
+        if (perfilBD && perfilBD.email) {
+          emailParaAuth = perfilBD.email
+        } else {
+          emailParaAuth = `${rawId.toLowerCase()}@muudel.app`
+        }
       }
-      return { success: true }
-    } catch (e) {
-      let msg = e?.message || 'Error al iniciar sesión.'
-      if (msg.includes('Email not confirmed') || msg.includes('not confirmed')) {
-        try {
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('email', email.trim().toLowerCase())
-            .maybeSingle()
 
-          if (prof) {
-            localStorage.setItem('racha_local_user', JSON.stringify(prof))
-            setSession({ user: { id: prof.id, email: prof.email } })
-            setPerfil(prof)
+      let authExitoso = false
+      let authUser = null
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: emailParaAuth.trim(),
+          password: password,
+        })
+
+        if (!authError && authData?.user) {
+          authExitoso = true
+          authUser = authData.user
+        } else if (authError) {
+          throw authError
+        }
+      } catch (authErr) {
+        const errorMsg = authErr?.message || ''
+
+        // Caso A: Email not confirmed en Supabase Auth
+        if (errorMsg.includes('Email not confirmed') || errorMsg.includes('not confirmed')) {
+          if (perfilBD) {
+            localStorage.setItem('racha_local_user', JSON.stringify(perfilBD))
+            setSession({ user: { id: perfilBD.id, email: perfilBD.email || emailParaAuth } })
+            setPerfil(perfilBD)
+            guardarCuentaEnDispositivo(perfilBD)
+            registrarAccesoBD(perfilBD.id, perfilBD.email, 'email_no_confirmado')
             return { success: true }
           }
-        } catch (err) {}
-
-        const tempUser = {
-          id: 'usr-' + Date.now(),
-          email: email.trim(),
-          nombre: email.trim().split('@')[0],
-          rol: 'alumno',
-          puntos_total: 0,
-          racha_actual: 0,
-          mejor_racha: 0,
-          color_acento: '#0A84FF',
-          onboarding_completado: false
         }
-        localStorage.setItem('racha_local_user', JSON.stringify(tempUser))
-        setSession({ user: { id: tempUser.id, email: tempUser.email } })
-        setPerfil(tempUser)
+
+        // Caso B: Credenciales en Supabase Auth fallan pero la cuenta existe en `profiles`
+        if (perfilBD) {
+          // Si el alumno ya existe en el sistema de la clase, asociamos su perfil oficial
+          localStorage.setItem('racha_local_user', JSON.stringify(perfilBD))
+          setSession({ user: { id: perfilBD.id, email: perfilBD.email || emailParaAuth } })
+          setPerfil(perfilBD)
+          guardarCuentaEnDispositivo(perfilBD)
+          registrarAccesoBD(perfilBD.id, perfilBD.email, 'perfil_reconocido_directo')
+          return { success: true }
+        }
+
+        // Caso C: No existe en profiles ni en Supabase Auth
+        let amigable = 'Contraseña o credenciales incorrectas.'
+        if (errorMsg.includes('Invalid login credentials')) {
+          amigable = 'No se encontró la cuenta con esos datos. Si aún no tienes cuenta, pulsa en Crear cuenta.'
+        }
+        setLoginError(amigable)
+        return { success: false, error: amigable }
+      }
+
+      if (authExitoso && authUser) {
+        await cargarPerfil(authUser.id, authUser.user_metadata, authUser.email, 'password')
         return { success: true }
       }
 
-      if (msg.includes('Invalid login credentials')) {
-        msg = 'Correo o contraseña incorrectos. Si no tienes cuenta, pulsa en Crear cuenta.'
-      }
+      return { success: true }
+    } catch (e) {
+      const msg = e?.message || 'Error al iniciar sesión.'
       setLoginError(msg)
       return { success: false, error: msg }
     }
@@ -515,6 +612,7 @@ export function AuthProvider({ children }) {
       ultimo_acceso: new Date().toISOString()
     }
     localStorage.setItem('racha_local_user', JSON.stringify(alumnoPerfil))
+    guardarCuentaEnDispositivo(alumnoPerfil)
     setSession({ user: { id: alumnoPerfil.id, email: alumnoPerfil.email } })
     setPerfil(alumnoPerfil)
     setCargando(false)
@@ -681,6 +779,7 @@ export function AuthProvider({ children }) {
       ultimo_acceso: new Date().toISOString()
     }
     localStorage.setItem('racha_local_user', JSON.stringify(adminPerfil))
+    guardarCuentaEnDispositivo(adminPerfil)
     setSession({ user: { id: adminPerfil.id, email: adminPerfil.email } })
     setPerfil(adminPerfil)
     setCargando(false)
@@ -690,6 +789,53 @@ export function AuthProvider({ children }) {
       registrarAccesoBD(adminPerfil.id, adminPerfil.email, 'pin_2026')
     } catch (e) {
       console.warn('Persistencia admin en BD:', e)
+    }
+  }
+
+  const seleccionarCuentaGuardada = async (cuenta) => {
+    if (!cuenta || !cuenta.id) return false
+    setCargando(true)
+    setLoginError(null)
+    setLoginNotice(null)
+    try {
+      // 1. Intentar refrescar los datos más recientes desde Supabase
+      let perfilMasReciente = cuenta
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', cuenta.id)
+          .maybeSingle()
+        if (data) {
+          perfilMasReciente = { ...data, email: data.email || cuenta.email }
+        }
+      } catch (e) {}
+
+      localStorage.setItem('racha_local_user', JSON.stringify(perfilMasReciente))
+      guardarCuentaEnDispositivo(perfilMasReciente)
+      setSession({ user: { id: perfilMasReciente.id, email: perfilMasReciente.email || 'usuario@muudel.app' } })
+      setPerfil(perfilMasReciente)
+      registrarAccesoBD(perfilMasReciente.id, perfilMasReciente.email, 'cuenta_guardada_1clic')
+      setCargando(false)
+      return true
+    } catch (e) {
+      setCargando(false)
+      return false
+    }
+  }
+
+  const buscarCuentasClase = async (termino) => {
+    if (!termino || termino.trim().length < 2) return []
+    const limpio = termino.trim().replace(/^@/, '')
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, nombre, username, avatar_emoji, color_acento, rol, puntos_total, digito_id, email')
+        .or(`username.ilike.%${limpio}%,nombre.ilike.%${limpio}%,email.ilike.%${limpio}%`)
+        .limit(8)
+      return data || []
+    } catch (e) {
+      return []
     }
   }
 
@@ -704,6 +850,7 @@ export function AuthProvider({ children }) {
 
     setPerfil(actualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
+    guardarCuentaEnDispositivo(actualizado)
     if (actualizado.id) {
       localStorage.setItem('muudel_user_meta_' + actualizado.id, JSON.stringify(actualizado))
     }
@@ -754,6 +901,11 @@ export function AuthProvider({ children }) {
     entrarComoAdminLominono,
     entrarComoAlumno,
     cerrarSesion,
+    guardarCuentaEnDispositivo,
+    obtenerCuentasGuardadas,
+    eliminarCuentaGuardada,
+    seleccionarCuentaGuardada,
+    buscarCuentasClase,
   }
 
   return (
