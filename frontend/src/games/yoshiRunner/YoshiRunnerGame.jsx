@@ -27,18 +27,24 @@ class RetroAudio {
   constructor() { this.ctx = null; this.muted = false }
 
   _init() {
-    if (!this.ctx && typeof window !== 'undefined') {
-      const AC = window.AudioContext || window.webkitAudioContext
-      if (AC) this.ctx = new AC()
-    }
-    if (this.ctx?.state === 'suspended') this.ctx.resume()
+    try {
+      if (!this.ctx && typeof window !== 'undefined') {
+        const AC = window.AudioContext || window.webkitAudioContext
+        if (AC) this.ctx = new AC()
+      }
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {})
+      }
+    } catch (_) {}
   }
 
   _play(setup) {
     if (this.muted) return
-    this._init()
-    if (!this.ctx) return
-    try { setup(this.ctx) } catch (_) {}
+    try {
+      this._init()
+      if (!this.ctx) return
+      setup(this.ctx)
+    } catch (_) {}
   }
 
   playJump() {
@@ -516,13 +522,13 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     const ctx = canvas.getContext('2d')
     ctx.scale(dpr, dpr)
 
-    const loop = () => {
-      const state = gameStateRef.current
-      if (!state) { animFrameRef.current = requestAnimationFrame(loop); return }
+    const FIXED_STEP_MS = 1000 / 60 // 16.6667ms = exactamente 60 ticks por segundo en cualquier monitor
+    let lastTimestamp = performance.now()
+    let accumulator = 0
 
-      if (state.isRunning) {
-        state.frameCount++
-        const yoshi = state.yoshi // declarado UNA SOLA VEZ aquí arriba
+    const updatePhysicsTick = (state) => {
+      state.frameCount++
+      const yoshi = state.yoshi // declarado UNA SOLA VEZ aquí arriba
 
         // ── Timer y detección de final ──────────────────────────────────
         state.timerFrames++
@@ -634,11 +640,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         // ── Estela fantasma de Yoshi (Ghost Trail) ────────────────────
         if (state.speed > 8 || state.overdriveTime > 0 || state.feverTime > 0) {
           if (state.frameCount % 3 === 0) {
-            let sprActual = sprites.yoshiRun1
-            if (yoshi.isFluttering) sprActual = sprites.yoshiFlutter || sprites.yoshiJump
-            else if (!yoshi.isGrounded) sprActual = sprites.yoshiJump || sprActual
-            else if (yoshi.isDucking) sprActual = sprites.yoshiDuck || sprActual
-            else sprActual = Math.floor(yoshi.animTick / 6) % 2 === 0 ? sprites.yoshiRun1 : sprites.yoshiRun2
+            const spr = spritesRef.current || {}
+            let sprActual = spr.yoshiRun1
+            if (yoshi.isFluttering) sprActual = spr.yoshiFlutter || spr.yoshiJump
+            else if (!yoshi.isGrounded) sprActual = spr.yoshiJump || sprActual
+            else if (yoshi.isDucking) sprActual = spr.yoshiDuck || sprActual
+            else sprActual = Math.floor(yoshi.animTick / 6) % 2 === 0 ? spr.yoshiRun1 : spr.yoshiRun2
 
             state.ghostTrails.unshift({
               x: yoshi.x,
@@ -1118,16 +1125,49 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         state.particles = state.particles.filter(p => p.life > 0)
         state.floatingTexts.forEach(t => { t.y += t.vy; t.opacity -= 0.018 })
         state.floatingTexts = state.floatingTexts.filter(t => t.opacity > 0)
-      } // fin isRunning
 
-      // ── RENDER ────────────────────────────────────────────────────────
-      drawFrame(ctx, gameStateRef.current, spritesRef.current)
+        // Limitar arrays para evitar fugas de memoria y caídas de frames
+        if (state.particles.length > 60) state.particles.splice(0, state.particles.length - 60)
+        if (state.ghostTrails.length > 6) state.ghostTrails.length = 6
+        if (state.floatingTexts.length > 10) state.floatingTexts.splice(0, state.floatingTexts.length - 10)
+      } // fin updatePhysicsTick
+
+      const loop = (currentTimestamp) => {
+        if (!currentTimestamp) currentTimestamp = performance.now()
+        const deltaMs = Math.min(currentTimestamp - lastTimestamp, 100) // cap a 100ms para prevenir espiral
+        lastTimestamp = currentTimestamp
+        accumulator += deltaMs
+
+        const state = gameStateRef.current
+        if (state && state.isRunning) {
+          let updates = 0
+          while (accumulator >= FIXED_STEP_MS && updates < 5) {
+            try {
+              updatePhysicsTick(state)
+            } catch (err) {
+              console.error('Error en física del juego:', err)
+            }
+            accumulator -= FIXED_STEP_MS
+            updates++
+          }
+        } else {
+          accumulator = 0
+        }
+
+        // ── RENDER ────────────────────────────────────────────────────────
+        try {
+          drawFrame(ctx, gameStateRef.current, spritesRef.current)
+        } catch (err) {
+          console.error('Error en renderizado:', err)
+        }
+        animFrameRef.current = requestAnimationFrame(loop)
+      }
+
       animFrameRef.current = requestAnimationFrame(loop)
-    }
-
-    animFrameRef.current = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(animFrameRef.current)
-  }, [spritesLoaded, finalizarPartida, retoActivo]) // sin retoSuperadoEnPartida para no reiniciar
+      return () => {
+        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+      }
+    }, [spritesLoaded, finalizarPartida, retoActivo]) // sin retoSuperadoEnPartida para no reiniciar
 
   // ─── FUNCIÓN DE DIBUJADO (pura, sin closures) ─────────────────────────────
   function drawFrame(ctx, state, sprites) {

@@ -231,9 +231,9 @@ export function useChat(canal, perfil = null) {
       }
     } catch (e) {}
 
-    // 3. Cargar mensajes
+    // 3. Cargar mensajes con tolerancia a esquema
     try {
-      const { data, error: err } = await supabase
+      let res = await supabase
         .from('messages')
         .select('*, profiles(nombre, username, color_acento, rol, digito_id, frase)')
         .eq('canal', canal)
@@ -241,6 +241,18 @@ export function useChat(canal, perfil = null) {
         .order('created_at', { ascending: true })
         .limit(100)
 
+      if (res.error) {
+        // Fallback si la columna soft_deleted no existe en la BD
+        res = await supabase
+          .from('messages')
+          .select('*, profiles(nombre, username, color_acento, rol, digito_id, frase)')
+          .eq('canal', canal)
+          .order('created_at', { ascending: true })
+          .limit(100)
+      }
+
+      const data = res.data
+      const err = res.error
       if (err) throw err
 
       if (data && data.length > 0) {
@@ -417,11 +429,31 @@ export function useChat(canal, perfil = null) {
         payloadInsert.reply_to_nombre = replyData.nombre
       }
 
-      const { data, error: err } = await supabase
+      let { data, error: err } = await supabase
         .from('messages')
         .insert(payloadInsert)
         .select()
         .single()
+
+      if (err) {
+        // Fallback mínimo con solo las columnas estándar garantizadas
+        const payloadMinimo = {
+          id: msgId,
+          user_id: userId,
+          canal,
+          texto: texto.trim(),
+          reply_to: replyData?.id || null
+        }
+        const fallbackRes = await supabase
+          .from('messages')
+          .insert(payloadMinimo)
+          .select()
+          .single()
+        if (!fallbackRes.error) {
+          data = fallbackRes.data
+          err = null
+        }
+      }
 
       if (data) {
         setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, ...data } : m))

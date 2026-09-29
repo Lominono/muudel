@@ -9,15 +9,9 @@ import {
   Hash,
   ShieldCheck,
   MessageSquare,
-  ShoppingBag,
-  Zap,
-  Sparkles,
-  Megaphone,
-  Coffee,
   X,
   Lock,
   Unlock,
-  Radio,
   Stamp,
   Pin,
   Reply,
@@ -31,7 +25,6 @@ import {
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
 import { AvatarUsuario } from '../components/AvatarUsuario'
-import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICIALES, formatearTiempoRestante } from '../components/TiendaRecompensas'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 
@@ -115,34 +108,8 @@ export function PantallaChat() {
   const [menuReaccionesAbiertoId, setMenuReaccionesAbiertoId] = useState(null)
   const [mostrarMenuSellos, setMostrarMenuSellos] = useState(false)
 
-  // Estados de la Tienda y Efectos de Chat
-  const [mostrarTienda, setMostrarTienda] = useState(false)
-  const [mostrarMenuEfectos, setMostrarMenuEfectos] = useState(false)
-  const [relojTick, setRelojTick] = useState(0)
-
-  // Efectos visuales activos en la pantalla
-  const [temblorActivo, setTemblorActivo] = useState(false)
-  const [alertaDescanso, setAlertaDescanso] = useState(null)
-  const [megafonoActivo, setMegafonoActivo] = useState(() => {
-    try {
-      const guardado = localStorage.getItem('muudel_megafono_activo')
-      if (guardado) {
-        const parsed = JSON.parse(guardado)
-        if (parsed.expiraEn && Date.now() >= parsed.expiraEn) {
-          localStorage.removeItem('muudel_megafono_activo')
-          return null
-        }
-        return parsed
-      }
-      return null
-    } catch (e) {
-      return null
-    }
-  })
-
   // Estado de moderación del chat
   const [chatSilenciado, setChatSilenciado] = useState(false)
-  const idUltimoEfectoProcesado = useRef(null)
 
   // Mensaje fijado en el canal actual
   const mensajeFijado = useMemo(() => {
@@ -160,29 +127,7 @@ export function PantallaChat() {
     )
   }, [mensajes, queryBusqueda])
 
-  // 1. Tick cada segundo para actualizar cuentas regresivas
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRelojTick(prev => prev + 1)
-      try {
-        const guardado = localStorage.getItem('muudel_megafono_activo')
-        if (guardado) {
-          const m = JSON.parse(guardado)
-          if (m.expiraEn && Date.now() >= m.expiraEn) {
-            localStorage.removeItem('muudel_megafono_activo')
-            setMegafonoActivo(null)
-          } else {
-            setMegafonoActivo(m)
-          }
-        } else {
-          setMegafonoActivo(null)
-        }
-      } catch (e) {}
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  // 2. Comprobar si el chat está silenciado por el moderador
+  // Comprobar si el chat está silenciado por el moderador
   useEffect(() => {
     const revisarSilencio = () => {
       try {
@@ -201,32 +146,8 @@ export function PantallaChat() {
     return () => clearInterval(timer)
   }, [])
 
-  // Helper para consultar tiempo de recarga (cooldown)
-  const obtenerCooldownRestante = (itemId) => {
-    try {
-      const hasta = Number(localStorage.getItem(`muudel_cooldown_${itemId}`) || 0)
-      if (hasta > Date.now()) {
-        return Math.ceil((hasta - Date.now()) / 1000)
-      }
-      return 0
-    } catch (e) {
-      return 0
-    }
-  }
-
-  // 3. Escuchar efectos de chat, megáfono y moderación
+  // Escuchar evento de moderación y sellos
   useEffect(() => {
-    const desuscribirEfectos = suscribirEvento('efecto_chat', (payload) => {
-      const { tipo, autor, texto: textoExtra } = payload || {}
-      if (tipo) ejecutarEfecto(tipo, autor, textoExtra)
-    })
-
-    const desuscribirMegafono = suscribirEvento('megafono_activo', (payload) => {
-      if (payload) {
-        setMegafonoActivo(payload)
-      }
-    })
-
     const desuscribirSilencio = suscribirEvento('silencio_chat', ({ silenciadoHasta }) => {
       if (silenciadoHasta && Number(silenciadoHasta) > Date.now()) {
         setChatSilenciado(true)
@@ -234,66 +155,10 @@ export function PantallaChat() {
         setChatSilenciado(false)
       }
     })
-
     return () => {
-      desuscribirEfectos()
-      desuscribirMegafono()
       desuscribirSilencio()
     }
   }, [])
-
-  // 4. Detectar efectos en los mensajes
-  useEffect(() => {
-    if (mensajes.length === 0) return
-    const ultimo = mensajes[mensajes.length - 1]
-    if (!ultimo || !ultimo.texto) return
-
-    if (ultimo.id !== idUltimoEfectoProcesado.current) {
-      idUltimoEfectoProcesado.current = ultimo.id
-
-      if (ultimo.texto.startsWith('[EFECTO:')) {
-        const match = ultimo.texto.match(/\[EFECTO:([a-z0-9_]+)(?::([^\]]+))?\]\s*(.*)/i)
-        if (match) {
-          const tipo = match[1]
-          const autor = match[2] || ultimo.nombre || 'Compañero'
-          const contenido = match[3] || ''
-          ejecutarEfecto(tipo, autor, contenido)
-        }
-      } else if (ultimo.texto.startsWith('[SELLO:')) {
-        sound.playStamp()
-      }
-    }
-  }, [mensajes])
-
-  const ejecutarEfecto = (tipo, autor, textoExtra) => {
-    const deshabilitados = localStorage.getItem('muudel_efectos_chat_desactivados') === 'true'
-    if (deshabilitados) return
-
-    if (tipo === 'terremoto') {
-      sound.playPop()
-      setTemblorActivo(true)
-      setTimeout(() => setTemblorActivo(false), 3500)
-    } else if (tipo === 'confeti') {
-      sound.playStamp()
-      triggerConfetti()
-    } else if (tipo === 'megafono') {
-      sound.playPop()
-      const expiraEn = Date.now() + 30 * 60 * 1000
-      const nuevoMegafono = {
-        autor: autor || 'Compañero',
-        texto: textoExtra || 'Aviso fijado de clase',
-        expiraEn: expiraEn,
-        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
-      setMegafonoActivo(nuevoMegafono)
-    } else if (tipo === 'descanso') {
-      sound.playPop()
-      setAlertaDescanso(`¡${autor} avisa: Descanso de las 18:10!`)
-      setTimeout(() => setAlertaDescanso(null), 5000)
-    } else if (tipo === 'sello') {
-      sound.playStamp()
-    }
-  }
 
   // Scroll automático hacia el final
   useEffect(() => {
@@ -480,7 +345,7 @@ export function PantallaChat() {
   const estaBloqueadoEnvio = chatSilenciado && perfil?.rol !== 'moderador'
 
   return (
-    <main className={`app-container ${temblorActivo ? 'chat-screen-shake' : ''}`}>
+    <main className="app-container">
       {/* Cabecera */}
       <header style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -522,30 +387,6 @@ export function PantallaChat() {
               }}
             >
               <Search size={16} />
-            </button>
-
-            {/* Botón de la Cantina / Tienda */}
-            <button
-              type="button"
-              onClick={() => setMostrarTienda(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 14px',
-                borderRadius: 9999,
-                backgroundColor: 'var(--color-fill-secondary)',
-                color: 'var(--color-ink)',
-                border: '1px solid var(--color-separator)',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                flexShrink: 0
-              }}
-            >
-              <ShoppingBag size={15} />
-              <span>Tienda ({perfil?.puntos_total || 0} pts)</span>
             </button>
           </div>
         </div>
@@ -597,91 +438,7 @@ export function PantallaChat() {
         )}
       </header>
 
-      {/* Alerta de descanso flotante */}
-      {alertaDescanso && (
-        <div style={{
-          padding: '10px 14px',
-          borderRadius: 12,
-          backgroundColor: 'var(--color-positive-bg)',
-          border: '1px solid rgba(52, 199, 89, 0.35)',
-          color: 'var(--color-positive)',
-          fontSize: 13,
-          fontWeight: 700,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 10,
-          animation: 'fadeIn 0.2s ease'
-        }}>
-          <Coffee size={18} />
-          <span>{alertaDescanso}</span>
-        </div>
-      )}
 
-      {/* Megáfono fijado en la cabecera */}
-      {megafonoActivo && (
-        <div className="chat-megaphone-pinned">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-            <div style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              backgroundColor: 'var(--color-accent)',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <Megaphone size={16} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-accent)', textTransform: 'uppercase' }}>
-                  Aviso Fijado ({megafonoActivo.autor})
-                </span>
-                {megafonoActivo.expiraEn && (
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    backgroundColor: 'rgba(255, 149, 0, 0.12)',
-                    color: 'var(--color-warning)'
-                  }}>
-                    ⏱️ {formatearTiempoRestante(megafonoActivo.expiraEn)}
-                  </span>
-                )}
-                {megafonoActivo.hora && (
-                  <span style={{ fontSize: 10, color: 'var(--color-tertiary-ink)' }}>
-                    {megafonoActivo.hora}
-                  </span>
-                )}
-              </div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)', margin: 0, wordBreak: 'break-word' }}>
-                {megafonoActivo.texto}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMegafonoActivo(null)
-              try { localStorage.removeItem('muudel_megafono_activo') } catch (e) {}
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--color-secondary-ink)',
-              cursor: 'pointer',
-              padding: 4
-            }}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      )}
 
       {/* Selector Principal de Modo: Canales de Aula vs Mensajes Directos */}
       <div style={{
@@ -1692,98 +1449,7 @@ export function PantallaChat() {
           </div>
         )}
 
-        {/* Menú de Acciones Rápidas y Efectos de la Cantina */}
-        {mostrarMenuEfectos && (
-          <div style={{
-            padding: '10px 14px',
-            backgroundColor: 'var(--color-surface)',
-            borderTop: '1px solid var(--color-separator)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            animation: 'fadeIn 0.15s ease'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="apple-caption" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-ink)' }}>
-                Efectos del Aula (Consumen Puntos)
-              </span>
-              <button
-                type="button"
-                onClick={() => setMostrarMenuEfectos(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', cursor: 'pointer' }}
-              >
-                <X size={15} />
-              </button>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
-              {CATALOGO_RECOMPENSAS.filter(r => r.categoria === 'chat').map((ef) => {
-                const IconoEf = ef.icon
-                const alcanzable = (perfil?.puntos_total || 0) >= ef.costo
-                const segsCooldown = obtenerCooldownRestante(ef.id)
-                const enCooldown = segsCooldown > 0
-
-                return (
-                  <button
-                    key={ef.id}
-                    type="button"
-                    disabled={!alcanzable || enCooldown}
-                    onClick={async () => {
-                      if (ef.id === 'sello_tinta_chat') {
-                        setMostrarMenuEfectos(false)
-                        setMostrarMenuSellos(true)
-                      } else {
-                        // Comprobar puntos y disparar
-                        if (segsCooldown > 0) return
-                        if ((perfil?.puntos_total || 0) < ef.costo) {
-                          alert(`Te faltan ${ef.costo - (perfil?.puntos_total || 0)} pts`)
-                          return
-                        }
-                        if (ef.cooldownMs) {
-                          localStorage.setItem(`muudel_cooldown_${ef.id}`, String(Date.now() + ef.cooldownMs))
-                        }
-                        setMostrarMenuEfectos(false)
-                        const nuevosPuntos = (perfil?.puntos_total || 0) - ef.costo
-                        const updated = { ...perfil, puntos_total: nuevosPuntos }
-                        setPerfil(updated)
-                        localStorage.setItem('racha_local_user', JSON.stringify(updated))
-                        try {
-                          await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-                          await emitirEfectoChat(ef.efecto, perfil)
-                        } catch (err) {}
-                      }
-                    }}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: `1px solid var(--color-separator)`,
-                      backgroundColor: enCooldown ? 'var(--color-fill-secondary)' : 'var(--color-surface-secondary)',
-                      color: enCooldown ? 'var(--color-secondary-ink)' : alcanzable ? 'var(--color-ink)' : 'var(--color-tertiary-ink)',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 6,
-                      cursor: (alcanzable && !enCooldown) ? 'pointer' : 'not-allowed',
-                      opacity: (alcanzable && !enCooldown) ? 1 : 0.5
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                      <IconoEf size={14} style={{ flexShrink: 0, color: enCooldown ? 'var(--color-secondary-ink)' : ef.color }} />
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {ef.titulo.split(' ')[0]}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 11, color: enCooldown ? 'var(--color-warning)' : 'var(--color-secondary-ink)', fontWeight: enCooldown ? 800 : 500 }}>
-                      {enCooldown ? `⏳ ${segsCooldown}s` : `${ef.costo}p`}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Respuestas rápidas */}
         <div style={{
@@ -1865,10 +1531,7 @@ export function PantallaChat() {
           {/* Botón de Sellos Rápidos */}
           <button
             type="button"
-            onClick={() => {
-              setMostrarMenuSellos(!mostrarMenuSellos)
-              setMostrarMenuEfectos(false)
-            }}
+            onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
             title="Estampar sello de clase"
             style={{
               width: 36,
@@ -1885,31 +1548,6 @@ export function PantallaChat() {
             }}
           >
             <Stamp size={17} />
-          </button>
-
-          {/* Botón de Efectos de Clase */}
-          <button
-            type="button"
-            onClick={() => {
-              setMostrarMenuEfectos(!mostrarMenuEfectos)
-              setMostrarMenuSellos(false)
-            }}
-            title="Efectos de la tienda"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 9999,
-              backgroundColor: mostrarMenuEfectos ? 'var(--color-fill-secondary)' : 'transparent',
-              color: 'var(--color-warning)',
-              border: '1px solid var(--color-separator)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0
-            }}
-          >
-            <Sparkles size={16} />
           </button>
 
           <input
@@ -1959,10 +1597,6 @@ export function PantallaChat() {
       </>
     )}
 
-      {/* MODAL DE LA CANTINA / TIENDA DE RECOMPENSAS */}
-      {mostrarTienda && (
-        <TiendaRecompensas onClose={() => setMostrarTienda(false)} />
-      )}
     </main>
   )
 }

@@ -1,5 +1,5 @@
 -- Racha de Clase - Schema Supabase
--- Puedes ejecutar este archivo completo directamente en el Supabase SQL Editor
--- O revisar los archivos modulares organizados en la carpeta /database/
+-- Puedes ejecutar este archivo completo directamente en el Supabase SQL Editor:
+-- database/SETUP_DEFINITIVO_COMPLETO.sql
 
-\i database/database_completo.sql
+\i database/SETUP_DEFINITIVO_COMPLETO.sql
