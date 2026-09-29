@@ -461,7 +461,35 @@ export function TiendaRecompensas({ onClose }) {
     return () => desuscribir()
   }, [perfil?.id])
 
-  const cargarInventario = () => {
+  const cargarInventario = async () => {
+    // 1. Cargar desde Supabase tabla inventario_usuario
+    if (perfil?.id) {
+      try {
+        const { data: dbInv } = await supabase
+          .from('inventario_usuario')
+          .select('*')
+          .eq('user_id', perfil.id)
+
+        if (dbInv && dbInv.length > 0) {
+          const formateado = dbInv.map(i => ({
+            id: i.id,
+            catalogoId: i.item_id,
+            titulo: i.titulo,
+            categoria: i.categoria,
+            estado: i.estado,
+            duracionMs: Number(i.duracion_ms) || 0,
+            duracionTexto: i.duracion_texto || '',
+            compradoEn: new Date(i.comprado_en).getTime(),
+            activadoEn: i.activado_en ? new Date(i.activado_en).getTime() : null,
+            expiraEn: i.expira_en ? new Date(i.expira_en).getTime() : null
+          }))
+          setInventario(formateado)
+          return
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fallback local
     try {
       const raw = localStorage.getItem('muudel_inventario_' + perfil?.id)
       if (raw) {
@@ -481,7 +509,32 @@ export function TiendaRecompensas({ onClose }) {
     } catch (e) {}
   }
 
-  const cargarCanjes = () => {
+  const cargarCanjes = async () => {
+    // 1. Cargar pedidos desde Supabase tabla canjes_pedidos
+    if (perfil?.id) {
+      try {
+        const { data: dbCanjes } = await supabase
+          .from('canjes_pedidos')
+          .select('*')
+          .eq('user_id', perfil.id)
+          .order('created_at', { ascending: false })
+
+        if (dbCanjes && dbCanjes.length > 0) {
+          setCanjes(dbCanjes.map(c => ({
+            id: c.id,
+            recompensaId: c.item_id,
+            titulo: c.titulo,
+            costo: c.costo,
+            estado: c.estado,
+            fecha: new Date(c.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
+            hora: new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          })))
+          return
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fallback local
     try {
       const guardados = localStorage.getItem('muudel_canjes_pedidos')
       if (guardados) {
@@ -603,7 +656,20 @@ export function TiendaRecompensas({ onClose }) {
     const nuevoInventario = [nuevoItemInventario, ...inventario]
     guardarInventario(nuevoInventario)
 
-    // Si es una petición de aula (cafetería, altavoz, sitio), generar ticket
+    // Guardar en Supabase tabla inventario_usuario
+    try {
+      await supabase.from('inventario_usuario').insert({
+        user_id: perfil.id,
+        item_id: item.id,
+        titulo: item.titulo,
+        categoria: item.categoria,
+        estado: 'listo',
+        duracion_ms: item.duracionMs || 0,
+        duracion_texto: item.duracionTexto || ''
+      })
+    } catch (e) {}
+
+    // Si es una petición de aula (cafetería, altavoz, sitio), generar ticket y guardar en canjes_pedidos
     if (item.categoria === 'aula' && item.id !== 'congelar_racha') {
       const codigoTicket = `#SMR2-${Math.floor(100 + Math.random() * 900)}`
       const nuevoTicket = {
@@ -620,6 +686,17 @@ export function TiendaRecompensas({ onClose }) {
         tiempoTexto: item.duracionTexto,
         estado: 'pendiente'
       }
+
+      try {
+        await supabase.from('canjes_pedidos').insert({
+          user_id: perfil.id,
+          item_id: item.id,
+          titulo: item.titulo,
+          costo: item.costo,
+          categoria: item.categoria,
+          estado: 'pendiente'
+        })
+      } catch (e) {}
 
       try {
         const guardados = localStorage.getItem('muudel_canjes_pedidos')

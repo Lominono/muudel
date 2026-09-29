@@ -118,12 +118,34 @@ export function RetoDelDia({ perfil, onCompletado }) {
     setRetoSeleccionadoId(retosDefecto[0].id)
   }
 
-  const cargarEntregas = () => {
+  const cargarEntregas = async () => {
+    const misEntregas = {}
+
+    // 1. Cargar desde Supabase tabla real reto_completado
+    if (perfil?.id) {
+      try {
+        const { data: dbEntregas } = await supabase
+          .from('reto_completado')
+          .select('*')
+          .eq('user_id', perfil.id)
+
+        if (dbEntregas && dbEntregas.length > 0) {
+          dbEntregas.forEach(ent => {
+            misEntregas[ent.reto_id] = {
+              estado: ent.estado || (ent.validado ? 'aprobado' : 'pendiente'),
+              evidencia: ent.evidencia,
+              feedback: ent.feedback_admin || ''
+            }
+          })
+        }
+      } catch (e) {}
+    }
+
+    // 2. Combinar con localStorage
     try {
       const todas = JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
-      const misEntregas = {}
       todas.forEach(ent => {
-        if (ent.userId === perfil?.id) {
+        if (ent.userId === perfil?.id && !misEntregas[ent.retoId]) {
           misEntregas[ent.retoId] = {
             estado: ent.estado,
             evidencia: ent.evidencia,
@@ -143,7 +165,9 @@ export function RetoDelDia({ perfil, onCompletado }) {
       }
 
       setEntregasUsuario(misEntregas)
-    } catch (e) {}
+    } catch (e) {
+      setEntregasUsuario(misEntregas)
+    }
   }
 
   const retoActual = retos.find(r => r.id === retoSeleccionadoId) || retos[0]

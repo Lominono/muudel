@@ -91,16 +91,19 @@ export function PantallaJuegos() {
       }
     } catch (e) {}
 
-    // 2. Fallback local / simulación de aula
+    // 2. Si no hay puntuaciones registradas en Supabase, mostrar únicamente la puntuación real del usuario actual si existe
     const high = Number(localStorage.getItem('muudel_yoshi_highscore') || 0)
-    const mock = [
-      { id: '1', nombre: perfil?.nombre || 'Tú', color: perfil?.color_acento || '#0A84FF', puntos: Math.max(high, 85), digito: perfil?.digito_id || '#01' },
-      { id: '2', nombre: 'JuanFe', color: '#FF9500', puntos: 142, digito: '#04' },
-      { id: '3', nombre: 'Laura', color: '#30D158', puntos: 110, digito: '#12' },
-      { id: '4', nombre: 'Carlos SMR', color: '#BF5AF2', puntos: 78, digito: '#08' },
-    ].sort((a, b) => b.puntos - a.puntos)
-
-    setRankingArcade(mock)
+    if (high > 0 && perfil) {
+      setRankingArcade([{
+        id: perfil.id,
+        nombre: perfil.nombre || 'Tú',
+        color: perfil.color_acento || '#0A84FF',
+        puntos: high,
+        digito: perfil.digito_id || '#01'
+      }])
+    } else {
+      setRankingArcade([])
+    }
   }
 
   const handleMonedasGanadas = (nuevasMonedas) => {
@@ -364,7 +367,14 @@ export function PantallaJuegos() {
               </h3>
             </div>
 
-            {rankingArcade.map((jugador, i) => (
+            {rankingArcade.length === 0 ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)', fontSize: 13 }}>
+                <Clock size={24} style={{ margin: '0 auto 8px', opacity: 0.6 }} />
+                <p style={{ margin: 0, fontWeight: 600 }}>Aún no hay puntuaciones registradas en el servidor hoy.</p>
+                <p style={{ margin: '4px 0 0', fontSize: 11, opacity: 0.8 }}>¡Juega una partida para registrar la primera marca oficial de la clase!</p>
+              </div>
+            ) : (
+              rankingArcade.map((jugador, i) => (
               <div
                 key={jugador.id}
                 style={{
@@ -404,7 +414,7 @@ export function PantallaJuegos() {
                   {jugador.puntos}m
                 </span>
               </div>
-            ))}
+            )))}
           </section>
         </div>
       </div>

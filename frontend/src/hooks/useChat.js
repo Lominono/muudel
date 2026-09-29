@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../utils/supabase'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { analizarTextoAntiIA } from '../utils/antiAiDetector'
+import { sumarXpSkill } from '../utils/skillsData'
 
 const generarUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -158,6 +160,13 @@ export function useChat(canal, perfil = null) {
       }
     })
 
+    // 8. Escuchar solución marcada en canal dudas
+    const desuscribirSolucion = suscribirEvento('solucion_marcada', ({ messageId, canal: canalMsg, esSolucion }) => {
+      if (canalMsg === canal) {
+        setMensajes(prev => prev.map(m => m.id === messageId ? { ...m, es_solucion: esSolucion } : m))
+      }
+    })
+
     return () => {
       desuscribirMsg()
       desuscribirLikes()
@@ -166,6 +175,7 @@ export function useChat(canal, perfil = null) {
       desuscribirEliminado()
       desuscribirTyping()
       desuscribirLimpieza()
+      desuscribirSolucion()
       Object.values(typingTimeouts.current).forEach(t => clearTimeout(t))
       if (suscripcion.current) {
         try {
@@ -300,17 +310,41 @@ export function useChat(canal, perfil = null) {
   const suscribirse = () => {
     try {
       suscripcion.current = supabase
-        .channel(`chat-${canal}`)
+        .channel(`chat-realtime-${canal}`)
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
           filter: `canal=eq.${canal}`,
         }, (payload) => {
-          setMensajes(prev => {
-            if (prev.some(m => m.id === payload.new.id)) return prev
-            return [...prev, payload.new]
-          })
+          if (payload.new) {
+            setMensajes(prev => {
+              if (prev.some(m => m.id === payload.new.id)) {
+                return prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
+              }
+              return [...prev, payload.new]
+            })
+          }
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `canal=eq.${canal}`,
+        }, (payload) => {
+          if (payload.new) {
+            setMensajes(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
+          }
+        })
+        .on('postgres_changes', {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `canal=eq.${canal}`,
+        }, (payload) => {
+          if (payload.old) {
+            setMensajes(prev => prev.filter(m => m.id !== payload.old.id))
+          }
         })
         .subscribe()
     } catch (e) {}
@@ -320,6 +354,7 @@ export function useChat(canal, perfil = null) {
     if (!texto.trim()) return { data: null, error: 'Escribe un mensaje' }
 
     const msgId = generarUUID()
+    const analisis = analizarTextoAntiIA(texto.trim())
     const nuevoMensaje = {
       id: msgId,
       canal,
@@ -336,6 +371,9 @@ export function useChat(canal, perfil = null) {
       likers: [],
       reacciones: {},
       fijado: false,
+      es_solucion: false,
+      es_autoria_humana: analisis.esHumanoVerificado,
+      es_ia_probable: analisis.esIaProbable,
       reply_to: replyData?.id || null,
       reply_to_texto: replyData?.texto || '',
       reply_to_nombre: replyData?.nombre || '',
@@ -354,12 +392,22 @@ export function useChat(canal, perfil = null) {
     // Transmitir en tiempo real a toda la clase por broadcast
     transmitirEvento('nuevo_mensaje_chat', nuevoMensaje)
 
+    // Premiar autoría técnica y humana con XP de skills
+    if (analisis.esHumanoVerificado && userId) {
+      if (canal === 'apuntes') {
+        sumarXpSkill(userId, 'autoria_tecnica', 10)
+      } else if (canal === 'dudas') {
+        sumarXpSkill(userId, 'linux_bash', 5)
+      }
+    }
+
     try {
       const payloadInsert = {
         id: msgId,
         user_id: userId,
         canal,
         texto: texto.trim(),
+        es_autoria_humana: analisis.esHumanoVerificado,
         reply_to: replyData?.id || null
       }
 
@@ -586,6 +634,46 @@ export function useChat(canal, perfil = null) {
     })
   }
 
+  // Marcar o desmarcar un mensaje como solución oficial en canal 'dudas'
+  const marcarSolucion = async (messageId, autorId, marcadorId) => {
+    let nuevoEstado = false
+    setMensajes(prev => {
+      const actualizados = prev.map(m => {
+        if (m.id === messageId) {
+          nuevoEstado = !m.es_solucion
+          return { ...m, es_solucion: nuevoEstado }
+        }
+        return m
+      })
+      try {
+        localStorage.setItem('racha_chat_' + canal, JSON.stringify(actualizados))
+      } catch (e) {}
+      return actualizados
+    })
+
+    transmitirEvento('solucion_marcada', { messageId, canal, esSolucion: nuevoEstado, autorId })
+
+    try {
+      await supabase.from('messages').update({
+        es_solucion: nuevoEstado,
+        solucion_marcada_por: nuevoEstado ? marcadorId : null
+      }).eq('id', messageId)
+
+      if (nuevoEstado && autorId) {
+        const { data: p } = await supabase.from('profiles').select('puntos_total').eq('id', autorId).single()
+        if (p) {
+          const nuevosPts = (p.puntos_total || 0) + 10
+          await supabase.from('profiles').update({ puntos_total: nuevosPts }).eq('id', autorId)
+          transmitirEvento('puntos_actualizados', { userId: autorId, nuevosPuntos: nuevosPts })
+        }
+        await sumarXpSkill(autorId, 'redes_vlans', 20)
+        await sumarXpSkill(autorId, 'autoria_tecnica', 15)
+      }
+    } catch (e) {}
+
+    return nuevoEstado
+  }
+
   return {
     mensajes,
     cargando,
@@ -595,6 +683,7 @@ export function useChat(canal, perfil = null) {
     toggleReaccion,
     toggleFijado,
     eliminarMensaje,
+    marcarSolucion,
     emitirTyping,
     usuariosEscribiendo,
     error

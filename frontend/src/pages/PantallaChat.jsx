@@ -23,13 +23,15 @@ import {
   Search,
   Smile,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  CheckCircle2
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
 import { AvatarUsuario } from '../components/AvatarUsuario'
 import { TiendaRecompensas, emitirEfectoChat, CATALOGO_RECOMPENSAS, SELLOS_OFICIALES, formatearTiempoRestante } from '../components/TiendaRecompensas'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
+import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 
 const CANALES = [
   { id: 'general', label: 'General', desc: 'Sala principal del aula' },
@@ -76,9 +78,15 @@ export function PantallaChat() {
     toggleReaccion,
     toggleFijado,
     eliminarMensaje,
+    marcarSolucion,
     emitirTyping,
     usuariosEscribiendo
   } = useChat(canal, perfil)
+
+  const estadoAntiIa = useMemo(() => {
+    if (!texto.trim() || texto.length < 25) return null
+    return analizarTextoAntiIA(texto)
+  }, [texto])
 
   const chatEndRef = useRef(null)
   const ultimoMensajeRef = useRef(null)
@@ -1090,8 +1098,42 @@ export function PantallaChat() {
                       </div>
                     )}
 
+                    {/* Sello de Solución Oficial */}
+                    {m.es_solucion && (
+                      <div
+                        className="sello-tinta sello-tinta-verde"
+                        style={{
+                          fontSize: 10,
+                          padding: '3px 8px',
+                          marginBottom: 8,
+                          display: 'inline-flex',
+                          backgroundColor: 'rgba(52, 199, 89, 0.15)',
+                          border: '1.5px solid #34C759'
+                        }}
+                      >
+                        ✓ SOLUCIÓN OFICIAL SMR2 · +10 PTS
+                      </div>
+                    )}
+
                     {/* Texto formateado del mensaje */}
                     {renderizarTextoEnriquecido(m.texto, esPropio)}
+
+                    {/* Badge de Autoría Humana Verificada */}
+                    {m.es_autoria_humana && m.texto && m.texto.length >= 80 && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: esPropio ? 'rgba(255, 255, 255, 0.85)' : 'var(--color-secondary-ink)',
+                        marginTop: 6,
+                        letterSpacing: 0.4
+                      }}>
+                        <span>✍️</span>
+                        <span>100% AUTORÍA HUMANA</span>
+                      </div>
+                    )}
 
                     {/* Badge flotante de Me Gusta en la esquina de la burbuja */}
                     {((m.likes_count || 0) > 0 || m.liked_by_me) && (
@@ -1260,6 +1302,35 @@ export function PantallaChat() {
                       <Reply size={12} />
                       <span>Responder</span>
                     </button>
+
+                    {/* Marcar Solución (canal dudas) */}
+                    {canal === 'dudas' && (perfil?.rol === 'moderador' || (!esPropio && m.reply_to)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          marcarSolucion(m.id, m.user_id, perfil.id)
+                          sound.playStamp()
+                          triggerConfetti()
+                        }}
+                        title={m.es_solucion ? 'Desmarcar solución' : 'Marcar como respuesta correcta'}
+                        style={{
+                          background: m.es_solucion ? 'rgba(52, 199, 89, 0.15)' : 'none',
+                          border: m.es_solucion ? '1px solid rgba(52, 199, 89, 0.35)' : 'none',
+                          borderRadius: 8,
+                          color: m.es_solucion ? 'var(--color-positive)' : 'var(--color-secondary-ink)',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          fontSize: 11,
+                          fontWeight: 700
+                        }}
+                      >
+                        <CheckCircle2 size={12} />
+                        <span>{m.es_solucion ? 'Solución Oficial' : 'Es la solución'}</span>
+                      </button>
+                    )}
 
                     {/* Selector de Reacciones Populares */}
                     <div style={{ position: 'relative' }}>
@@ -1597,6 +1668,36 @@ export function PantallaChat() {
             </button>
           ))}
         </div>
+
+        {/* Banner de Verificación Anti-IA en vivo */}
+        {estadoAntiIa && (
+          <div
+            style={{
+              padding: '6px 14px',
+              backgroundColor: estadoAntiIa.esIaProbable ? 'rgba(255, 149, 0, 0.12)' : 'rgba(52, 199, 89, 0.08)',
+              borderTop: `1px solid ${estadoAntiIa.esIaProbable ? 'rgba(255, 149, 0, 0.3)' : 'rgba(52, 199, 89, 0.25)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: 11,
+              fontWeight: 600,
+              color: estadoAntiIa.esIaProbable ? 'var(--color-warning)' : 'var(--color-positive)',
+              animation: 'fadeIn 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>{estadoAntiIa.esIaProbable ? '⚠️' : '✍️'}</span>
+              <span>
+                {estadoAntiIa.esIaProbable
+                  ? `Patrón de redacción sintética detectado (${estadoAntiIa.patronDetectado}). En clase preferimos tus palabras.`
+                  : 'Redacción humana auténtica verificada (+10 XP en Documentación Técnica)'}
+              </span>
+            </div>
+            <span className="sello-tinta sello-tinta-azul" style={{ fontSize: 8, padding: '1px 5px' }}>
+              ANTI-IA
+            </span>
+          </div>
+        )}
 
         {/* Barra de entrada de texto */}
         <form

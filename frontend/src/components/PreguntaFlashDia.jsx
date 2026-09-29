@@ -1,26 +1,30 @@
+// frontend/src/components/PreguntaFlashDia.jsx
 import { useState, useEffect } from 'react'
 import { sound, triggerConfetti } from '../utils/haptics'
-import { MessageCircleQuestion, Check, Clock, Flame } from 'lucide-react'
+import { MessageCircleQuestion, Check, Clock, Flame, Sparkles } from 'lucide-react'
+import { supabase } from '../utils/supabase'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { sumarXpSkill } from '../utils/skillsData'
 
 const PREGUNTAS_DEFAULT = [
   {
     id: 'flash-1',
-    pregunta: '¿Qué tema de los que estamos dando os parece más difícil de entender?',
+    pregunta: '¿Qué bloque temático de SMR2 requiere mayor tiempo de laboratorio?',
     opciones: [
-      { id: 'a', texto: 'La parte teórica inicial' },
-      { id: 'b', texto: 'Los ejercicios prácticos' },
-      { id: 'c', texto: 'Se lleva bien estudiando un poco' },
-      { id: 'd', texto: 'Necesito un repaso urgente en clase' }
+      { id: 'a', texto: 'Configuración de switches y VLANs Cisco' },
+      { id: 'b', texto: 'Administración de usuarios y permisos en Linux' },
+      { id: 'c', texto: 'Montaje y diagnóstico físico de hardware' },
+      { id: 'd', texto: 'Servidores DNS, DHCP y Cortafuegos' }
     ]
   },
   {
     id: 'flash-2',
-    pregunta: '¿A qué hora sois más productivos estudiando o haciendo las entregas?',
+    pregunta: '¿Cuál es el mejor momento para entregar las prácticas de clase?',
     opciones: [
-      { id: 'a', texto: 'Por la mañana antes de venir a las 15:30' },
-      { id: 'b', texto: 'Al salir de clase por la tarde' },
-      { id: 'c', texto: 'Modo nocturno / Madrugada' },
-      { id: 'd', texto: 'El fin de semana a tope' }
+      { id: 'a', texto: 'Antes del pase de lista de las 15:30' },
+      { id: 'b', texto: 'Justo al terminar el laboratorio en el taller' },
+      { id: 'c', texto: 'Durante el descanso de las 18:10' },
+      { id: 'd', texto: 'En casa repasando los apuntes compartidos' }
     ]
   },
   {
@@ -45,40 +49,89 @@ export function PreguntaFlashDia({ userId, onSumarPuntos }) {
   const [votando, setVotando] = useState(false)
 
   useEffect(() => {
-    // 1. Obtener pregunta guardada para hoy o rotar según el día
+    cargarPreguntaYVotos()
+
+    // Escuchar votos en tiempo real de otros compañeros
+    const desuscribir = suscribirEvento('nuevo_voto_flash', (payload) => {
+      if (payload && payload.preguntaId === preguntaActiva?.id) {
+        setConteoVotos(prev => ({
+          ...prev,
+          [payload.userId]: payload.opcionId
+        }))
+      }
+    })
+
+    return () => desuscribir()
+  }, [userId, preguntaActiva?.id])
+
+  const cargarPreguntaYVotos = async () => {
     let flash = null
+
+    // 1. Cargar pregunta del día desde Supabase
     try {
-      const guardada = localStorage.getItem('muudel_pregunta_custom_hoy')
-      if (guardada) {
-        flash = JSON.parse(guardada)
+      const { data: dbPregunta } = await supabase
+        .from('pregunta_flash')
+        .select('*')
+        .eq('activo', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (dbPregunta && dbPregunta.pregunta && Array.isArray(dbPregunta.opciones)) {
+        flash = dbPregunta
       }
     } catch (e) {}
 
+    // 2. Si no hay en BD, rotar según el día
     if (!flash) {
-      // Elegir pregunta fija según día del año
       const diaNum = Math.floor(Date.now() / (1000 * 60 * 60 * 24))
       flash = PREGUNTAS_DEFAULT[diaNum % PREGUNTAS_DEFAULT.length]
     }
 
     setPreguntaActiva(flash)
 
-    // 2. Cargar votos
+    // 3. Cargar votos de la base de datos Supabase
+    const mapaVotos = {}
+    let miVoto = null
+
     try {
-      const datosVotos = JSON.parse(localStorage.getItem(claveStorage) || '{"votos": {}}')
-      setConteoVotos(datosVotos.votos || {})
-      if (userId && datosVotos.votos && datosVotos.votos[userId]) {
-        setVotoUsuario(datosVotos.votos[userId])
+      const { data: votosDb } = await supabase
+        .from('pregunta_flash_votos')
+        .select('*')
+        .eq('pregunta_id', flash.id)
+
+      if (votosDb && Array.isArray(votosDb)) {
+        votosDb.forEach(v => {
+          mapaVotos[v.user_id] = v.opcion_id
+          if (userId && v.user_id === userId) {
+            miVoto = v.opcion_id
+          }
+        })
       }
     } catch (e) {}
-  }, [userId, claveStorage])
+
+    // Si aún no tenemos votos de BD, consultar caché local
+    if (Object.keys(mapaVotos).length === 0) {
+      try {
+        const datosVotos = JSON.parse(localStorage.getItem(claveStorage) || '{"votos": {}}')
+        Object.assign(mapaVotos, datosVotos.votos || {})
+        if (userId && datosVotos.votos && datosVotos.votos[userId]) {
+          miVoto = datosVotos.votos[userId]
+        }
+      } catch (e) {}
+    }
+
+    setConteoVotos(mapaVotos)
+    setVotoUsuario(miVoto)
+  }
 
   if (!preguntaActiva) return null
 
   const totalVotos = Object.keys(conteoVotos).length
   const yaVoto = Boolean(votoUsuario)
 
-  const manejarVoto = (opcionId) => {
-    if (yaVoto || votando) return
+  const manejarVoto = async (opcionId) => {
+    if (yaVoto || votando || !userId) return
     setVotando(true)
     sound.playPop()
     triggerConfetti()
@@ -87,19 +140,38 @@ export function PreguntaFlashDia({ userId, onSumarPuntos }) {
     setConteoVotos(nuevosVotos)
     setVotoUsuario(opcionId)
 
+    // Guardar en Supabase tabla real pregunta_flash_votos
+    try {
+      await supabase.from('pregunta_flash_votos').upsert({
+        pregunta_id: preguntaActiva.id,
+        user_id: userId,
+        opcion_id: opcionId,
+        created_at: new Date().toISOString()
+      })
+    } catch (e) {}
+
+    // Backup en localStorage
     try {
       localStorage.setItem(claveStorage, JSON.stringify({ votos: nuevosVotos }))
     } catch (e) {}
 
-    // Sumar +5 pts de participación
+    // Transmitir en vivo a toda la clase
+    transmitirEvento('nuevo_voto_flash', {
+      preguntaId: preguntaActiva.id,
+      userId,
+      opcionId
+    })
+
+    // Sumar +5 pts al alumno y +10 XP a su competencia técnica
     if (onSumarPuntos) {
       onSumarPuntos(5)
     }
+    await sumarXpSkill(userId, 'autoria_tecnica', 10)
 
     setVotando(false)
   }
 
-  // Calcular porcentajes
+  // Calcular frecuencias reales
   const frecuencias = {}
   preguntaActiva.opciones.forEach(op => {
     frecuencias[op.id] = 0
@@ -111,117 +183,146 @@ export function PreguntaFlashDia({ userId, onSumarPuntos }) {
   })
 
   return (
-    <div className="card" style={{
-      padding: '18px 20px',
-      marginBottom: 16,
-      backgroundColor: 'var(--color-surface)',
-      border: '1px solid var(--color-separator)'
-    }}>
+    <div
+      className="card"
+      style={{
+        padding: '18px 20px',
+        marginBottom: 16,
+        backgroundColor: 'var(--color-surface)',
+        border: '1px solid var(--color-separator)'
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            backgroundColor: 'rgba(255, 149, 0, 0.12)',
-            color: 'var(--color-warning)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              backgroundColor: 'rgba(255, 149, 0, 0.12)',
+              color: 'var(--color-warning)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
             <MessageCircleQuestion size={18} />
           </div>
           <div>
-            <span className="apple-caption" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-warning)' }}>
+            <span
+              className="apple-caption"
+              style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-warning)' }}
+            >
               Pregunta Flash del Día
             </span>
             <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
-              Caduca hoy a medianoche · {totalVotos} han respondido
+              Base de datos en vivo · {totalVotos} {totalVotos === 1 ? 'compañero ha' : 'compañeros han'} votado
             </div>
           </div>
         </div>
 
-        <span className="apple-badge apple-badge-accent" style={{ fontSize: 11, fontWeight: 700 }}>
-          {yaVoto ? 'Respondida (+5 pts)' : '+5 pts al votar'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {yaVoto ? (
+            <span className="sello-tinta sello-tinta-verde" style={{ fontSize: 9, padding: '2px 8px' }}>
+              ✓ VOTO REGISTRADO
+            </span>
+          ) : (
+            <span className="sello-tinta sello-tinta-azul" style={{ fontSize: 9, padding: '2px 8px' }}>
+              +5 PTS
+            </span>
+          )}
+        </div>
       </div>
 
-      <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-ink)', marginBottom: 14, lineHeight: 1.35 }}>
+      <h3
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: 'var(--color-ink)',
+          marginBottom: 14,
+          lineHeight: 1.35
+        }}
+      >
         {preguntaActiva.pregunta}
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {preguntaActiva.opciones.map((op) => {
-          const votosOpcion = frecuencias[op.id] || 0
-          const pct = totalVotos > 0 ? Math.round((votosOpcion / totalVotos) * 100) : 0
-          const esMiVoto = votoUsuario === op.id
+        {preguntaActiva.opciones.map(opcion => {
+          const esMiVoto = votoUsuario === opcion.id
+          const votosEste = frecuencias[opcion.id] || 0
+          const pct = totalVotos > 0 ? Math.round((votosEste / totalVotos) * 100) : 0
 
-          if (yaVoto) {
-            // Mostrar barras de resultados
-            return (
-              <div
-                key={op.id}
-                style={{
-                  position: 'relative',
-                  padding: '10px 14px',
-                  borderRadius: 12,
-                  border: esMiVoto ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                  backgroundColor: esMiVoto ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
-                  overflow: 'hidden'
-                }}
-              >
-                {/* Relleno porcentual */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  bottom: 0,
-                  width: `${pct}%`,
-                  backgroundColor: esMiVoto ? 'rgba(10, 132, 255, 0.15)' : 'rgba(120, 120, 128, 0.08)',
-                  zIndex: 0,
-                  transition: 'width 0.5s ease'
-                }} />
-
-                <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {esMiVoto && <Check size={14} color="var(--color-accent)" strokeWidth={2.5} />}
-                    <span style={{ fontSize: 13, fontWeight: esMiVoto ? 700 : 500, color: 'var(--color-ink)' }}>
-                      {op.texto}
-                    </span>
-                  </div>
-                  <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: esMiVoto ? 'var(--color-accent)' : 'var(--color-secondary-ink)' }}>
-                    {pct}%
-                  </span>
-                </div>
-              </div>
-            )
-          }
-
-          // Si aún no ha votado, mostrar botones seleccionables
           return (
             <button
-              key={op.id}
-              onClick={() => manejarVoto(op.id)}
-              disabled={votando}
+              key={opcion.id}
+              type="button"
+              disabled={yaVoto || votando}
+              onClick={() => manejarVoto(opcion.id)}
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '12px 14px',
-                borderRadius: 12,
-                border: '1px solid var(--color-separator)',
-                backgroundColor: 'var(--color-surface-secondary)',
-                color: 'var(--color-ink)',
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: 'pointer',
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: esMiVoto
+                  ? '2px solid var(--color-accent)'
+                  : '1px solid var(--color-separator)',
+                backgroundColor: esMiVoto
+                  ? 'rgba(0, 122, 255, 0.08)'
+                  : 'var(--color-surface-secondary)',
+                color: 'var(--color-ink)',
+                cursor: yaVoto ? 'default' : 'pointer',
+                overflow: 'hidden',
+                textAlign: 'left',
+                transition: 'all 0.2s ease'
               }}
             >
-              <span>{op.texto}</span>
-              <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>Votar</span>
+              {/* Barra de Porcentaje en vivo si ya votó */}
+              {yaVoto && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: `${pct}%`,
+                    backgroundColor: esMiVoto ? 'rgba(0, 122, 255, 0.18)' : 'rgba(0, 0, 0, 0.04)',
+                    transition: 'width 0.5s ease',
+                    zIndex: 0
+                  }}
+                />
+              )}
+
+              <span
+                style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  fontSize: 13,
+                  fontWeight: esMiVoto ? 700 : 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                {esMiVoto && <Check size={16} color="var(--color-accent)" strokeWidth={3} />}
+                {opcion.texto}
+              </span>
+
+              {yaVoto && (
+                <span
+                  style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: esMiVoto ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                    marginLeft: 10
+                  }}
+                >
+                  {pct}%
+                </span>
+              )}
             </button>
           )
         })}

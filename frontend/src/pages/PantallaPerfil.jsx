@@ -3,6 +3,7 @@ import { useAuth } from '../App'
 import { NIVELES, COLORES_AVATAR, supabase } from '../utils/supabase'
 import { CalendarioActividad } from '../components/CalendarioActividad'
 import { AvatarUsuario } from '../components/AvatarUsuario'
+import { ArbolCompetencias } from '../components/ArbolCompetencias'
 import {
   LogOut,
   Sun,
@@ -964,6 +965,9 @@ export function PantallaPerfil() {
             </div>
           ))}
         </section>
+
+        {/* ÁRBOL DE HABILIDADES Y COMPETENCIAS TÉCNICAS SMR2 */}
+        <ArbolCompetencias perfil={perfil} />
 
         {/* Selector de Apariencia */}
         <section className="card">

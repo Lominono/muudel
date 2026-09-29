@@ -26,8 +26,9 @@ export function PanelPaseLista() {
     setCargando(true)
     Promise.all([
       supabase.from('profiles').select('*').eq('rol', 'alumno').order('nombre'),
-      supabase.from('checkins').select('*').eq('fecha', hoyStr)
-    ]).then(([resProfiles, resCheckins]) => {
+      supabase.from('checkins').select('*').eq('fecha', hoyStr),
+      supabase.from('sesiones_clase').select('*').eq('fecha', hoyStr).maybeSingle()
+    ]).then(([resProfiles, resCheckins, resSesion]) => {
       const listaAlumnos = resProfiles.data || []
       setAlumnos(listaAlumnos)
 
@@ -36,6 +37,20 @@ export function PanelPaseLista() {
         resCheckins.data.forEach(chk => {
           mapa[chk.user_id] = chk
         })
+      }
+
+      // Si hay sesión guardada en Supabase, cargar PIN y aviso
+      if (resSesion?.data) {
+        if (resSesion.data.codigo_pin) {
+          setCodigoPin(resSesion.data.codigo_pin)
+          localStorage.setItem('racha_pin_hoy', resSesion.data.codigo_pin)
+        }
+        if (resSesion.data.aviso !== undefined) {
+          setAvisoClase(resSesion.data.aviso)
+          setAvisoTemporal(resSesion.data.aviso)
+          localStorage.setItem('racha_aviso_hoy', resSesion.data.aviso)
+        }
+        setSesionAbierta(resSesion.data.activa !== false)
       }
 
       // Combinar con asistencias locales si no hay en remoto
@@ -54,35 +69,67 @@ export function PanelPaseLista() {
     })
   }
 
-  // Generar nuevo PIN de 4 dígitos
-  const generarPin = () => {
+  // Generar nuevo PIN de 4 dígitos y guardar en Supabase
+  const generarPin = async () => {
     const nuevoPin = Math.floor(1000 + Math.random() * 9000).toString()
     setCodigoPin(nuevoPin)
     localStorage.setItem('racha_pin_hoy', nuevoPin)
     localStorage.setItem('racha_sesion_activa', 'true')
     setSesionAbierta(true)
     sound.playPop()
+
+    try {
+      await supabase.from('sesiones_clase').upsert({
+        fecha: hoyStr,
+        codigo_pin: nuevoPin,
+        activa: true
+      })
+    } catch (e) {}
   }
 
-  const toggleSesion = () => {
+  const toggleSesion = async () => {
     const nuevoEstado = !sesionAbierta
     setSesionAbierta(nuevoEstado)
     localStorage.setItem('racha_sesion_activa', nuevoEstado ? 'true' : 'false')
     sound.playPop()
+
+    try {
+      await supabase.from('sesiones_clase').upsert({
+        fecha: hoyStr,
+        activa: nuevoEstado
+      })
+    } catch (e) {}
   }
 
-  const guardarAviso = () => {
-    setAvisoClase(avisoTemporal.trim())
-    localStorage.setItem('racha_aviso_hoy', avisoTemporal.trim())
+  const guardarAviso = async () => {
+    const textoLimpio = avisoTemporal.trim()
+    setAvisoClase(textoLimpio)
+    localStorage.setItem('racha_aviso_hoy', textoLimpio)
     setEditandoAviso(false)
     sound.playPop()
+
+    try {
+      await supabase.from('sesiones_clase').upsert({
+        fecha: hoyStr,
+        aviso: textoLimpio,
+        activa: true
+      })
+    } catch (e) {}
   }
 
-  const borrarAviso = () => {
+  const borrarAviso = async () => {
     setAvisoClase('')
     setAvisoTemporal('')
     localStorage.removeItem('racha_aviso_hoy')
     sound.playPop()
+
+    try {
+      await supabase.from('sesiones_clase').upsert({
+        fecha: hoyStr,
+        aviso: '',
+        activa: true
+      })
+    } catch (e) {}
   }
 
   // Marcar estado de un alumno

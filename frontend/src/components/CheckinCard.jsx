@@ -4,6 +4,7 @@ import { useCheckin } from '../hooks/useCheckin'
 import { SelloPresente } from './icons/SelloPresente'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarEscalonado } from '../utils/animations'
+import { supabase } from '../utils/supabase'
 
 export function CheckinCard({ userId, rol = 'alumno', onAbrirPanelAdmin = null }) {
   const { hoy, cargando, hacerCheckin } = useCheckin(userId)
@@ -12,8 +13,27 @@ export function CheckinCard({ userId, rol = 'alumno', onAbrirPanelAdmin = null }
   const [pinError, setPinError] = useState('')
   const cardRef = useRef(null)
 
-  const pinEsperado = localStorage.getItem('racha_pin_hoy') || ''
-  const sesionAbierta = localStorage.getItem('racha_sesion_activa') !== 'false' && Boolean(pinEsperado)
+  const [pinEsperado, setPinEsperado] = useState(() => localStorage.getItem('racha_pin_hoy') || '')
+  const [sesionAbierta, setSesionAbierta] = useState(() => localStorage.getItem('racha_sesion_activa') !== 'false' && Boolean(pinEsperado))
+
+  useEffect(() => {
+    const hoyStr = new Date().toISOString().split('T')[0]
+    supabase
+      .from('sesiones_clase')
+      .select('*')
+      .eq('fecha', hoyStr)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          if (data.codigo_pin) {
+            setPinEsperado(data.codigo_pin)
+            localStorage.setItem('racha_pin_hoy', data.codigo_pin)
+          }
+          setSesionAbierta(data.activa !== false && Boolean(data.codigo_pin))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (cardRef.current) {

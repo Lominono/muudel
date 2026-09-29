@@ -43,6 +43,8 @@ import {
 import { animarEscalonado } from '../utils/animations'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { formatearTiempoRestante } from '../components/TiendaRecompensas'
+import { analizarTextoAntiIA } from '../utils/antiAiDetector'
+import { sumarXpSkill } from '../utils/skillsData'
 
 // Sin datos semilla ficticios — todo viene de Supabase
 
@@ -239,6 +241,18 @@ export function PantallaHoy() {
         }
       }
 
+      // Cargar aviso oficial desde sesiones_clase si existe
+      try {
+        const { data: sesionData } = await supabase
+          .from('sesiones_clase')
+          .select('aviso')
+          .eq('fecha', fechaHoy)
+          .maybeSingle()
+        if (sesionData?.aviso) {
+          setAvisoHoy(sesionData.aviso)
+        }
+      } catch (e) {}
+
       // Cargar posts del feed desde Supabase (tabla feed_posts)
       setCargandoPosts(true)
       const { data: postsData } = await supabase
@@ -378,6 +392,9 @@ export function PantallaHoy() {
 
     setPublicandoPost(true)
     try {
+      const textoCompleto = `${nuevoPostTitulo} ${nuevoPostContenido}`
+      const analisisAntiIA = analizarTextoAntiIA(textoCompleto)
+
       const { data: postCreado, error } = await supabase
         .from('feed_posts')
         .insert({
@@ -393,6 +410,16 @@ export function PantallaHoy() {
         .single()
 
       if (!error && postCreado) {
+        // Otorgar XP de competencia técnica
+        let skillKey = 'autoria_tecnica'
+        if (nuevoPostCategoria === 'Truco') skillKey = 'linux_bash'
+        else if (nuevoPostCategoria === 'Aviso') skillKey = 'servicios_servidores'
+        else if (nuevoPostCategoria === 'Pregunta') skillKey = 'redes_vlans'
+
+        if (analisisAntiIA.esGenuino) {
+          sumarXpSkill(perfil.id, skillKey, 15)
+        }
+
         const nuevoPost = {
           id: postCreado.id,
           userId: perfil.id,
@@ -406,15 +433,17 @@ export function PantallaHoy() {
           contenido: postCreado.contenido,
           fecha: 'Ahora',
           likes: 0,
-          liked: false
+          liked: false,
+          antiAi: analisisAntiIA
         }
         setPostsFeed(prev => [nuevoPost, ...prev])
         transmitirEvento('nuevo_feed_post', nuevoPost)
         sound.playStamp()
         triggerConfetti()
 
-        // +5 pts por aportar al aula
-        sumarPuntos(5)
+        // Puntos: +10 si es 100% autoría humana y +5 estándar
+        const ptsExtra = analisisAntiIA.esGenuino ? 10 : 5
+        sumarPuntos(ptsExtra)
       }
     } catch (err) {
       console.error('Error al publicar:', err)
@@ -930,9 +959,17 @@ export function PantallaHoy() {
                     <span>{item.likes || 0}</span>
                   </button>
 
-                  <span className="apple-caption" style={{ fontSize: 11 }}>
-                    Post de la clase
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {item.antiAi?.esGenuino ? (
+                      <span className="apple-badge apple-badge-success" style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <Check size={10} /> 100% Humano
+                      </span>
+                    ) : (
+                      <span className="apple-caption" style={{ fontSize: 11 }}>
+                        Post de la clase
+                      </span>
+                    )}
+                  </div>
                 </div>
               </article>
             )
