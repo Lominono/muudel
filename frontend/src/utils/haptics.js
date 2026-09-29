@@ -59,6 +59,29 @@ class SoundEngine {
       osc.stop(this.ctx.currentTime + 0.08)
     } catch (e) {}
   }
+
+  // Sonido de envío de mensaje (tono ascendente corto)
+  playSend() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(440, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.1)
+
+      gain.gain.setValueAtTime(0.1, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1)
+
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.1)
+    } catch (e) {}
+  }
 }
 
 export const sound = new SoundEngine()

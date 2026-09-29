@@ -761,3 +761,108 @@ body {
   background: var(--color-tertiary-ink);
 }
 
+/* ─── Responsive DM Panel & Chat Layout ─── */
+.chat-window-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  overflow: hidden;
+  margin-bottom: 8px;
+  height: calc(100vh - 250px);
+  min-height: 460px;
+  max-height: calc(100vh - 180px);
+  border-radius: 18px;
+  border: 1px solid var(--color-separator);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 640px) {
+  .chat-window-card {
+    height: calc(100dvh - 225px) !important;
+    min-height: 380px !important;
+    max-height: none !important;
+    margin-bottom: 4px;
+    border-radius: 14px;
+  }
+  .dm-layout-grid {
+    grid-template-columns: 1fr !important;
+    height: calc(100dvh - 215px) !important;
+    min-height: 380px !important;
+    border-radius: 14px;
+  }
+  .dm-sidebar-con-chat {
+    display: none !important;
+  }
+  .dm-back-btn {
+    display: flex !important;
+    min-width: 40px;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1023px) {
+  .dm-layout-grid {
+    grid-template-columns: 240px 1fr !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dm-layout-grid {
+    grid-template-columns: 300px 1fr !important;
+  }
+}
+
+/* ─── Chat page improvements ─── */
+@media (max-width: 640px) {
+  .app-container {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
+/* Animación de entrada suave */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animación de pulsación suave (skeleton loader) */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Chat message row hover con sutil efecto de fondo */
+.chat-message-row {
+  transition: background-color 0.12s ease;
+  border-radius: 14px;
+}
+
+@media (hover: hover) {
+  .chat-message-row:hover {
+    background-color: rgba(120, 120, 128, 0.04);
+  }
+}
+
+/* Input antiautozoom en iOS */
+@media (max-width: 640px) {
+  .apple-input,
+  input[type="text"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
+

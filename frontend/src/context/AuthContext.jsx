@@ -3,6 +3,37 @@ import { supabase } from '../utils/supabase'
 
 export const AuthContext = createContext(null)
 
+export const ADMIN_LOMINONO_ID = '00000000-0000-4000-a000-000000000001'
+
+const generarUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try { return crypto.randomUUID() } catch (e) {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+const registrarAccesoBD = async (userId, email = null, metodo = 'login') => {
+  if (!userId) return
+  try {
+    await supabase
+      .from('profiles')
+      .update({ ultimo_acceso: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', userId)
+
+    await supabase
+      .from('login_records')
+      .insert({
+        user_id: userId,
+        email: email || null,
+        metodo: metodo
+      })
+  } catch (e) {}
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {
@@ -136,7 +167,7 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const cargarPerfil = async (userId, userMetadata = null, email = null) => {
+  const cargarPerfil = async (userId, userMetadata = null, email = null, metodoLogin = 'oauth') => {
     if (cargandoRef.current) return
     cargandoRef.current = true
     try {
@@ -150,7 +181,7 @@ export function AuthProvider({ children }) {
         email?.toLowerCase().includes('lomino') ||
         userMetadata?.full_name?.toLowerCase().includes('lomino') ||
         userMetadata?.name?.toLowerCase().includes('lomino') ||
-        userId === 'admin-lominono'
+        userId === ADMIN_LOMINONO_ID
 
       // Recuperar metadatos locales si existen (dígito, nick, onboarding, ban local)
       let localMeta = {}
@@ -181,10 +212,12 @@ export function AuthProvider({ children }) {
 
         if (esLominono && data.rol !== 'moderador') {
           await supabase.from('profiles').update({ rol: 'moderador', nombre: 'lominoño' }).eq('id', userId)
-          setPerfil({ ...perfilCompleto, rol: 'moderador', nombre: data.nombre === 'Estudiante' ? 'lominoño' : data.nombre, onboarding_completado: true })
-        } else {
-          setPerfil(perfilCompleto)
+          perfilCompleto = { ...perfilCompleto, rol: 'moderador', nombre: data.nombre === 'Estudiante' ? 'lominoño' : data.nombre, onboarding_completado: true }
         }
+
+        localStorage.setItem('racha_local_user', JSON.stringify(perfilCompleto))
+        setPerfil(perfilCompleto)
+        registrarAccesoBD(userId, email, metodoLogin)
       } else {
         const nombreSugerido = esLominono ? 'lominoño' : (
           userMetadata?.full_name ||
@@ -194,22 +227,26 @@ export function AuthProvider({ children }) {
         )
 
         const rolSugerido = esLominono ? 'moderador' : (userMetadata?.rol || 'alumno')
+        const rawUsername = (userMetadata?.username || (email ? email.split('@')[0] : nombreSugerido))
+        const usernameSugerido = rawUsername.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || ('user_' + String(userId).slice(0, 6))
 
-        // Columnas soportadas en profiles de Supabase
         const payloadSupabase = {
           id: userId,
           nombre: (nombreSugerido || 'Estudiante').slice(0, 30),
-          puntos_total: 0,
-          racha_actual: 0,
-          mejor_racha: 0,
+          username: usernameSugerido,
+          email: email || null,
+          puntos_total: 10,
+          racha_actual: 1,
+          mejor_racha: 1,
           rol: rolSugerido,
-          color_acento: '#0A84FF'
+          color_acento: '#0A84FF',
+          avatar_emoji: '🧑‍🎓',
+          onboarding_completado: esLominono,
+          ultimo_acceso: new Date().toISOString()
         }
 
         let perfilCompleto = {
           ...payloadSupabase,
-          email: email || null,
-          onboarding_completado: esLominono,
           ...localMeta
         }
 
@@ -220,10 +257,14 @@ export function AuthProvider({ children }) {
             .select()
             .single()
 
-          setPerfil({ ...(insertado || payloadSupabase), ...perfilCompleto })
+          const finalData = insertado || payloadSupabase
+          localStorage.setItem('racha_local_user', JSON.stringify({ ...finalData, ...perfilCompleto }))
+          setPerfil({ ...finalData, ...perfilCompleto })
         } catch (e) {
+          localStorage.setItem('racha_local_user', JSON.stringify(perfilCompleto))
           setPerfil(perfilCompleto)
         }
+        registrarAccesoBD(userId, email, metodoLogin)
       }
     } catch (e) {
       console.warn('Error al cargar perfil:', e)
@@ -453,23 +494,37 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const entrarComoAlumno = (nombreAlumno = 'Alumno de Clase') => {
+  const entrarComoAlumno = async (nombreAlumno = 'Alumno de Clase') => {
     setLoginError(null)
     setLoginNotice(null)
+    const nuevoUuid = generarUUID()
+    const rawUser = nombreAlumno.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) || 'alumno'
     const alumnoPerfil = {
-      id: 'alumno-demo-' + Date.now().toString().slice(-4),
+      id: nuevoUuid,
       nombre: nombreAlumno,
+      username: `${rawUser}_${nuevoUuid.slice(0, 4)}`,
+      email: `${rawUser}_${nuevoUuid.slice(0, 4)}@muudel.app`,
       rol: 'alumno',
-      color_acento: '#0A84FF',
-      puntos_total: 0,
-      racha_actual: 0,
-      mejor_racha: 0,
+      color_acento: '#30D158',
+      avatar_emoji: '🧑‍🎓',
+      puntos_total: 10,
+      racha_actual: 1,
+      mejor_racha: 1,
       frase: 'Listo para clase',
+      onboarding_completado: true,
+      ultimo_acceso: new Date().toISOString()
     }
     localStorage.setItem('racha_local_user', JSON.stringify(alumnoPerfil))
-    setSession({ user: { id: alumnoPerfil.id, email: 'alumno@muudel.app' } })
+    setSession({ user: { id: alumnoPerfil.id, email: alumnoPerfil.email } })
     setPerfil(alumnoPerfil)
     setCargando(false)
+
+    try {
+      await supabase.from('profiles').upsert(alumnoPerfil, { onConflict: 'id' })
+      registrarAccesoBD(alumnoPerfil.id, alumnoPerfil.email, 'alumno_demo')
+    } catch (e) {
+      console.warn('Persistencia alumno en BD:', e)
+    }
   }
 
   const actualizarNombre = async (nuevoNombre) => {
@@ -607,24 +662,35 @@ export function AuthProvider({ children }) {
     setLoginNotice(null)
   }
 
-  const entrarComoAdminLominono = () => {
+  const entrarComoAdminLominono = async () => {
     setLoginError(null)
     setLoginNotice(null)
     const adminPerfil = {
-      id: 'admin-lominono',
+      id: ADMIN_LOMINONO_ID,
       nombre: 'lominoño',
+      username: 'lominono',
+      email: 'lominono@muudel.app',
       rol: 'moderador',
       color_acento: '#0A84FF',
-      puntos_total: 0,
-      racha_actual: 0,
-      mejor_racha: 0,
-      frase: 'Administrador de muudel',
-      onboarding_completado: true
+      avatar_emoji: '👨‍🏫',
+      puntos_total: 100,
+      racha_actual: 10,
+      mejor_racha: 10,
+      frase: 'Profesor / Moderador de muudel',
+      onboarding_completado: true,
+      ultimo_acceso: new Date().toISOString()
     }
     localStorage.setItem('racha_local_user', JSON.stringify(adminPerfil))
-    setSession({ user: { id: adminPerfil.id, email: 'lominono@muudel.app' } })
+    setSession({ user: { id: adminPerfil.id, email: adminPerfil.email } })
     setPerfil(adminPerfil)
     setCargando(false)
+
+    try {
+      await supabase.from('profiles').upsert(adminPerfil, { onConflict: 'id' })
+      registrarAccesoBD(adminPerfil.id, adminPerfil.email, 'pin_2026')
+    } catch (e) {
+      console.warn('Persistencia admin en BD:', e)
+    }
   }
 
   const actualizarPerfilCompleto = async (nuevosDatos) => {
@@ -643,21 +709,25 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      if (actualizado.id && !actualizado.id.startsWith('demo-') && !actualizado.id.startsWith('alumno-demo-')) {
-        // Enviar solo campos válidos para la tabla remota profiles
+      if (actualizado.id) {
+        const dbPayload = {
+          nombre: (actualizado.nombre || 'Alumno').trim().slice(0, 30),
+          username: (actualizado.username || '').trim().toLowerCase().slice(0, 20),
+          color_acento: actualizado.color_acento || '#0A84FF',
+          frase: (actualizado.frase || '').slice(0, 70),
+          updated_at: new Date().toISOString()
+        }
+        if (actualizado.digito_id) dbPayload.digito_id = actualizado.digito_id
+        if (actualizado.onboarding_completado !== undefined) dbPayload.onboarding_completado = true
+        if (actualizado.rol) dbPayload.rol = actualizado.rol
+        if (actualizado.avatar_emoji) dbPayload.avatar_emoji = actualizado.avatar_emoji
+
         await supabase
           .from('profiles')
-          .update({
-            nombre: (actualizado.nombre || 'Alumno').trim().slice(0, 30),
-            username: (actualizado.username || '').trim().toLowerCase().slice(0, 20),
-            color_acento: actualizado.color_acento || '#0A84FF',
-            frase: (actualizado.frase || '').slice(0, 70),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', actualizado.id)
+          .upsert({ id: actualizado.id, ...dbPayload }, { onConflict: 'id' })
       }
     } catch (e) {
-      console.warn('Nota: guardado local activo:', e)
+      console.warn('Nota: guardado en BD:', e)
     }
 
     return { success: true, perfil: actualizado }

@@ -536,6 +536,7 @@ export function PantallaChat() {
           perfil={perfil}
           destinatarioInicial={destinatarioDmSeleccionado}
           useDmHook={dmHook}
+          onSelectDestinatario={(contacto) => setDestinatarioDmSeleccionado(contacto)}
           onCerrar={() => setModoVista('canales')}
         />
       ) : (
@@ -648,19 +649,7 @@ export function PantallaChat() {
       )}
 
       {/* Ventana de mensajes del chat estilo iOS */}
-      <div
-        className="card"
-        style={{
-          flex: 1,
-          height: 'calc(100vh - 275px)',
-          minHeight: 460,
-          display: 'flex',
-          flexDirection: 'column',
-          padding: 0,
-          overflow: 'hidden',
-          marginBottom: 8
-        }}
-      >
+      <div className="card chat-window-card">
         <div style={{
           flex: 1,
           overflowY: 'auto',

@@ -38,6 +38,7 @@ export function PanelMensajesDirectos({
   perfil,
   destinatarioInicial = null,
   onCerrar = null,
+  onSelectDestinatario = null,
   useDmHook
 }) {
   const [destinatarioSeleccionado, setDestinatarioSeleccionado] = useState(destinatarioInicial)
@@ -103,13 +104,15 @@ export function PanelMensajesDirectos({
     const textoAEnviar = nuevoTexto
     setNuevoTexto('')
     emitirTyping(false)
-    await enviarMensaje(textoAEnviar)
+    await enviarMensaje(textoAEnviar, destinatarioSeleccionado)
     if (inputRef.current) inputRef.current.focus()
   }
 
   const handleSeleccionarContacto = (contacto) => {
     sound.playPop()
     setDestinatarioSeleccionado(contacto)
+    // Propagar al padre para que el hook reciba el destinatarioActivo correcto
+    if (onSelectDestinatario) onSelectDestinatario(contacto)
   }
 
   const parsearContenido = (texto) => {
@@ -353,7 +356,10 @@ export function PanelMensajesDirectos({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 type="button"
-                onClick={() => setDestinatarioSeleccionado(null)}
+                onClick={() => {
+                  setDestinatarioSeleccionado(null)
+                  if (onSelectDestinatario) onSelectDestinatario(null)
+                }}
                 className="dm-back-btn"
                 style={{
                   background: 'none',

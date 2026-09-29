@@ -1174,12 +1174,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     if (!state) return
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
-    // Screen Shake dinámico
+    // Screen Shake dinámico suave (sin marear la vista)
     let shakeX = 0, shakeY = 0
     if (state.screenShake > 0) {
-      shakeX = (Math.random() - 0.5) * state.screenShake * 1.6
-      shakeY = (Math.random() - 0.5) * state.screenShake * 1.6
-      state.screenShake = Math.max(0, state.screenShake - 0.35)
+      shakeX = (Math.random() - 0.5) * Math.min(2.5, state.screenShake * 0.4)
+      shakeY = (Math.random() - 0.5) * Math.min(2.5, state.screenShake * 0.4)
+      state.screenShake = Math.max(0, state.screenShake - 0.4)
     }
 
     ctx.save()
@@ -1190,23 +1190,23 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     const enOverdrive = state.overdriveTime > 0
     const enFinal = state.fase === 'meteoros' || state.fase === 'victoria'
 
-    // Fondo dinámico degradado arcade
+    // Fondo suave y limpio Apple HIG
     const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H)
     if (enFinal) {
-      grad.addColorStop(0, 'rgba(15, 0, 30, 0.95)')
-      grad.addColorStop(1, 'rgba(40, 0, 60, 0.5)')
+      grad.addColorStop(0, dark ? '#1E1B4B' : '#312E81')
+      grad.addColorStop(1, dark ? '#0F172A' : '#1E293B')
     } else if (enOverdrive) {
-      grad.addColorStop(0, 'rgba(14, 165, 233, 0.35)')
-      grad.addColorStop(1, 'rgba(3, 105, 161, 0.12)')
+      grad.addColorStop(0, dark ? '#0C4A6E' : '#E0F2FE')
+      grad.addColorStop(1, dark ? '#0F172A' : '#F0F9FF')
     } else if (enFiebre) {
-      grad.addColorStop(0, 'rgba(255, 149, 0, 0.3)')
-      grad.addColorStop(1, 'rgba(255, 59, 48, 0.08)')
+      grad.addColorStop(0, dark ? '#451A03' : '#FEF3C7')
+      grad.addColorStop(1, dark ? '#0F172A' : '#FFFBEB')
     } else if (dark) {
-      grad.addColorStop(0, 'rgba(15, 23, 42, 0.9)')
-      grad.addColorStop(1, 'rgba(30, 41, 59, 0.4)')
+      grad.addColorStop(0, '#0F172A')
+      grad.addColorStop(1, '#1E293B')
     } else {
-      grad.addColorStop(0, 'rgba(10, 132, 255, 0.12)')
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)')
+      grad.addColorStop(0, '#F1F5F9')
+      grad.addColorStop(1, '#FFFFFF')
     }
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
@@ -1371,30 +1371,25 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       }
     })
 
-    // ── Alertas ───────────────────────────────────────────────────────
+    // ── Alertas limpias y amigables ──────────────────────────────────
     if (state.alerts?.length > 0) {
       state.alerts.forEach(alert => {
-        const blink = Math.floor(state.frameCount / 4) % 2 === 0
-        if (!blink) return
         ctx.save()
-        const aW = 116, aH = 28
-        const aX = CANVAS_W - aW - 10
-        const aY = Math.max(18, Math.min(CANVAS_H - 34, alert.y + 4))
+        const aW = 96, aH = 24
+        const aX = CANVAS_W - aW - 14
+        const aY = Math.max(16, Math.min(CANVAS_H - 28, alert.y + 4))
 
-        ctx.fillStyle = alert.color === '#8B5CF6' ? 'rgba(139,92,246,0.92)' :
-          alert.color === '#FF3B30' ? 'rgba(255,59,48,0.92)' : 'rgba(245,158,11,0.92)'
-        ctx.shadowColor = alert.color || '#FF3B30'
-        ctx.shadowBlur = 14
+        ctx.fillStyle = alert.color === '#8B5CF6' ? 'rgba(139,92,246,0.85)' :
+          alert.color === '#FF3B30' ? 'rgba(255,59,48,0.85)' : 'rgba(245,158,11,0.85)'
         ctx.beginPath()
-        ctx.roundRect ? ctx.roundRect(aX, aY - aH / 2, aW, aH, 14) : ctx.rect(aX, aY - aH / 2, aW, aH)
+        ctx.roundRect ? ctx.roundRect(aX, aY - aH / 2, aW, aH, 8) : ctx.rect(aX, aY - aH / 2, aW, aH)
         ctx.fill()
 
-        const slide = Math.sin(state.frameCount * 0.35) * 3
         ctx.fillStyle = '#FFF'
-        ctx.font = '900 12px -apple-system, sans-serif'
+        ctx.font = '700 11px -apple-system, sans-serif'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(`${alert.icon} ${alert.label} ◀`, aX + aW / 2 - slide, aY)
+        ctx.fillText(`${alert.icon} ${alert.label}`, aX + aW / 2, aY)
         ctx.restore()
       })
     }
@@ -1486,62 +1481,33 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     })
     ctx.globalAlpha = 1
 
-    // ── HUD Arcade ───────────────────────────────────────────────────
-    ctx.fillStyle = dark ? '#FFF' : '#1C1C1E'
-    ctx.font = '800 14px -apple-system, sans-serif'
+    // ── HUD Limpio y Minimalista ─────────────────────────────────────
+    ctx.fillStyle = dark ? 'rgba(255,255,255,0.92)' : '#0F172A'
+    ctx.font = '700 14px -apple-system, BlinkMacSystemFont, sans-serif'
     ctx.textAlign = 'right'
-    ctx.fillText(`${state.score.toString().padStart(5, '0')}m`, CANVAS_W - 16, 26)
-    ctx.fillStyle = '#D97706'
-    ctx.fillText(`🪙 ${state.coins}`, CANVAS_W - 16, 46)
-    if (state.combo > 1) {
-      ctx.fillStyle = '#FF9500'
-      ctx.font = '900 13px -apple-system, sans-serif'
-      ctx.fillText(`x${state.combo} COMBO 🔥`, CANVAS_W - 16, 66)
+    ctx.fillText(`${state.score}m`, CANVAS_W - 16, 26)
+    if (state.coins > 0) {
+      ctx.fillStyle = '#D97706'
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText(`🪙 ${state.coins}`, CANVAS_W - 16, 44)
     }
 
-    // Medidor de Adrenalina Overdrive
-    const adrW = 96, adrH = 9
-    const adrX = 16, adrY = 16
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'
-    ctx.beginPath()
-    ctx.roundRect ? ctx.roundRect(adrX, adrY, adrW, adrH, 4) : ctx.rect(adrX, adrY, adrW, adrH)
-    ctx.fill()
-    ctx.strokeStyle = enOverdrive ? '#38BDF8' : '#FBBF24'
-    ctx.lineWidth = 1
-    ctx.stroke()
-
-    const fillW = Math.max(0, Math.min(adrW - 2, (state.adrenalina / 100) * (adrW - 2)))
-    if (fillW > 0) {
-      ctx.fillStyle = enOverdrive ? '#38BDF8' : '#F59E0B'
-      ctx.shadowColor = enOverdrive ? '#38BDF8' : '#F59E0B'
-      ctx.shadowBlur = 8
+    // Indicador sutil de energía / overdrive
+    if (state.adrenalina > 0 || enOverdrive) {
+      const adrW = 64, adrH = 5
+      const adrX = 16, adrY = 16
+      ctx.fillStyle = dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
       ctx.beginPath()
-      ctx.roundRect ? ctx.roundRect(adrX + 1, adrY + 1, fillW, adrH - 2, 3) : ctx.rect(adrX + 1, adrY + 1, fillW, adrH - 2)
+      ctx.roundRect ? ctx.roundRect(adrX, adrY, adrW, adrH, 3) : ctx.rect(adrX, adrY, adrW, adrH)
       ctx.fill()
-      ctx.shadowBlur = 0
-    }
 
-    ctx.fillStyle = enOverdrive ? '#38BDF8' : dark ? '#FFF' : '#1C1C1E'
-    ctx.font = '800 10px -apple-system, sans-serif'
-    ctx.textAlign = 'left'
-    ctx.fillText(enOverdrive ? '⚡ OVERDRIVE x3' : `⚡ ADRENALINA ${Math.round(state.adrenalina)}%`, adrX, adrY + 22)
-
-    // Timer visual
-    if (state.fase === 'normal' && state.timerFrames < state.duracionFrames - 1200) {
-      const restS = Math.ceil((state.duracionFrames - state.timerFrames) / 60)
-      ctx.fillStyle = restS < 30 ? '#FF3B30' : (dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)')
-      ctx.font = `${restS < 30 ? '900' : '700'} 12px -apple-system, sans-serif`
-      ctx.textAlign = 'center'
-      ctx.fillText(`⏱ ${restS}s`, CANVAS_W / 2, 22)
-    }
-
-    // Fiebre HUD
-    if (enFiebre) {
-      const parpadeo = state.feverUnstable && Math.floor(state.frameCount / 4) % 2 === 0
-      ctx.fillStyle = parpadeo ? '#FF3B30' : '#34C759'
-      ctx.font = '900 13px -apple-system, sans-serif'
-      ctx.textAlign = 'left'
-      ctx.fillText(state.feverUnstable ? '⚡ ¡INESTABLE!' : '★ ¡FIEBRE!', 18, 50)
+      const fillW = Math.max(0, Math.min(adrW, (state.adrenalina / 100) * adrW))
+      if (fillW > 0) {
+        ctx.fillStyle = enOverdrive ? '#38BDF8' : '#30D158'
+        ctx.beginPath()
+        ctx.roundRect ? ctx.roundRect(adrX, adrY, fillW, adrH, 3) : ctx.rect(adrX, adrY, fillW, adrH)
+        ctx.fill()
+      }
     }
 
     // Restaurar transformación de screen shake
@@ -1565,44 +1531,38 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       borderRadius: 20,
       overflow: 'hidden',
       border: '1px solid var(--color-separator)',
-      boxShadow: '0 8px 30px rgba(0,0,0,0.06)'
+      boxShadow: '0 4px 16px rgba(0,0,0,0.04)'
     }}>
-      {/* Cabecera */}
+      {/* Cabecera limpia */}
       <div style={{
-        padding: '12px 16px',
+        padding: '10px 16px',
         borderBottom: '1px solid var(--color-separator)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         backgroundColor: 'var(--color-surface-secondary)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(52,199,89,0.15)', color: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(52,199,89,0.12)', color: '#34C759', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Gamepad2 size={16} />
           </div>
           <div>
             <h3 className="apple-headline" style={{ fontSize: 15, margin: 0, lineHeight: 1.2 }}>Yoshi Runner</h3>
             <span className="apple-caption" style={{ fontSize: 11 }}>
-              Meta: {minutos}min{segundosExtra > 0 ? ` ${segundosExtra}s` : ''} · Victoria #{wins + 1}
+              Récord: {mejorPuntuacion}m · Ronda #{wins + 1}
             </span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {comboActual > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,149,0,0.15)', color: 'var(--color-warning)', padding: '2px 8px', borderRadius: 9999, fontSize: 11, fontWeight: 800 }}>
-              <Flame size={12} /><span>x{comboActual}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {juegoEstado === 'jugando' && (
+            <div className="tabular-nums" style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-ink)' }}>
+              {puntos}m
             </div>
           )}
-          {wins > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,215,0,0.15)', color: '#D97706', padding: '2px 8px', borderRadius: 9999, fontSize: 11, fontWeight: 700 }}>
-              <Star size={11} /><span>{wins} vic.</span>
-            </div>
+          {juegoEstado === 'jugando' && monedasPartida > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#D97706' }}>
+              +{monedasPartida}
+            </span>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
-            <Trophy size={13} color="#FF9500" /><span className="tabular-nums">Récord: {mejorPuntuacion}m</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: '#D97706', backgroundColor: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: 9999 }}>
-            <Coins size={13} /><span className="tabular-nums">+{monedasPartida} pts</span>
-          </div>
           <button type="button" onClick={toggleSonido} title={sonidoActivo ? 'Silenciar' : 'Activar sonido'} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-secondary-ink)', padding: 4 }}>
             {sonidoActivo ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
@@ -1632,13 +1592,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
         {/* Pantalla de inicio */}
         {juegoEstado === 'inicio' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(3px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: '#FFF' }}>
-            <img src={SPRITES_DATA_URI.yoshiRun1} alt="Yoshi" style={{ width: 56, height: 56 }} />
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(3px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#FFF' }}>
+            <img src={SPRITES_DATA_URI.yoshiRun1} alt="Yoshi" style={{ width: 52, height: 52 }} />
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>Yoshi Runner</div>
-              <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 280, lineHeight: 1.5 }}>
-                Espacio / ↑: Saltar · Mantener: Aletear · ↓: Agacharse
-                {wins > 0 && <><br/><span style={{ color: '#FFD700' }}>🏆 {wins} victorias — meta {minutos}:{String(segundosExtra).padStart(2,'0')}</span></>}
+              <div style={{ fontSize: 18, fontWeight: 800 }}>Yoshi Runner</div>
+              <div style={{ fontSize: 12, opacity: 0.8, maxWidth: 260, lineHeight: 1.4, marginTop: 4 }}>
+                Espacio / ↑ Saltar · Mantener: Aletear · ↓ Agacharse
               </div>
             </div>
             <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 8, backgroundColor: '#30D158', fontWeight: 700, fontSize: 14, padding: '10px 20px', borderRadius: 9999 }}>
@@ -1649,53 +1608,49 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
         {/* Game Over */}
         {juegoEstado === 'muerto' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#FFF' }}>
-            <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, color: '#FF3B30' }}>FIN DE PARTIDA</div>
-            <div style={{ display: 'flex', gap: 18, fontSize: 13 }}>
-              <div>Distancia: <strong>{puntos}m</strong></div>
-              <div style={{ color: '#FBBF24' }}>Puntos: <strong>+{monedasPartida}</strong></div>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#FFF' }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: '#FF3B30' }}>FIN DE PARTIDA</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+              <div>{puntos}m</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts</div>
             </div>
             {retoSuperadoEnPartida && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(52,199,89,0.25)', border: '1px solid #34C759', padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 700, color: '#86EFAC' }}>
-                <CheckCircle2 size={14} /><span>¡Reto superado!</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: 'rgba(52,199,89,0.2)', border: '1px solid #34C759', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 700, color: '#86EFAC' }}>
+                <CheckCircle2 size={13} /><span>Reto completado</span>
               </div>
             )}
-            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 6, gap: 8, backgroundColor: '#0A84FF', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9999 }}>
-              <RotateCcw size={15} /><span>Jugar de nuevo</span>
+            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 4, gap: 6, backgroundColor: '#0A84FF', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9999 }}>
+              <RotateCcw size={14} /><span>Reintentar</span>
             </button>
           </div>
         )}
 
         {/* VICTORIA */}
         {juegoEstado === 'victoria' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#FFF' }}>
-            <div style={{ fontSize: 32, fontWeight: 900, color: '#FFD700', textShadow: '0 0 20px #FFD700' }}>🏆 ¡VICTORIA! 🏆</div>
-            <div style={{ fontSize: 13, opacity: 0.9 }}>¡La patata te salvó de los meteoros!</div>
-            <div style={{ display: 'flex', gap: 18, fontSize: 13, marginTop: 4 }}>
-              <div>Distancia: <strong>{puntos}m</strong></div>
-              <div style={{ color: '#FBBF24' }}>+30 monedas bonus</div>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#FFF' }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: '#FFD700' }}>¡VICTORIA!</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+              <div>{puntos}m</div>
+              <div style={{ color: '#FBBF24' }}>+30 bonus</div>
             </div>
-            <div style={{ fontSize: 12, color: '#FFD700', opacity: 0.85 }}>
-              La próxima partida durará {Math.min(minutos + 1, 15)} minutos
-            </div>
-            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 8, gap: 8, backgroundColor: '#FFD700', color: '#000', fontWeight: 900, fontSize: 14, padding: '10px 24px', borderRadius: 9999 }}>
-              <Star size={16} fill="#000" /><span>Volver a intentar</span>
+            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 6, gap: 6, backgroundColor: '#FFD700', color: '#000', fontWeight: 800, fontSize: 13, padding: '8px 20px', borderRadius: 9999 }}>
+              <Star size={14} fill="#000" /><span>Siguiente ronda</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Controles táctiles */}
-      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-separator)', backgroundColor: 'var(--color-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Controles */}
+      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--color-separator)', backgroundColor: 'var(--color-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="apple-caption" style={{ fontSize: 11 }}>
-          💡 Alertas <strong>moradas ⬇</strong>: agáchate. Alertas <strong>rojas</strong>: salta. Aplasta con caída.
+          Morado ⬇ agáchate · Rojo: salta
         </span>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
           <button type="button" className="btn-secondary"
             onMouseDown={() => setAgachado(true)} onMouseUp={() => setAgachado(false)} onMouseLeave={() => setAgachado(false)}
             onTouchStart={e => { e.preventDefault(); setAgachado(true) }} onTouchEnd={e => { e.preventDefault(); setAgachado(false) }} onTouchCancel={e => { e.preventDefault(); setAgachado(false) }}
-            style={{ minHeight: 36, padding: '4px 14px', fontSize: 13, gap: 5, borderRadius: 10 }}>
-            <ArrowDown size={15} /><span>Agacharse</span>
+            style={{ minHeight: 34, padding: '4px 12px', fontSize: 12, gap: 4, borderRadius: 10 }}>
+            <ArrowDown size={14} /><span>↓</span>
           </button>
           <button type="button" className="btn-primary"
             onMouseDown={() => { isJumpPressedRef.current = true; saltar() }}
@@ -1704,8 +1659,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             onTouchStart={e => { e.preventDefault(); isJumpPressedRef.current = true; saltar() }}
             onTouchEnd={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onTouchCancel={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
-            style={{ minHeight: 36, padding: '4px 16px', fontSize: 13, gap: 5, backgroundColor: '#30D158', borderRadius: 10 }}>
-            <ArrowUp size={15} /><span>Saltar</span>
+            style={{ minHeight: 34, padding: '4px 14px', fontSize: 12, gap: 4, backgroundColor: '#30D158', borderRadius: 10 }}>
+            <ArrowUp size={14} /><span>Saltar</span>
           </button>
         </div>
       </div>

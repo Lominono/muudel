@@ -51,9 +51,50 @@ alter table public.profiles add column if not exists marco_avatar text default n
 alter table public.profiles add column if not exists burbuja_chat text default null;
 alter table public.profiles add column if not exists titulo_vip text default null;
 alter table public.profiles add column if not exists checkins_count integer default 0;
+alter table public.profiles add column if not exists ultimo_acceso timestamptz default now();
+
+-- Permitir perfiles locales/demo sin bloqueo estricto si no están en auth.users
+alter table public.profiles drop constraint if exists profiles_id_fkey;
 
 create index if not exists idx_profiles_puntos on public.profiles(puntos_total desc);
 create index if not exists idx_profiles_username on public.profiles(username);
+
+-- Perfil oficial moderador lominoño garantizado
+insert into public.profiles (
+  id, nombre, username, email, rol, color_acento, avatar_emoji, frase, puntos_total, racha_actual, mejor_racha, onboarding_completado
+)
+values (
+  '00000000-0000-4000-a000-000000000001'::uuid,
+  'lominoño',
+  'lominono',
+  'lominono@muudel.app',
+  'moderador',
+  '#0A84FF',
+  '👨‍🏫',
+  'Profesor / Moderador de muudel',
+  100,
+  10,
+  10,
+  true
+)
+on conflict (id) do update set
+  rol = 'moderador',
+  nombre = 'lominoño',
+  username = 'lominono';
+
+-- ==============================================================================
+-- 1.1 TABLA: LOGIN_RECORDS (Registro de inicios de sesión y accesos al aula)
+-- ==============================================================================
+create table if not exists public.login_records (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  email text,
+  metodo text default 'login', -- 'google', 'email', 'pin'
+  ip text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_login_records_user on public.login_records(user_id, created_at desc);
 
 -- ==============================================================================
 -- 2. TABLA: CHECKINS (Pase de lista diario y racha)
@@ -283,6 +324,7 @@ alter table public.pregunta_flash enable row level security;
 alter table public.pregunta_flash_votos enable row level security;
 alter table public.user_skills enable row level security;
 alter table public.canjes_tienda enable row level security;
+alter table public.login_records enable row level security;
 
 -- PROFILES
 drop policy if exists "perfiles_select" on public.profiles;
@@ -375,6 +417,12 @@ drop policy if exists "canjes_select" on public.canjes_tienda;
 create policy "canjes_select" on public.canjes_tienda for select using (auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and rol = 'moderador'));
 drop policy if exists "canjes_insert" on public.canjes_tienda;
 create policy "canjes_insert" on public.canjes_tienda for insert with check (auth.uid() = user_id or auth.uid() is null);
+
+-- LOGIN_RECORDS
+drop policy if exists "login_records_select" on public.login_records;
+create policy "login_records_select" on public.login_records for select using (auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and rol = 'moderador'));
+drop policy if exists "login_records_insert" on public.login_records;
+create policy "login_records_insert" on public.login_records for insert with check (auth.uid() = user_id or auth.uid() is null);
 
 -- ==============================================================================
 -- 13. TRIGGERS Y FUNCIONES AUTOMÁTICAS

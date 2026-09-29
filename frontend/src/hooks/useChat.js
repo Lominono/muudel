@@ -376,12 +376,19 @@ export function useChat(canal, perfil = null) {
   const enviar = async (texto, userId, perfil = null, replyData = null) => {
     if (!texto.trim()) return { data: null, error: 'Escribe un mensaje' }
 
+    const validUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const validUserId = (userId && validUuidRegex.test(userId))
+      ? userId
+      : (perfil?.id && validUuidRegex.test(perfil.id))
+      ? perfil.id
+      : '00000000-0000-4000-a000-000000000001'
+
     const msgId = generarUUID()
     const analisis = analizarTextoAntiIA(texto.trim())
     const nuevoMensaje = {
       id: msgId,
       canal,
-      user_id: userId,
+      user_id: validUserId,
       texto: texto.trim(),
       nombre: perfil?.nombre || 'Usuario',
       username: perfil?.username || null,
@@ -416,18 +423,18 @@ export function useChat(canal, perfil = null) {
     transmitirEvento('nuevo_mensaje_chat', nuevoMensaje)
 
     // Premiar autoría técnica y humana con XP de skills
-    if (analisis.esHumanoVerificado && userId) {
+    if (analisis.esHumanoVerificado && validUserId) {
       if (canal === 'apuntes') {
-        sumarXpSkill(userId, 'autoria_tecnica', 10)
+        sumarXpSkill(validUserId, 'autoria_tecnica', 10)
       } else if (canal === 'dudas') {
-        sumarXpSkill(userId, 'linux_bash', 5)
+        sumarXpSkill(validUserId, 'linux_bash', 5)
       }
     }
 
     try {
       const payloadInsert = {
         id: msgId,
-        user_id: userId,
+        user_id: validUserId,
         canal,
         texto: texto.trim(),
         es_autoria_humana: analisis.esHumanoVerificado,

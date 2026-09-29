@@ -17,7 +17,16 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
 
   const typingTimeoutRef = useRef(null)
   const destinatarioRef = useRef(destinatarioActivo)
-  destinatarioRef.current = destinatarioActivo
+  const perfilRef = useRef(perfil)
+
+  // Mantener refs siempre actualizados
+  useEffect(() => {
+    destinatarioRef.current = destinatarioActivo
+  }, [destinatarioActivo])
+
+  useEffect(() => {
+    perfilRef.current = perfil
+  }, [perfil])
 
   // Cargar lista de compañeros de clase
   const cargarContactos = useCallback(async () => {
@@ -49,7 +58,6 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
         .order('created_at', { ascending: false })
 
       if (!error && dms) {
-        // Agrupar por el otro usuario
         const convMap = {}
         let noLeidosCount = 0
 
@@ -83,7 +91,9 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
 
   // Cargar mensajes de la conversación activa
   const cargarMensajes = useCallback(async () => {
-    if (!perfil?.id || !destinatarioActivo?.id) {
+    const userId = perfilRef.current?.id
+    const destId = destinatarioRef.current?.id
+    if (!userId || !destId) {
       setMensajes([])
       return
     }
@@ -93,14 +103,14 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
         .from('direct_messages')
         .select('*')
         .or(
-          `and(sender_id.eq.${perfil.id},receiver_id.eq.${destinatarioActivo.id}),and(sender_id.eq.${destinatarioActivo.id},receiver_id.eq.${perfil.id})`
+          `and(sender_id.eq.${userId},receiver_id.eq.${destId}),and(sender_id.eq.${destId},receiver_id.eq.${userId})`
         )
         .order('created_at', { ascending: true })
+        .limit(200)
 
       if (!error && data) {
         setMensajes(data)
-        // Marcar como leídos los mensajes del otro usuario
-        marcarComoLeidos(destinatarioActivo.id)
+        marcarComoLeidos(destId)
       }
     } catch (e) {
       console.warn('Error cargando mensajes de DM:', e)
@@ -111,32 +121,40 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
 
   // Marcar como leídos los mensajes recibidos
   const marcarComoLeidos = async (otroId) => {
-    if (!perfil?.id || !otroId) return
+    const userId = perfilRef.current?.id
+    if (!userId || !otroId) return
     try {
       await supabase
         .from('direct_messages')
         .update({ leido: true })
         .eq('sender_id', otroId)
-        .eq('receiver_id', perfil.id)
+        .eq('receiver_id', userId)
         .eq('leido', false)
 
-      // Actualizar contador local
       setConversaciones(prev => prev.map(c => c.otroId === otroId ? { ...c, noLeidos: 0 } : c))
-      setTotalNoLeidos(prev => Math.max(0, prev - 1))
-      transmitirEvento('dm_leido', { readerId: perfil.id, senderId: otroId })
+      setTotalNoLeidos(prev => {
+        const conv = conversaciones.find(c => c.otroId === otroId)
+        return Math.max(0, prev - (conv?.noLeidos || 0))
+      })
+      transmitirEvento('dm_leido', { readerId: userId, senderId: otroId })
     } catch (e) {}
   }
 
-  // Enviar mensaje privado
-  const enviarMensaje = async (texto, replyTo = null, sello = null) => {
-    if (!texto.trim() || !perfil?.id || !destinatarioActivo?.id) return null
+  // Enviar mensaje privado — acepta destinatario directo o de refs
+  const enviarMensaje = async (texto, destinatarioOverride = null, replyTo = null, sello = null) => {
+    const miPerfil = perfilRef.current
+    const destActual = destinatarioOverride || destinatarioRef.current || destinatarioActivo
+    if (!texto.trim() || !miPerfil?.id || !destActual?.id) {
+      console.warn('DM: falta texto, perfil o destinatario', { texto: !!texto.trim(), perfil: !!miPerfil?.id, dest: !!destActual?.id })
+      return null
+    }
 
     const textoLimpio = texto.trim()
     const analisisAntiIa = analizarTextoAntiIA(textoLimpio)
 
     const payload = {
-      sender_id: perfil.id,
-      receiver_id: destinatarioActivo.id,
+      sender_id: miPerfil.id,
+      receiver_id: destActual.id,
       texto: textoLimpio,
       reply_to: replyTo?.id || null,
       sello: sello || null,
@@ -149,47 +167,68 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
     const tempId = 'temp_' + Date.now()
     const optimista = { ...payload, id: tempId }
     setMensajes(prev => [...prev, optimista])
-    sound.playSend()
+
+    try { sound.playSend() } catch (e) {}
 
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('direct_messages')
         .insert(payload)
         .select()
         .single()
 
-      if (!error && data) {
-        setMensajes(prev => prev.map(m => m.id === tempId ? data : m))
+      if (error) {
+        console.warn('Fallo insert inicial DM, reintentando con payload básico:', error.message)
+        const payloadMinimo = {
+          sender_id: miPerfil.id,
+          receiver_id: destActual.id,
+          texto: textoLimpio
+        }
+        const resFallback = await supabase
+          .from('direct_messages')
+          .insert(payloadMinimo)
+          .select()
+          .single()
+
+        if (!resFallback.error && resFallback.data) {
+          data = resFallback.data
+          error = null
+        }
+      }
+
+      if (data) {
+        // Reemplazar mensaje temporal con el confirmado por la BD
+        setMensajes(prev => prev.map(m => (m.id === tempId || (m.sender_id === data.sender_id && m.texto === data.texto && m.id.startsWith('temp_'))) ? data : m))
         transmitirEvento('nuevo_mensaje_dm', data)
 
         // Otorgar XP de autoría técnica si el mensaje es genuino y extenso
         if (textoLimpio.length >= 40 && analisisAntiIa.esGenuino) {
-          sumarXpSkill(perfil.id, 'autoria_tecnica', 5)
+          sumarXpSkill(miPerfil.id, 'autoria_tecnica', 5)
         }
 
-        // Actualizar lista de conversaciones
         cargarConversaciones()
         return data
       }
     } catch (e) {
       console.warn('Error enviando mensaje privado:', e)
     }
-    return null
+    return optimista
   }
 
   // Reacción con emoji en DM
   const toggleReaccion = async (messageId, emoji) => {
-    if (!perfil?.id || !messageId) return
+    const userId = perfilRef.current?.id
+    if (!userId || !messageId) return
 
     setMensajes(prev => prev.map(m => {
       if (m.id !== messageId) return m
       const reaccionesPrev = { ...(m.reacciones || {}) }
       const lista = Array.isArray(reaccionesPrev[emoji]) ? [...reaccionesPrev[emoji]] : []
-      const idx = lista.indexOf(perfil.id)
+      const idx = lista.indexOf(userId)
       if (idx >= 0) {
         lista.splice(idx, 1)
       } else {
-        lista.push(perfil.id)
+        lista.push(userId)
       }
 
       if (lista.length === 0) delete reaccionesPrev[emoji]
@@ -202,18 +241,20 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
         .eq('id', messageId)
         .then(() => {})
 
-      transmitirEvento('reaccion_dm', { messageId, emoji, userId: perfil.id, reacciones: reaccionesPrev })
+      transmitirEvento('reaccion_dm', { messageId, emoji, userId, reacciones: reaccionesPrev })
       return updated
     }))
   }
 
   // Typing indicator
   const emitirTyping = (estaEscribiendo) => {
-    if (!perfil?.id || !destinatarioActivo?.id) return
+    const userId = perfilRef.current?.id
+    const destId = destinatarioRef.current?.id
+    if (!userId || !destId) return
     transmitirEvento('typing_dm', {
-      senderId: perfil.id,
-      receiverId: destinatarioActivo.id,
-      nombre: perfil.nombre,
+      senderId: userId,
+      receiverId: destId,
+      nombre: perfilRef.current?.nombre,
       typing: estaEscribiendo
     })
   }
@@ -234,28 +275,36 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
     // Suscripción por Realtime Broadcast
     const desuscribirDm = suscribirEvento('nuevo_mensaje_dm', (nuevo) => {
       if (!nuevo) return
-      const esParaMi = nuevo.receiver_id === perfil.id
-      const esMio = nuevo.sender_id === perfil.id
+      const userId = perfilRef.current?.id
+      const esParaMi = nuevo.receiver_id === userId
+      const esMio = nuevo.sender_id === userId
 
       if (!esParaMi && !esMio) return
 
       const destinatario = destinatarioRef.current
       const esConversacionAbierta = destinatario && (
-        (nuevo.sender_id === destinatario.id && nuevo.receiver_id === perfil.id) ||
-        (nuevo.sender_id === perfil.id && nuevo.receiver_id === destinatario.id)
+        (nuevo.sender_id === destinatario.id && nuevo.receiver_id === userId) ||
+        (nuevo.sender_id === userId && nuevo.receiver_id === destinatario.id)
       )
 
       if (esConversacionAbierta) {
         setMensajes(prev => {
           if (prev.some(m => m.id === nuevo.id)) return prev
+          // Si coincide con un mensaje optimista propio pendiente, reemplazarlo
+          const tempIdx = prev.findIndex(m => m.id.startsWith('temp_') && m.sender_id === nuevo.sender_id && m.texto === nuevo.texto)
+          if (tempIdx !== -1) {
+            const copia = [...prev]
+            copia[tempIdx] = nuevo
+            return copia
+          }
           return [...prev, nuevo]
         })
         if (esParaMi) {
-          sound.playPop()
+          try { sound.playPop() } catch (e) {}
           marcarComoLeidos(destinatario.id)
         }
       } else if (esParaMi) {
-        sound.playPop()
+        try { sound.playPop() } catch (e) {}
         setTotalNoLeidos(prev => prev + 1)
       }
 
@@ -264,8 +313,8 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
 
     // Suscripción de lectura
     const desuscribirLeido = suscribirEvento('dm_leido', ({ readerId, senderId }) => {
-      if (readerId === destinatarioRef.current?.id && senderId === perfil.id) {
-        setMensajes(prev => prev.map(m => m.sender_id === perfil.id ? { ...m, leido: true } : m))
+      if (readerId === destinatarioRef.current?.id && senderId === perfilRef.current?.id) {
+        setMensajes(prev => prev.map(m => m.sender_id === perfilRef.current?.id ? { ...m, leido: true } : m))
       }
     })
 
@@ -276,7 +325,7 @@ export function useDirectMessages(perfil, destinatarioActivo = null) {
 
     // Suscripción de typing
     const desuscribirTyping = suscribirEvento('typing_dm', ({ senderId, receiverId, typing }) => {
-      if (receiverId === perfil.id && senderId === destinatarioRef.current?.id) {
+      if (receiverId === perfilRef.current?.id && senderId === destinatarioRef.current?.id) {
         setEscribiendoDestinatario(Boolean(typing))
         if (typing) {
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
