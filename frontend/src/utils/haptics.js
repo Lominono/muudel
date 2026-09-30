@@ -152,6 +152,69 @@ class SoundEngine {
       })
     } catch (e) {}
   }
+
+  // Sonido de victoria (alias para playWinFanfare)
+  playWin() {
+    this.playWinFanfare()
+  }
+
+  // Sonido de derrota (tono descendente suave)
+  playLose() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(260, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(110, this.ctx.currentTime + 0.25)
+
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25)
+
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.25)
+    } catch (e) {}
+  }
+
+  // Sonido mecánico de dados rodando
+  playDiceShake() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      for (let i = 0; i < 5; i++) {
+        const osc = this.ctx.createOscillator()
+        const gain = this.ctx.createGain()
+        osc.type = 'triangle'
+        const time = this.ctx.currentTime + i * 0.04
+        osc.frequency.setValueAtTime(300 + Math.random() * 200, time)
+        osc.frequency.exponentialRampToValueAtTime(150, time + 0.03)
+
+        gain.gain.setValueAtTime(0.08, time)
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03)
+
+        osc.connect(gain)
+        gain.connect(this.ctx.destination)
+        osc.start(time)
+        osc.stop(time + 0.03)
+      }
+    } catch (e) {}
+  }
+
+  // Giro de ruleta suave
+  playRouletteSpin() {
+    try {
+      for (let i = 0; i < 8; i++) {
+        setTimeout(() => this.playRouletteClick(), i * 45)
+      }
+    } catch (e) {}
+  }
 }
 
 export const sound = new SoundEngine()

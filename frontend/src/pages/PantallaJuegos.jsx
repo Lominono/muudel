@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
 import { YoshiRunnerGame } from '../games/yoshiRunner/YoshiRunnerGame'
 import { RuletaCasinoGame } from '../games/ruleta/RuletaCasinoGame'
+import { BatallaDadosPvP } from '../games/BatallaDadosPvP'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
@@ -234,7 +235,7 @@ export function PantallaJuegos() {
           </div>
 
           {/* Selector de Juego estilo Apple Segmented Control */}
-          <div className="segmented-control" style={{ maxWidth: 360 }}>
+          <div className="segmented-control" style={{ maxWidth: 460 }}>
             <button
               type="button"
               className={`segmented-control-item ${juegoSeleccionado === 'ruleta' ? 'active' : ''}`}
@@ -244,6 +245,16 @@ export function PantallaJuegos() {
               }}
             >
               🎰 Ruleta SMR2
+            </button>
+            <button
+              type="button"
+              className={`segmented-control-item ${juegoSeleccionado === 'pvp' ? 'active' : ''}`}
+              onClick={() => {
+                sound.playPop()
+                setJuegoSeleccionado('pvp')
+              }}
+            >
+              ⚔️ Duelo PvP
             </button>
             <button
               type="button"
@@ -267,7 +278,14 @@ export function PantallaJuegos() {
           </section>
         )}
 
-        {/* VISTA 2: YOSHI RUNNER CON RETO INTEGRADO */}
+        {/* VISTA 2: DUELO PVP DE DADOS */}
+        {juegoSeleccionado === 'pvp' && (
+          <section>
+            <BatallaDadosPvP />
+          </section>
+        )}
+
+        {/* VISTA 3: YOSHI RUNNER CON RETO INTEGRADO */}
         {juegoSeleccionado === 'yoshi' && (
           <>
             {/* RETO DEL DÍA INTEGRADO */}

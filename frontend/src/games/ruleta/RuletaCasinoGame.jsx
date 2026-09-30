@@ -111,6 +111,25 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
   // Persistent wheel angle so the wheel stays where it stopped
   const wheelAngleRef = useRef(0)
 
+  // Dynamic max bet based on inventory
+  const [apuestaMaxima, setApuestaMaxima] = useState(25)
+
+  useEffect(() => {
+    if (perfil?.id) {
+      try {
+        const raw = localStorage.getItem('muudel_inventario_' + perfil.id)
+        if (raw) {
+          const inv = JSON.parse(raw)
+          let max = 25
+          if (inv.some(i => i.catalogoId === 'ruleta_max_500')) max = 500
+          else if (inv.some(i => i.catalogoId === 'ruleta_max_100')) max = 100
+          else if (inv.some(i => i.catalogoId === 'ruleta_max_50')) max = 50
+          setApuestaMaxima(max)
+        }
+      } catch (e) {}
+    }
+  }, [perfil?.id])
+
   const totalApostado = Object.values(apuestas).reduce((acc, curr) => acc + curr, 0)
   const saldoActual = perfil?.puntos_total || 0
 
@@ -501,6 +520,25 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
       detallesGanadores.push(`Col 3 (+${pago})`)
     }
 
+    // Calcular Medios (Splits) y Cuartos (Corners)
+    for (const [key, monto] of Object.entries(apuestas)) {
+      if (key.startsWith('split-')) {
+        const nums = key.replace('split-', '').split('-').map(Number)
+        if (nums.includes(numeroGanador)) {
+          const pago = monto * 18 // Payout 17:1 = 18x total
+          gananciaTotal += pago
+          detallesGanadores.push(`Medio ${nums.join('/')} (+${pago})`)
+        }
+      } else if (key.startsWith('corner-')) {
+        const nums = key.replace('corner-', '').split('-').map(Number)
+        if (nums.includes(numeroGanador)) {
+          const pago = monto * 9 // Payout 8:1 = 9x total
+          gananciaTotal += pago
+          detallesGanadores.push(`Cuarto ${nums.join('/')} (+${pago})`)
+        }
+      }
+    }
+
     const nuevoTotalFinal = saldoBase + gananciaTotal
     const perfilLiquidado = { ...perfil, puntos_total: nuevoTotalFinal }
     setPerfil(perfilLiquidado)
@@ -534,7 +572,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
   // ─── BET HANDLERS ──────────────────────────────────────────
   const handleApostar = (tipo) => {
     if (girando) return
-    if (totalApostado + fichaSeleccionada > APUESTA_MAXIMA_MESA) { sound.playPop(); return }
+    if (totalApostado + fichaSeleccionada > apuestaMaxima) { sound.playPop(); return }
     if (saldoActual - totalApostado < fichaSeleccionada) { sound.playPop(); return }
     sound.playChipSound()
     setApuestas(prev => ({ ...prev, [tipo]: (prev[tipo] || 0) + fichaSeleccionada }))
@@ -546,7 +584,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
 
   const doblarApuestas = () => {
     if (girando || totalApostado === 0) return
-    if (totalApostado * 2 > APUESTA_MAXIMA_MESA) { sound.playPop(); return }
+    if (totalApostado * 2 > apuestaMaxima) { sound.playPop(); return }
     if (saldoActual - totalApostado < totalApostado) { sound.playPop(); return }
     sound.playChipSound()
     const d = {}; for (const [k, v] of Object.entries(apuestas)) d[k] = v * 2; setApuestas(d)
@@ -555,7 +593,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
   const repetirUltima = () => {
     if (girando || !ultimaApuesta) return
     const req = Object.values(ultimaApuesta).reduce((a, b) => a + b, 0)
-    if (req > APUESTA_MAXIMA_MESA || saldoActual < req) { sound.playPop(); return }
+    if (req > apuestaMaxima || saldoActual < req) { sound.playPop(); return }
     sound.playChipSound(); setApuestas({ ...ultimaApuesta })
   }
 
@@ -582,6 +620,37 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
   // ─── NUM BUTTON ──────────────────────────────────────────
   const NumBtn = ({ num }) => {
     const apostado = apuestas[String(num)]
+    
+    // Calculos para posición en la tabla
+    const row = num % 3 === 0 ? 3 : (num % 3 === 2 ? 2 : 1)
+    const col = Math.ceil(num / 3)
+    
+    const rightSplitKey = `split-${num}-${num+3}`
+    const bottomSplitKey = `split-${num-1}-${num}`
+    const cornerKey = `corner-${num-1}-${num}-${num+2}-${num+3}`
+    
+    const betRight = apuestas[rightSplitKey]
+    const betBottom = apuestas[bottomSplitKey]
+    const betCorner = apuestas[cornerKey]
+
+    // Puntos táctiles transparentes (se vuelven amarillos al apostar)
+    const HitZone = ({ type, k, amt, style }) => (
+      <div 
+        onClick={(e) => { e.stopPropagation(); handleApostar(k); }}
+        style={{
+          position: 'absolute',
+          zIndex: 10,
+          backgroundColor: amt ? '#FFD60A' : 'transparent',
+          borderRadius: type === 'corner' ? '50%' : '2px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+          ...style
+        }}
+      >
+        {amt && <span style={{ color: '#000', fontSize: 8, fontWeight: 900 }}>{amt}</span>}
+      </div>
+    )
+
     return (
       <button
         type="button"
@@ -593,11 +662,27 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
           border: apostado ? '2px solid #FFD60A' : '1px solid rgba(255,255,255,0.08)',
           fontWeight: 800, fontSize: 13, cursor: 'pointer',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '3px 2px', lineHeight: 1.1
+          padding: '3px 2px', lineHeight: 1.1,
+          position: 'relative', overflow: 'visible'
         }}
       >
         <span>{num}</span>
         <ChipBadge amount={apostado} />
+        
+        {/* Medio Derecho (Split Horizontal) */}
+        {col < 12 && (
+          <HitZone type="split-h" k={rightSplitKey} amt={betRight} style={{ right: -8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 24 }} />
+        )}
+        
+        {/* Medio Abajo (Split Vertical) */}
+        {row > 1 && (
+          <HitZone type="split-v" k={bottomSplitKey} amt={betBottom} style={{ bottom: -8, left: '50%', transform: 'translateX(-50%)', width: 24, height: 14 }} />
+        )}
+        
+        {/* Cuarto Abajo-Derecha (Corner) */}
+        {col < 12 && row > 1 && (
+          <HitZone type="corner" k={cornerKey} amt={betCorner} style={{ bottom: -9, right: -9, width: 18, height: 18 }} />
+        )}
       </button>
     )
   }
@@ -667,7 +752,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
               Mesa
             </span>
             <strong style={{ fontSize: 16, color: totalApostado > 0 ? '#FF9500' : 'var(--color-secondary-ink)', fontWeight: 800 }}>
-              {totalApostado}<span style={{ fontSize: 10, fontWeight: 600 }}>/{APUESTA_MAXIMA_MESA}</span>
+              {totalApostado}<span style={{ fontSize: 10, fontWeight: 600 }}>/{apuestaMaxima}</span>
             </strong>
           </div>
         </div>

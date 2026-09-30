@@ -299,6 +299,45 @@ export const CATALOGO_RECOMPENSAS = [
     duracionTexto: '12 horas desde activación',
     pinKey: 'pin_arcade',
     color: '#34C759'
+  },
+
+  // 6. MEJORAS DE JUEGOS Y APUESTAS (RULETA)
+  {
+    id: 'ruleta_max_50',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino Nivel 1',
+    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 50 pts por mesa.',
+    costo: 300,
+    icon: Ticket,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_50',
+    color: '#FF9500'
+  },
+  {
+    id: 'ruleta_max_100',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino Nivel 2',
+    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 100 pts por mesa.',
+    costo: 800,
+    icon: Ticket,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_100',
+    color: '#FF3B30'
+  },
+  {
+    id: 'ruleta_max_500',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino VIP (High Roller)',
+    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 500 pts por mesa.',
+    costo: 2500,
+    icon: Crown,
+    stockMax: 2, // Solo 2 licencias VIP en la clase
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_500',
+    color: '#D4AF37'
   }
 ]
 
@@ -732,7 +771,7 @@ export function TiendaRecompensas({ onClose }) {
   // 4. ACTIVAR PRODUCTO: El reloj empieza a contar en este instante
   const activarProducto = async (invItem, extraTexto = '') => {
     const ahora = Date.now()
-    const expiraEn = ahora + invItem.duracionMs
+    const expiraEn = invItem.duracionMs > 0 ? ahora + invItem.duracionMs : null
 
     const itemActualizado = {
       ...invItem,
@@ -801,7 +840,7 @@ export function TiendaRecompensas({ onClose }) {
     return item.categoria === categoriaCatalogo
   })
 
-  const articulosActivos = inventario.filter(i => i.estado === 'activo' && i.expiraEn && i.expiraEn > Date.now())
+  const articulosActivos = inventario.filter(i => i.estado === 'activo' && (!i.expiraEn || i.expiraEn > Date.now()))
   const articulosListos = inventario.filter(i => i.estado === 'listo')
   const articulosExpirados = inventario.filter(i => i.estado === 'expirado' || (i.expiraEn && i.expiraEn <= Date.now()))
 
