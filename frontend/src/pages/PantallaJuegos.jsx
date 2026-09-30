@@ -163,13 +163,13 @@ export function PantallaJuegos() {
         .update({ puntos_total: nuevosPuntos })
         .eq('id', perfil.id)
 
-      await supabase.from('reto_completado').upsert({
-        reto_id: 'reto-arcade-yoshi',
+      // Registrar récord en arcade_scores (tabla con esquema específico para juegos)
+      await supabase.from('arcade_scores').insert({
         user_id: perfil.id,
-        validado: true,
-        estado: 'aprobado',
-        evidencia: `Auto-comprobado por motor de Yoshi Runner (Récord: ${score}m)`,
-        fecha: new Date().toISOString()
+        juego: 'yoshi_runner',
+        puntuacion: score,
+        monedas: RECOMPENSA_RETO,
+        fecha: fechaHoy
       })
     } catch (_) {}
 
@@ -205,31 +205,51 @@ export function PantallaJuegos() {
 
   return (
     <main className="app-container" style={{ maxWidth: 840, padding: 'clamp(12px, 3vw, 24px)' }}>
-      {/* Encabezado Apple HIG */}
-      <header style={{ marginBottom: 16 }}>
+      {/* Encabezado Artesanal de Aula SMR2 (Anti-IA) */}
+      <header style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* Sello mecánico de recreo con borde doble */}
             <div
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 12,
-                backgroundColor: 'rgba(52, 199, 89, 0.12)',
-                color: '#34C759',
+                width: 46,
+                height: 46,
+                borderRadius: 10,
+                backgroundColor: 'rgba(52, 199, 89, 0.1)',
+                border: '1.5px solid #2F9E44',
+                color: '#2F9E44',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(52, 199, 89, 0.15)'
+                boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1)'
               }}
             >
               <Gamepad2 size={24} />
             </div>
+
             <div>
-              <h1 className="apple-large-title" style={{ fontSize: 'clamp(22px, 4vw, 28px)', margin: 0 }}>
-                Recreo y Juegos SMR2
-              </h1>
-              <p className="apple-subheadline" style={{ fontSize: 13, margin: '2px 0 0' }}>
-                Ruleta europea de apuestas de clase y pausa activa arcade.
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h1 className="apple-large-title" style={{ fontSize: 'clamp(20px, 3.5vw, 24px)', margin: 0, letterSpacing: -0.3 }}>
+                  Recreo y Apuestas SMR2
+                </h1>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    border: '1px solid #D93829',
+                    color: '#D93829',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  PAUSA ACTIVA 18:10
+                </span>
+              </div>
+              <p className="apple-subheadline" style={{ fontSize: 13, margin: '2px 0 0', color: 'var(--color-secondary-ink)' }}>
+                Mesa de ruleta europea, duelos 1v1 de dados y recreo arcade de clase.
               </p>
             </div>
           </div>

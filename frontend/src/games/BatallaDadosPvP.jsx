@@ -2,72 +2,91 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../utils/supabase'
 import { sound, triggerConfetti } from '../utils/haptics'
-import { Swords, Plus, Shield, Trophy, Loader2, X, Coins, RotateCcw, History, AlertCircle } from 'lucide-react'
+import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { Swords, Plus, Shield, Trophy, Loader2, X, Coins, RotateCcw, History, AlertCircle, Dice5, User } from 'lucide-react'
 import { useAuth } from '../App'
 
-// Componente visual para un dado físico de 6 caras estilo Apple (minimalista y táctil)
-function CaraDado({ valor, rodando }) {
-  // Posiciones de los puntos para cada número (1 al 6)
-  const renderPuntos = () => {
+// Componente de dado físico de marfil con puntos grabados estilo artesanal de aula
+function DadoFisico({ valor, rodando, esDorado = false }) {
+  const puntosPosiciones = () => {
+    const colorPunto = esDorado ? '#78350F' : '#1C1C1E'
+    const punto = (key, style = {}) => (
+      <div
+        key={key}
+        style={{
+          width: 9,
+          height: 9,
+          borderRadius: '50%',
+          backgroundColor: colorPunto,
+          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.6)',
+          ...style
+        }}
+      />
+    )
+
     switch (valor) {
       case 1:
-        return <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#1C1C1E', margin: 'auto' }} />
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+            {punto('c', { width: 12, height: 12 })}
+          </div>
+        )
       case 2:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', width: '100%' }}>
-            <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'flex-start' }} />
-            <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'flex-end' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%' }}>
+            {punto('tl', { alignSelf: 'flex-start' })}
+            {punto('br', { alignSelf: 'flex-end' })}
           </div>
         )
       case 3:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', width: '100%' }}>
-            <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'flex-start' }} />
-            <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'center' }} />
-            <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'flex-end' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%' }}>
+            {punto('tl', { alignSelf: 'flex-start' })}
+            {punto('c', { alignSelf: 'center' })}
+            {punto('br', { alignSelf: 'flex-end' })}
           </div>
         )
       case 4:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('tl')}
+              {punto('tr')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('bl')}
+              {punto('br')}
             </div>
           </div>
         )
       case 5:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('tl')}
+              {punto('tr')}
             </div>
-            <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E', alignSelf: 'center' }} />
+            {punto('c', { alignSelf: 'center' })}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('bl')}
+              {punto('br')}
             </div>
           </div>
         )
       case 6:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('tl')}
+              {punto('tr')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('ml')}
+              {punto('mr')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
-              <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: '#1C1C1E' }} />
+              {punto('bl')}
+              {punto('br')}
             </div>
           </div>
         )
@@ -79,25 +98,25 @@ function CaraDado({ valor, rodando }) {
   return (
     <div
       style={{
-        width: 58,
-        height: 58,
-        borderRadius: 14,
-        backgroundColor: '#FFFFFF',
+        width: 54,
+        height: 54,
+        borderRadius: 12,
+        backgroundColor: esDorado ? '#FDE68A' : '#F8F9FA',
         boxShadow: rodando
-          ? '0 12px 24px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.8), inset 0 -2px 4px rgba(0,0,0,0.2)'
-          : '0 4px 10px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.9), inset 0 -2px 4px rgba(0,0,0,0.15)',
-        border: '1px solid rgba(0,0,0,0.12)',
+          ? '0 10px 20px rgba(0,0,0,0.4), inset 0 2px 3px rgba(255,255,255,0.9), inset 0 -3px 4px rgba(0,0,0,0.25)'
+          : '0 4px 8px rgba(0,0,0,0.3), inset 0 2px 2px rgba(255,255,255,0.9), inset 0 -2px 3px rgba(0,0,0,0.2)',
+        border: esDorado ? '1px solid #D97706' : '1px solid rgba(0,0,0,0.18)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 10,
+        padding: 9,
         boxSizing: 'border-box',
-        transform: rodando ? 'rotate(15deg) scale(1.08)' : 'none',
-        transition: 'transform 0.15s ease',
-        animation: rodando ? 'shakeDado 0.18s infinite alternate' : 'none'
+        transform: rodando ? 'rotate(12deg) scale(1.05)' : 'none',
+        transition: 'transform 0.12s ease',
+        animation: rodando ? 'agitarDado 0.15s infinite alternate' : 'none'
       }}
     >
-      {renderPuntos()}
+      {puntosPosiciones()}
     </div>
   )
 }
@@ -109,125 +128,180 @@ export function BatallaDadosPvP() {
   const [apuesta, setApuesta] = useState(10)
   const [cargando, setCargando] = useState(false)
   const [animacionBatalla, setAnimacionBatalla] = useState(null)
-  const [dadosMostrados, setDadosMostrados] = useState({
-    c1: 1, c2: 1, o1: 1, o2: 1
-  })
+  const [dadosMostrados, setDadosMostrados] = useState({ c1: 1, c2: 1, o1: 1, o2: 1 })
   const [rodandoDados, setRodandoDados] = useState(false)
-  const [mensajeEstado, setMensajeEstado] = useState('')
+  const [notificacion, setNotificacion] = useState('')
 
   const PRESETS_APUESTA = [5, 10, 25, 50, 100]
 
-  // Cargar salas y duelos recientes
   useEffect(() => {
     fetchLobbies()
     fetchHistorial()
 
-    // Suscripción Realtime a pvp_partidas
+    // 1. Canal en tiempo real de clase (realtimeHub) para difusión inmediata con 0ms de retardo
+    const desun1 = suscribirEvento('pvp_nuevo_reto', () => fetchLobbies())
+    const desun2 = suscribirEvento('pvp_reto_cancelado', () => fetchLobbies())
+    const desun3 = suscribirEvento('pvp_reto_resuelto', (payload) => {
+      fetchLobbies()
+      fetchHistorial()
+      // Si el usuario era el creador y estaba esperando, lanzar la animación en vivo
+      if (payload?.resultado?.creador_id === perfil?.id && !animacionBatalla) {
+        iniciarAnimacionResolucion(payload.resultado)
+      }
+    })
+
+    // 2. Suscripción secundaria de Postgres Changes de Supabase
     const canal = supabase
       .channel('pvp-batallas-live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'pvp_partidas' },
-        (payload) => {
-          fetchLobbies()
-          fetchHistorial()
-
-          // Si una partida creada por el usuario actual fue resuelta por un oponente:
-          if (
-            payload.eventType === 'UPDATE' &&
-            payload.new?.creador_id === perfil?.id &&
-            payload.new?.estado === 'finalizado' &&
-            !animacionBatalla
-          ) {
-            iniciarAnimacionResolucion({
-              creador_id: payload.new.creador_id,
-              oponente_id: payload.new.oponente_id,
-              creador_dado1: payload.new.dado1_creador || Math.ceil(payload.new.resultado_creador / 2),
-              creador_dado2: payload.new.dado2_creador || Math.floor(payload.new.resultado_creador / 2),
-              creador_roll: payload.new.resultado_creador,
-              oponente_dado1: payload.new.dado1_oponente || Math.ceil(payload.new.resultado_oponente / 2),
-              oponente_dado2: payload.new.dado2_oponente || Math.floor(payload.new.resultado_oponente / 2),
-              oponente_roll: payload.new.resultado_oponente,
-              ganador_id: payload.new.ganador_id,
-              premio: payload.new.apuesta * 2
-            })
-          }
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pvp_partidas' }, () => {
+        fetchLobbies()
+        fetchHistorial()
+      })
       .subscribe()
 
     return () => {
+      desun1()
+      desun2()
+      desun3()
       supabase.removeChannel(canal)
     }
   }, [perfil?.id, animacionBatalla])
 
+  // Cargar salas esperando oponente de forma segura (sin fallos de PostgREST joins)
   const fetchLobbies = async () => {
     try {
-      const { data } = await supabase
+      const { data: partidas, error } = await supabase
         .from('pvp_partidas')
-        .select(`
-          id, apuesta, estado, creador_id, created_at,
-          creador:profiles!pvp_partidas_creador_id_fkey(id, nombre, avatar_url, color_acento)
-        `)
+        .select('*')
         .eq('estado', 'esperando')
         .order('created_at', { ascending: false })
 
-      if (data) setLobbies(data)
+      if (error) {
+        // Fallback local silencioso si la tabla no está creada aún en Supabase
+        return
+      }
+
+      if (!partidas || partidas.length === 0) {
+        setLobbies([])
+        return
+      }
+
+      // Mapear perfiles de creadores sin usar joins que causan error 400
+      const creadorIds = [...new Set(partidas.map(p => p.creador_id).filter(Boolean))]
+      let perfilesMap = {}
+
+      if (creadorIds.length > 0) {
+        const { data: perfilesData } = await supabase
+          .from('profiles')
+          .select('id, nombre, avatar_url, color_acento, digito_id')
+          .in('id', creadorIds)
+
+        if (perfilesData) {
+          perfilesData.forEach(p => { perfilesMap[p.id] = p })
+        }
+      }
+
+      const resultado = partidas.map(p => ({
+        ...p,
+        creador: perfilesMap[p.creador_id] || {
+          id: p.creador_id,
+          nombre: 'Compañero SMR2',
+          color_acento: '#007AFF',
+          digito_id: '#01'
+        }
+      }))
+
+      setLobbies(resultado)
     } catch (_) {}
   }
 
+  // Cargar historial de duelos de forma segura
   const fetchHistorial = async () => {
     try {
-      const { data } = await supabase
+      const { data: partidas, error } = await supabase
         .from('pvp_partidas')
-        .select(`
-          id, apuesta, resultado_creador, resultado_oponente, ganador_id, resolved_at,
-          creador:profiles!pvp_partidas_creador_id_fkey(id, nombre, color_acento),
-          oponente:profiles!pvp_partidas_oponente_id_fkey(id, nombre, color_acento)
-        `)
+        .select('*')
         .eq('estado', 'finalizado')
         .order('resolved_at', { ascending: false })
         .limit(5)
 
-      if (data) setHistorial(data)
+      if (error || !partidas || partidas.length === 0) {
+        setHistorial([])
+        return
+      }
+
+      // Recoger IDs de creadores y oponentes
+      const userIds = [
+        ...new Set(partidas.flatMap(p => [p.creador_id, p.oponente_id]).filter(Boolean))
+      ]
+
+      let perfilesMap = {}
+      if (userIds.length > 0) {
+        const { data: perfilesData } = await supabase
+          .from('profiles')
+          .select('id, nombre, color_acento')
+          .in('id', userIds)
+
+        if (perfilesData) {
+          perfilesData.forEach(p => { perfilesMap[p.id] = p })
+        }
+      }
+
+      const resultado = partidas.map(p => ({
+        ...p,
+        creador: perfilesMap[p.creador_id] || { nombre: 'Alumno SMR2' },
+        oponente: perfilesMap[p.oponente_id] || { nombre: 'Alumno SMR2' }
+      }))
+
+      setHistorial(resultado)
     } catch (_) {}
   }
 
-  // Crear partida (bloquea la apuesta en la BD)
+  // Lanzar un nuevo desafío
   const handleCrearPartida = async () => {
     if (apuesta <= 0) {
       sound.playPop()
-      alert('La apuesta debe ser mayor a 0 puntos.')
+      avisar('La apuesta debe ser de al menos 1 punto.')
       return
     }
 
-    if (!perfil || perfil.puntos_total < apuesta) {
+    if (!perfil || (perfil.puntos_total || 0) < apuesta) {
       sound.playPop()
-      alert('No tienes suficientes puntos para cubrir esta apuesta.')
+      avisar('Saldo insuficiente en tu cartilla de puntos.')
       return
     }
 
     setCargando(true)
     try {
-      const { data, error } = await supabase.rpc('crear_partida_pvp', { p_apuesta: apuesta })
+      const { data: partidaId, error } = await supabase.rpc('crear_partida_pvp', { p_apuesta: apuesta })
       if (error) throw error
 
       sound.playChipSound()
-      const nuevoSaldo = perfil.puntos_total - apuesta
-      setPerfil({ ...perfil, puntos_total: nuevoSaldo })
-      localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
 
-      setMensajeEstado('¡Desafío creado! Esperando que un compañero lo acepte...')
-      setTimeout(() => setMensajeEstado(''), 4000)
+      // Actualizar puntos en local
+      const nuevoSaldo = perfil.puntos_total - apuesta
+      const perfilActualizado = { ...perfil, puntos_total: nuevoSaldo }
+      setPerfil(perfilActualizado)
+      localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+
+      // Emitir evento por el canal de clase para que todos lo vean al instante
+      transmitirEvento('pvp_nuevo_reto', {
+        partidaId,
+        creador_id: perfil.id,
+        nombre: perfil.nombre,
+        apuesta
+      })
+
+      avisar('¡Desafío sellado en la pizarra! Esperando que un compañero acepte.')
       fetchLobbies()
     } catch (e) {
-      alert('Error al crear desafío: ' + (e.message || e))
+      avisar('Error al sellar el desafío: ' + (e.message || e))
     } finally {
       setCargando(false)
     }
   }
 
-  // Cancelar partida creada y reembolsar
+  // Cancelar y reembolsar puntos
   const handleCancelarPartida = async (partidaId, betAmt) => {
     setCargando(true)
     try {
@@ -235,25 +309,28 @@ export function BatallaDadosPvP() {
       if (error) throw error
 
       sound.playStamp()
-      const nuevoSaldo = perfil.puntos_total + betAmt
-      setPerfil({ ...perfil, puntos_total: nuevoSaldo })
-      localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
 
-      setMensajeEstado('Desafío cancelado. Puntos reembolsados.')
-      setTimeout(() => setMensajeEstado(''), 3000)
+      const nuevoSaldo = (perfil.puntos_total || 0) + betAmt
+      const perfilActualizado = { ...perfil, puntos_total: nuevoSaldo }
+      setPerfil(perfilActualizado)
+      localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+
+      transmitirEvento('pvp_reto_cancelado', { partidaId })
+
+      avisar('Desafío cancelado. Puntos devueltos a tu cuenta.')
       fetchLobbies()
     } catch (e) {
-      alert('Error al cancelar: ' + (e.message || e))
+      avisar('No se pudo cancelar: ' + (e.message || e))
     } finally {
       setCargando(false)
     }
   }
 
-  // Aceptar desafío (unirse y resolver atómicamente)
+  // Aceptar el reto de un compañero
   const handleAceptarDesafio = async (partidaId, betAmt) => {
-    if (!perfil || perfil.puntos_total < betAmt) {
+    if (!perfil || (perfil.puntos_total || 0) < betAmt) {
       sound.playPop()
-      alert('Saldo insuficiente para aceptar este desafío.')
+      avisar('No tienes suficientes puntos para cubrir la apuesta.')
       return
     }
 
@@ -262,23 +339,29 @@ export function BatallaDadosPvP() {
       const { data, error } = await supabase.rpc('unirse_partida_pvp', { p_partida_id: partidaId })
       if (error) throw error
 
+      // Notificar a toda la clase y al creador
+      transmitirEvento('pvp_reto_resuelto', {
+        partidaId,
+        resultado: data
+      })
+
       iniciarAnimacionResolucion(data)
     } catch (e) {
-      alert('Error al aceptar desafío: ' + (e.message || e))
+      avisar('Error al entrar al duelo: ' + (e.message || e))
     } finally {
       setCargando(false)
     }
   }
 
-  // Animación coreográfica de los dados
+  // Animación coreografiada de los dados
   const iniciarAnimacionResolucion = (data) => {
     setAnimacionBatalla(data)
     setRodandoDados(true)
     sound.playDiceShake()
 
-    let contadorGiro = 0
+    let giros = 0
     const intervalo = setInterval(() => {
-      contadorGiro++
+      giros++
       setDadosMostrados({
         c1: Math.floor(Math.random() * 6) + 1,
         c2: Math.floor(Math.random() * 6) + 1,
@@ -286,14 +369,13 @@ export function BatallaDadosPvP() {
         o2: Math.floor(Math.random() * 6) + 1
       })
 
-      if (contadorGiro > 14) {
+      if (giros > 13) {
         clearInterval(intervalo)
-        // Fijar resultados reales
         setDadosMostrados({
-          c1: data.creador_dado1 || 3,
-          c2: data.creador_dado2 || 4,
-          o1: data.oponente_dado1 || 3,
-          o2: data.oponente_dado2 || 5
+          c1: data.creador_dado1 || Math.ceil((data.creador_roll || 7) / 2),
+          c2: data.creador_dado2 || Math.floor((data.creador_roll || 7) / 2),
+          o1: data.oponente_dado1 || Math.ceil((data.oponente_roll || 7) / 2),
+          o2: data.oponente_dado2 || Math.floor((data.oponente_roll || 7) / 2)
         })
         setRodandoDados(false)
 
@@ -305,7 +387,7 @@ export function BatallaDadosPvP() {
           sound.playLose()
         }
 
-        // Refrescar saldo del perfil
+        // Refrescar saldo
         supabase
           .from('profiles')
           .select('puntos_total')
@@ -318,116 +400,149 @@ export function BatallaDadosPvP() {
             }
           })
       }
-    }, 110)
+    }, 115)
+  }
+
+  const avisar = (msg) => {
+    setNotificacion(msg)
+    setTimeout(() => setNotificacion(''), 4000)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Estilos de animación embebidos */}
+      {/* Animación física de sacudida de dados */}
       <style>{`
-        @keyframes shakeDado {
+        @keyframes agitarDado {
           0% { transform: translate(1px, 1px) rotate(0deg); }
-          25% { transform: translate(-2px, -1px) rotate(-8deg); }
-          50% { transform: translate(-1px, 2px) rotate(8deg); }
-          70% { transform: translate(2px, 1px) rotate(-4deg); }
-          100% { transform: translate(1px, -2px) rotate(4deg); }
+          25% { transform: translate(-2px, -1px) rotate(-10deg); }
+          50% { transform: translate(-1px, 2px) rotate(10deg); }
+          75% { transform: translate(2px, 1px) rotate(-5deg); }
+          100% { transform: translate(1px, -2px) rotate(5deg); }
         }
       `}</style>
 
-      {/* HEADER DE LA SECCIÓN */}
+      {/* CABECERA ESTILO TABLERO DE AULA SMR2 (Sin degradados de IA) */}
       <section
-        className="card"
         style={{
-          background: 'linear-gradient(135deg, rgba(28,28,30,0.92) 0%, rgba(44,44,46,0.85) 100%)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          padding: '20px',
-          color: '#FFFFFF'
+          backgroundColor: '#16191D',
+          borderRadius: 14,
+          border: '1px solid #2C3036',
+          padding: '18px 20px',
+          color: '#F4F5F7',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* Sello físico con borde mecánico */}
             <div
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 14,
-                backgroundColor: 'rgba(255, 59, 48, 0.16)',
-                color: '#FF3B30',
+                width: 46,
+                height: 46,
+                borderRadius: 10,
+                backgroundColor: 'rgba(217, 56, 41, 0.12)',
+                border: '1.5px solid #D93829',
+                color: '#D93829',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(255, 59, 48, 0.2)'
+                justifyContent: 'center'
               }}
             >
-              <Swords size={26} />
+              <Dice5 size={26} />
             </div>
+
             <div>
-              <h2 className="apple-title-2" style={{ margin: 0, fontSize: 20, color: '#FFF' }}>
-                Batalla de Dados PvP
-              </h2>
-              <p className="apple-subheadline" style={{ margin: '2px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
-                Duelos 1 vs 1 en tiempo real. Tirada de 2 dados (2-12). ¡El mayor puntaje se lleva el bote doble!
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: -0.2 }}>
+                  Duelo de Dados 1v1
+                </h2>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    backgroundColor: 'rgba(52, 199, 89, 0.15)',
+                    color: '#34C759',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  EN VIVO
+                </span>
+              </div>
+              <p style={{ margin: '3px 0 0', fontSize: 13, color: '#9CA3AF' }}>
+                Reto directo entre compañeros de clase. 2 dados por jugador (2-12). El mayor se lleva el bote doble.
               </p>
             </div>
           </div>
 
+          {/* Marcador de Saldo estilo Display Técnico */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              padding: '8px 16px',
-              borderRadius: 9999,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.15)'
+              padding: '6px 14px',
+              borderRadius: 8,
+              backgroundColor: '#0D0E10',
+              border: '1px solid #262A30'
             }}
           >
-            <Coins size={18} color="#FFD60A" />
-            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>Tu Saldo:</span>
-            <strong style={{ fontSize: 16, color: '#FFD60A' }}>{perfil?.puntos_total || 0} pts</strong>
+            <span style={{ fontSize: 12, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
+              Saldo disponible:
+            </span>
+            <strong style={{ fontSize: 15, color: '#FBBF24', fontFamily: 'monospace' }}>
+              {perfil?.puntos_total || 0} pts
+            </strong>
           </div>
         </div>
 
-        {mensajeEstado && (
+        {notificacion && (
           <div
             style={{
-              marginTop: 14,
-              padding: '10px 14px',
-              borderRadius: 10,
-              backgroundColor: 'rgba(52, 199, 89, 0.15)',
-              border: '1px solid rgba(52, 199, 89, 0.3)',
-              color: '#34C759',
+              marginTop: 12,
+              padding: '8px 12px',
+              borderRadius: 8,
+              backgroundColor: 'rgba(0, 122, 255, 0.12)',
+              border: '1px solid rgba(0, 122, 255, 0.3)',
+              color: '#38BDF8',
               fontSize: 13,
-              fontWeight: 600,
+              fontWeight: 500,
               display: 'flex',
               alignItems: 'center',
               gap: 8
             }}
           >
-            <Shield size={16} />
-            {mensajeEstado}
+            <Shield size={15} />
+            {notificacion}
           </div>
         )}
       </section>
 
-      {/* PANEL: CREAR NUEVO DESAFÍO */}
+      {/* PANEL: LANZAR RETO (Estilo Hoja de Desafío de Aula) */}
       <section
-        className="card"
         style={{
-          padding: '20px',
-          border: '1px solid var(--color-separator)'
+          backgroundColor: '#1A1D21',
+          borderRadius: 14,
+          border: '1px solid #2C3036',
+          padding: '18px 20px'
         }}
       >
-        <h3 className="apple-headline" style={{ fontSize: 15, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Coins size={18} color="#FF9500" />
-          Crear Nuevo Desafío en Clase
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#D97706' }}>
+            ✦ Lanzar Nuevo Reto a la Clase
+          </span>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            Bote en disputa: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{apuesta * 2} pts</strong>
+          </span>
+        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Presets rápidos */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span className="apple-caption" style={{ marginRight: 4 }}>Apuesta rápida:</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Fichas rápidas de apuesta */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#9CA3AF', marginRight: 4 }}>Apuesta fija:</span>
             {PRESETS_APUESTA.map(val => (
               <button
                 key={val}
@@ -437,31 +552,33 @@ export function BatallaDadosPvP() {
                   setApuesta(val)
                 }}
                 style={{
-                  padding: '6px 14px',
-                  borderRadius: 9999,
-                  border: apuesta === val ? '2px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                  backgroundColor: apuesta === val ? 'rgba(0, 122, 255, 0.12)' : 'var(--color-surface)',
-                  color: apuesta === val ? 'var(--color-accent)' : 'var(--color-ink)',
+                  padding: '5px 12px',
+                  borderRadius: 6,
+                  border: apuesta === val ? '1.5px solid #007AFF' : '1px solid #374151',
+                  backgroundColor: apuesta === val ? 'rgba(0, 122, 255, 0.15)' : '#111315',
+                  color: apuesta === val ? '#60A5FA' : '#E5E7EB',
                   fontWeight: 600,
                   fontSize: 13,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontFamily: 'monospace'
                 }}
               >
                 {val} pts
               </button>
             ))}
+
             <button
               type="button"
               onClick={() => {
                 sound.playChipSound()
-                setApuesta(perfil?.puntos_total || 10)
+                setApuesta(Math.max(1, perfil?.puntos_total || 10))
               }}
               style={{
-                padding: '6px 12px',
-                borderRadius: 9999,
-                border: '1px solid #FF9500',
-                backgroundColor: 'rgba(255, 149, 0, 0.1)',
-                color: '#FF9500',
+                padding: '5px 10px',
+                borderRadius: 6,
+                border: '1px solid #D97706',
+                backgroundColor: 'rgba(217, 119, 6, 0.12)',
+                color: '#F59E0B',
                 fontWeight: 700,
                 fontSize: 12,
                 cursor: 'pointer'
@@ -471,63 +588,71 @@ export function BatallaDadosPvP() {
             </button>
           </div>
 
-          {/* Formulario de creación */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <input
-                type="number"
-                min="1"
-                max={perfil?.puntos_total || 9999}
-                value={apuesta}
-                onChange={e => setApuesta(Math.max(1, Number(e.target.value)))}
-                placeholder="Puntos a apostar"
-                style={{
-                  width: '100%',
-                  height: 44,
-                  padding: '0 14px',
-                  borderRadius: 12,
-                  border: '1px solid var(--color-separator)',
-                  backgroundColor: 'var(--color-surface-secondary)',
-                  color: 'var(--color-ink)',
-                  fontSize: 16,
-                  fontWeight: 600,
-                  boxSizing: 'border-box'
-                }}
-              />
-              <span style={{ position: 'absolute', right: 14, top: 12, fontSize: 13, color: 'var(--color-tertiary-ink)' }}>
-                Bote: {apuesta * 2} pts
-              </span>
-            </div>
+          {/* Formulario de entrada */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input
+              type="number"
+              min="1"
+              max={perfil?.puntos_total || 9999}
+              value={apuesta}
+              onChange={e => setApuesta(Math.max(1, Number(e.target.value)))}
+              style={{
+                flex: 1,
+                height: 42,
+                padding: '0 14px',
+                borderRadius: 8,
+                border: '1px solid #374151',
+                backgroundColor: '#0F1113',
+                color: '#FFF',
+                fontSize: 15,
+                fontWeight: 600,
+                fontFamily: 'monospace'
+              }}
+            />
 
             <button
               type="button"
-              className="btn-primary"
               onClick={handleCrearPartida}
               disabled={cargando || apuesta <= 0 || (perfil?.puntos_total || 0) < apuesta}
               style={{
-                height: 44,
+                height: 42,
                 padding: '0 20px',
+                borderRadius: 8,
+                border: 'none',
+                backgroundColor: '#D93829',
+                color: '#FFF',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                backgroundColor: '#FF3B30',
-                opacity: (perfil?.puntos_total || 0) < apuesta ? 0.6 : 1
+                gap: 6,
+                opacity: (perfil?.puntos_total || 0) < apuesta ? 0.5 : 1
               }}
             >
-              {cargando ? <Loader2 size={18} className="spin" /> : <Plus size={18} />}
-              <span>Lanzar Reto</span>
+              {cargando ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
+              <span>Sellar Reto</span>
             </button>
           </div>
         </div>
       </section>
 
-      {/* SECCIÓN 1: SALAS ESPERANDO RIVAL */}
-      <section className="card" style={{ padding: '20px' }}>
+      {/* TABLERO DE RETOS EN ESPERA */}
+      <section
+        style={{
+          backgroundColor: '#1A1D21',
+          borderRadius: 14,
+          border: '1px solid #2C3036',
+          padding: '18px 20px'
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 className="apple-headline" style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Swords size={18} color="#007AFF" />
-            Salas Abiertas en Clase ({lobbies.length})
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#9CA3AF' }}>
+              Mesas Abiertas en Clase ({lobbies.length})
+            </span>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -537,7 +662,7 @@ export function BatallaDadosPvP() {
             style={{
               background: 'none',
               border: 'none',
-              color: 'var(--color-accent)',
+              color: '#60A5FA',
               display: 'flex',
               alignItems: 'center',
               gap: 4,
@@ -546,7 +671,7 @@ export function BatallaDadosPvP() {
               cursor: 'pointer'
             }}
           >
-            <RotateCcw size={13} />
+            <RotateCcw size={12} />
             Actualizar
           </button>
         </div>
@@ -554,19 +679,19 @@ export function BatallaDadosPvP() {
         {lobbies.length === 0 ? (
           <div
             style={{
-              padding: '36px 16px',
+              padding: '30px 16px',
               textAlign: 'center',
-              borderRadius: 14,
-              backgroundColor: 'var(--color-surface-secondary)',
-              border: '1px dashed var(--color-separator)'
+              borderRadius: 10,
+              backgroundColor: '#121417',
+              border: '1px dashed #2C3036'
             }}
           >
-            <Shield size={32} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 8px', display: 'block' }} />
-            <p className="apple-headline" style={{ fontSize: 15, margin: '0 0 4px' }}>
-              No hay retos activos en este momento
+            <Dice5 size={28} color="#6B7280" style={{ margin: '0 auto 8px', display: 'block' }} />
+            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: '#E5E7EB' }}>
+              No hay retos abiertos en este momento
             </p>
-            <p className="apple-caption" style={{ margin: 0 }}>
-              Crea una sala arriba y desafía a cualquiera de tus compañeros de SMR2.
+            <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>
+              Sella un reto arriba para que cualquiera de tus compañeros de SMR2 acepte el duelo.
             </p>
           </div>
         ) : (
@@ -580,10 +705,10 @@ export function BatallaDadosPvP() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '14px 16px',
-                    borderRadius: 14,
-                    backgroundColor: esMio ? 'rgba(255, 149, 0, 0.06)' : 'var(--color-surface-secondary)',
-                    border: esMio ? '1px solid rgba(255, 149, 0, 0.3)' : '1px solid var(--color-separator)',
+                    padding: '12px 16px',
+                    borderRadius: 10,
+                    backgroundColor: esMio ? 'rgba(217, 119, 6, 0.08)' : '#121417',
+                    border: esMio ? '1px solid rgba(217, 119, 6, 0.35)' : '1px solid #262A30',
                     flexWrap: 'wrap',
                     gap: 12
                   }}
@@ -591,17 +716,16 @@ export function BatallaDadosPvP() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div
                       style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 12,
+                        width: 38,
+                        height: 38,
+                        borderRadius: 8,
                         backgroundColor: lobby.creador?.color_acento || '#007AFF',
                         color: '#FFF',
                         fontWeight: 800,
-                        fontSize: 17,
+                        fontSize: 15,
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                        justifyContent: 'center'
                       }}
                     >
                       {lobby.creador?.nombre ? lobby.creador.nombre.charAt(0).toUpperCase() : '?'}
@@ -609,8 +733,8 @@ export function BatallaDadosPvP() {
 
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-ink)' }}>
-                          {lobby.creador?.nombre || 'Alumno'}
+                        <span style={{ fontWeight: 700, fontSize: 14, color: '#F3F4F6' }}>
+                          {lobby.creador?.nombre || 'Alumno SMR2'}
                         </span>
                         {esMio && (
                           <span
@@ -618,22 +742,23 @@ export function BatallaDadosPvP() {
                               fontSize: 10,
                               fontWeight: 700,
                               textTransform: 'uppercase',
-                              padding: '2px 8px',
-                              borderRadius: 6,
-                              backgroundColor: 'rgba(255, 149, 0, 0.2)',
-                              color: '#FF9500'
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              backgroundColor: 'rgba(217, 119, 6, 0.2)',
+                              color: '#F59E0B'
                             }}
                           >
                             Tu Reto
                           </span>
                         )}
                       </div>
+
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                        <span style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
-                          Apuesta: <strong style={{ color: 'var(--color-ink)' }}>{lobby.apuesta} pts</strong>
+                        <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+                          Apuesta: <strong style={{ color: '#E5E7EB', fontFamily: 'monospace' }}>{lobby.apuesta} pts</strong>
                         </span>
-                        <span style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>•</span>
-                        <span style={{ fontSize: 13, color: '#34C759', fontWeight: 600 }}>
+                        <span style={{ fontSize: 12, color: '#4B5563' }}>•</span>
+                        <span style={{ fontSize: 12, color: '#34C759', fontWeight: 600 }}>
                           Bote: {lobby.apuesta * 2} pts
                         </span>
                       </div>
@@ -643,7 +768,7 @@ export function BatallaDadosPvP() {
                   <div>
                     {esMio ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, color: '#FF9500', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <Loader2 size={13} className="spin" />
                           Esperando rival...
                         </span>
@@ -652,11 +777,11 @@ export function BatallaDadosPvP() {
                           onClick={() => handleCancelarPartida(lobby.id, lobby.apuesta)}
                           disabled={cargando}
                           style={{
-                            padding: '6px 12px',
-                            borderRadius: 8,
-                            border: '1px solid rgba(255, 59, 48, 0.4)',
-                            backgroundColor: 'rgba(255, 59, 48, 0.08)',
-                            color: '#FF3B30',
+                            padding: '5px 12px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            color: '#EF4444',
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: 'pointer',
@@ -665,7 +790,7 @@ export function BatallaDadosPvP() {
                             gap: 4
                           }}
                         >
-                          <X size={14} />
+                          <X size={13} />
                           Cancelar
                         </button>
                       </div>
@@ -675,23 +800,22 @@ export function BatallaDadosPvP() {
                         onClick={() => handleAceptarDesafio(lobby.id, lobby.apuesta)}
                         disabled={cargando || (perfil?.puntos_total || 0) < lobby.apuesta}
                         style={{
-                          padding: '8px 18px',
-                          borderRadius: 20,
+                          padding: '7px 16px',
+                          borderRadius: 8,
                           border: 'none',
-                          backgroundColor: '#34C759',
+                          backgroundColor: '#2F9E44',
                           color: '#FFF',
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: 700,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 6,
-                          boxShadow: '0 2px 8px rgba(52, 199, 89, 0.3)',
                           opacity: (perfil?.puntos_total || 0) < lobby.apuesta ? 0.5 : 1
                         }}
                       >
-                        <Swords size={16} />
-                        Luchar ({lobby.apuesta} pts)
+                        <Swords size={15} />
+                        Aceptar ({lobby.apuesta} pts)
                       </button>
                     )}
                   </div>
@@ -702,15 +826,24 @@ export function BatallaDadosPvP() {
         )}
       </section>
 
-      {/* SECCIÓN 2: HISTORIAL DE DUELOS RECIENTES */}
+      {/* HISTORIAL DE DUELOS RECIENTES */}
       {historial.length > 0 && (
-        <section className="card" style={{ padding: '20px' }}>
-          <h3 className="apple-headline" style={{ fontSize: 15, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <History size={16} color="var(--color-secondary-ink)" />
-            Últimas Batallas de Dados en Clase
-          </h3>
+        <section
+          style={{
+            backgroundColor: '#1A1D21',
+            borderRadius: 14,
+            border: '1px solid #2C3036',
+            padding: '16px 20px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <History size={15} color="#9CA3AF" />
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#9CA3AF' }}>
+              Últimas Batallas de Dados Registradas
+            </span>
+          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {historial.map((batalla) => {
               const ganador = batalla.ganador_id === batalla.creador?.id ? batalla.creador : batalla.oponente
               const perdedor = batalla.ganador_id === batalla.creador?.id ? batalla.oponente : batalla.creador
@@ -724,25 +857,25 @@ export function BatallaDadosPvP() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    backgroundColor: 'var(--color-surface-secondary)',
-                    border: '1px solid var(--color-separator)',
-                    fontSize: 13
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    backgroundColor: '#121417',
+                    border: '1px solid #262A30',
+                    fontSize: 12
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Trophy size={15} color="#FFD60A" />
-                    <span style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
-                      {ganador?.nombre || 'Alumno'} ({rollGanador})
+                    <span style={{ color: '#FBBF24', fontWeight: 700 }}>🏆</span>
+                    <span style={{ fontWeight: 600, color: '#E5E7EB' }}>
+                      {ganador?.nombre || 'Alumno'} <span style={{ fontFamily: 'monospace', color: '#60A5FA' }}>({rollGanador})</span>
                     </span>
-                    <span style={{ color: 'var(--color-tertiary-ink)' }}>venció a</span>
-                    <span style={{ color: 'var(--color-secondary-ink)' }}>
-                      {perdedor?.nombre || 'Alumno'} ({rollPerdedor})
+                    <span style={{ color: '#6B7280' }}>venció a</span>
+                    <span style={{ color: '#9CA3AF' }}>
+                      {perdedor?.nombre || 'Alumno'} <span style={{ fontFamily: 'monospace' }}>({rollPerdedor})</span>
                     </span>
                   </div>
 
-                  <span style={{ fontWeight: 700, color: '#34C759' }}>
+                  <span style={{ fontWeight: 700, color: '#34C759', fontFamily: 'monospace' }}>
                     +{batalla.apuesta * 2} pts
                   </span>
                 </div>
@@ -752,14 +885,13 @@ export function BatallaDadosPvP() {
         </section>
       )}
 
-      {/* MODAL COREOGRÁFICO DE BATALLA DE DADOS */}
+      {/* MODAL MECÁNICO DE RESOLUCIÓN DE DADOS */}
       {animacionBatalla && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
             backgroundColor: 'rgba(0, 0, 0, 0.88)',
-            backdropFilter: 'blur(16px)',
             zIndex: 99999,
             display: 'flex',
             alignItems: 'center',
@@ -769,38 +901,39 @@ export function BatallaDadosPvP() {
         >
           <div
             style={{
-              maxWidth: 500,
+              maxWidth: 460,
               width: '100%',
-              backgroundColor: '#1C1C1E',
-              borderRadius: 24,
-              border: '1px solid rgba(255,255,255,0.18)',
-              padding: '32px 24px',
+              backgroundColor: '#16191D',
+              borderRadius: 16,
+              border: '2px solid #374151',
+              padding: '28px 24px',
               textAlign: 'center',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-              color: '#FFFFFF'
+              boxShadow: '0 15px 40px rgba(0,0,0,0.8)',
+              color: '#F4F5F7'
             }}
           >
             <div
               style={{
-                width: 56,
-                height: 56,
-                borderRadius: 18,
-                backgroundColor: 'rgba(255, 59, 48, 0.2)',
-                color: '#FF3B30',
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                backgroundColor: 'rgba(217, 56, 41, 0.15)',
+                border: '1px solid #D93829',
+                color: '#D93829',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 16px'
+                margin: '0 auto 12px'
               }}
             >
-              <Swords size={30} />
+              <Dice5 size={26} />
             </div>
 
-            <h2 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 6px' }}>
-              {rodandoDados ? '🎲 ¡Tirando los dados!...' : '¡Duelo Resuelto!'}
+            <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px', letterSpacing: -0.3 }}>
+              {rodandoDados ? '🎲 Tirada de Dados en Mesa' : 'Duelo Resuelto'}
             </h2>
-            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', margin: '0 0 28px' }}>
-              Bote en disputa: <strong style={{ color: '#FFD60A' }}>{animacionBatalla.premio} puntos</strong>
+            <p style={{ fontSize: 13, color: '#9CA3AF', margin: '0 0 24px' }}>
+              Bote disputado: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{animacionBatalla.premio} pts</strong>
             </p>
 
             {/* TABLERO DE LOS DOS JUGADORES */}
@@ -809,79 +942,107 @@ export function BatallaDadosPvP() {
                 display: 'grid',
                 gridTemplateColumns: '1fr auto 1fr',
                 alignItems: 'center',
-                gap: 16,
-                backgroundColor: 'rgba(255,255,255,0.04)',
-                borderRadius: 18,
-                padding: '20px 14px',
-                border: '1px solid rgba(255,255,255,0.08)'
+                gap: 14,
+                backgroundColor: '#0F1113',
+                borderRadius: 12,
+                padding: '18px 12px',
+                border: '1px solid #262A30'
               }}
             >
-              {/* JUGADOR 1 (CREADOR) */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>
-                  {animacionBatalla.creador_id === perfil?.id ? 'Tú (Creador)' : 'Rival (Creador)'}
+              {/* CREADOR */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#E5E7EB' }}>
+                  {animacionBatalla.creador_id === perfil?.id ? 'Tú (Retador)' : 'Rival'}
                 </span>
 
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <CaraDado valor={dadosMostrados.c1} rodando={rodandoDados} />
-                  <CaraDado valor={dadosMostrados.c2} rodando={rodandoDados} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <DadoFisico valor={dadosMostrados.c1} rodando={rodandoDados} />
+                  <DadoFisico valor={dadosMostrados.c2} rodando={rodandoDados} />
                 </div>
 
-                <div style={{ fontSize: 22, fontWeight: 900, color: '#FFD60A' }}>
-                  {rodandoDados ? '?' : dadosMostrados.c1 + dadosMostrados.c2}
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#FBBF24', fontFamily: 'monospace' }}>
+                  {rodandoDados ? '...' : dadosMostrados.c1 + dadosMostrados.c2}
                 </div>
               </div>
 
               {/* VS */}
               <div
                 style={{
-                  fontSize: 16,
+                  fontSize: 13,
                   fontWeight: 900,
-                  color: 'rgba(255,255,255,0.4)',
-                  padding: '6px 10px',
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(255,255,255,0.06)'
+                  color: '#6B7280',
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  backgroundColor: '#1E2227',
+                  fontFamily: 'monospace'
                 }}
               >
                 VS
               </div>
 
-              {/* JUGADOR 2 (OPONENTE) */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>
-                  {animacionBatalla.oponente_id === perfil?.id ? 'Tú (Rival)' : 'Rival (Oponente)'}
+              {/* OPONENTE */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#E5E7EB' }}>
+                  {animacionBatalla.oponente_id === perfil?.id ? 'Tú (Oponente)' : 'Rival'}
                 </span>
 
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <CaraDado valor={dadosMostrados.o1} rodando={rodandoDados} />
-                  <CaraDado valor={dadosMostrados.o2} rodando={rodandoDados} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <DadoFisico valor={dadosMostrados.o1} rodando={rodandoDados} />
+                  <DadoFisico valor={dadosMostrados.o2} rodando={rodandoDados} />
                 </div>
 
-                <div style={{ fontSize: 22, fontWeight: 900, color: '#FFD60A' }}>
-                  {rodandoDados ? '?' : dadosMostrados.o1 + dadosMostrados.o2}
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#FBBF24', fontFamily: 'monospace' }}>
+                  {rodandoDados ? '...' : dadosMostrados.o1 + dadosMostrados.o2}
                 </div>
               </div>
             </div>
 
-            {/* VEREDICTO FINAL TRAS RODAR */}
+            {/* RESULTADO FINAL */}
             {!rodandoDados && (
-              <div style={{ marginTop: 24 }}>
+              <div style={{ marginTop: 22 }}>
                 {animacionBatalla.ganador_id === perfil?.id ? (
-                  <div style={{ animation: 'pop 0.3s ease' }}>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: '#34C759', marginBottom: 4 }}>
-                      ¡VICTORIA! 🎉
+                  <div>
+                    {/* Sello de Victoria */}
+                    <div
+                      style={{
+                        display: 'inline-block',
+                        padding: '6px 16px',
+                        borderRadius: 6,
+                        border: '2px solid #2F9E44',
+                        color: '#2F9E44',
+                        fontWeight: 800,
+                        fontSize: 16,
+                        letterSpacing: 0.5,
+                        textTransform: 'uppercase',
+                        marginBottom: 6
+                      }}
+                    >
+                      ✓ VICTORIA SELLADA
                     </div>
-                    <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', margin: 0 }}>
-                      Has ganado <strong style={{ color: '#FFD60A' }}>+{animacionBatalla.premio} pts</strong> para tu racha.
+                    <p style={{ fontSize: 14, color: '#D1D5DB', margin: 0 }}>
+                      Cobraste el bote completo de <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>+{animacionBatalla.premio} pts</strong>.
                     </p>
                   </div>
                 ) : (
                   <div>
-                    <div style={{ fontSize: 26, fontWeight: 800, color: '#FF3B30', marginBottom: 4 }}>
-                      Has sido derrotado...
+                    <div
+                      style={{
+                        display: 'inline-block',
+                        padding: '6px 16px',
+                        borderRadius: 6,
+                        border: '2px solid #D93829',
+                        color: '#D93829',
+                        fontWeight: 800,
+                        fontSize: 15,
+                        letterSpacing: 0.5,
+                        textTransform: 'uppercase',
+                        marginBottom: 6
+                      }}
+                    >
+                      ✗ DERROTA EN MESA
                     </div>
-                    <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', margin: 0 }}>
-                      Tu rival ha sacado mejor puntuación en los dados.
+                    <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+                      Tu compañero obtuvo mayor puntuación en los dados.
                     </p>
                   </div>
                 )}
@@ -893,19 +1054,19 @@ export function BatallaDadosPvP() {
                     setAnimacionBatalla(null)
                   }}
                   style={{
-                    marginTop: 24,
+                    marginTop: 20,
                     width: '100%',
-                    height: 46,
-                    borderRadius: 14,
+                    height: 42,
+                    borderRadius: 8,
                     border: 'none',
-                    backgroundColor: animacionBatalla.ganador_id === perfil?.id ? '#34C759' : 'rgba(255,255,255,0.15)',
+                    backgroundColor: animacionBatalla.ganador_id === perfil?.id ? '#2F9E44' : '#374151',
                     color: '#FFF',
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 700,
                     cursor: 'pointer'
                   }}
                 >
-                  Continuar
+                  Volver al Aula
                 </button>
               </div>
             )}

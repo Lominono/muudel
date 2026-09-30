@@ -32,9 +32,83 @@ import {
   Crown
 } from 'lucide-react'
 
-// CATÁLOGO DE PRODUCTOS 100% VIRTUALES, VISIBLES PARA TODOS Y ACTIVABLES CUANDO QUIERAS
+// CATÁLOGO DE PRODUCTOS VIRTUALES Y PRIVILEGIOS REALES DE AULA SMR2
 export const CATALOGO_RECOMPENSAS = [
-  // 1. TÍTULOS HONORÍFICOS (VISIBLES EN CHAT Y RANKINGS)
+  // 1. PRIVILEGIOS DE RACHA Y RETOS ACADÉMICOS
+  {
+    id: 'congelar_racha',
+    categoria: 'racha',
+    titulo: '🛡️ Seguro de Racha (Salvavidas)',
+    desc: 'Protege tu racha de asistencia si un día no puedes venir o te retrasas. Se consume automáticamente evitando que tu racha caiga a 0.',
+    costo: 250,
+    icon: Shield,
+    duracionMs: 0,
+    duracionTexto: 'Protección permanente hasta su uso',
+    color: '#FF9500'
+  },
+  {
+    id: 'comodin_reto_24h',
+    categoria: 'racha',
+    titulo: '📑 Comodín de Prórroga (+24h Retos)',
+    desc: 'Prórroga oficial de 24 horas para entregar cualquier reto o práctica de clase sin penalización de puntos ni retraso.',
+    costo: 220,
+    icon: Clock,
+    duracionMs: 0,
+    duracionTexto: '1 uso por práctica o reto',
+    color: '#007AFF'
+  },
+
+  // 2. PRIVILEGIOS DE AULA Y TALLER PRÁCTICO SMR2
+  {
+    id: 'dj_laboratorio',
+    categoria: 'aula',
+    titulo: '🎧 DJ del Taller: Poner Música',
+    desc: 'Pon 3 canciones de fondo o tu playlist durante la sesión práctica de montaje de hardware o cableado de redes en el aula.',
+    costo: 180,
+    icon: Music,
+    stockMax: 2, // Máximo 2 alumnos por sesión
+    duracionMs: 3600 * 1000,
+    duracionTexto: '1 sesión de taller práctico',
+    color: '#AF52DE'
+  },
+  {
+    id: 'reserva_pc_maestro',
+    categoria: 'aula',
+    titulo: '🖥️ Reserva de Puesto PC Maestro',
+    desc: 'Reserva tu ordenador favorito con doble pantalla en el taller de informática durante toda una semana lectiva.',
+    costo: 350,
+    icon: MapPin,
+    stockMax: 3,
+    duracionMs: 7 * 24 * 3600 * 1000,
+    duracionTexto: '1 semana completa de clase',
+    color: '#34C759'
+  },
+  {
+    id: 'pase_cafeteria',
+    categoria: 'aula',
+    titulo: '☕ Salida Anticipada a Cafetería (18:10)',
+    desc: 'Pase oficial de salida 2 minutos antes para bajar a la cafetería cuando suene el timbre del recreo de la tarde.',
+    costo: 80,
+    icon: Coffee,
+    duracionMs: 15 * 60 * 1000,
+    duracionTexto: '1 recreo de las 18:10',
+    color: '#D97706'
+  },
+
+  // 3. MEJORAS DE JUEGOS Y APUESTAS DE RECREO
+  {
+    id: 'dados_oro_pvp',
+    categoria: 'juegos',
+    titulo: '🎲 Dados de Marfil VIP (Duelos 1v1)',
+    desc: 'Permite crear desafíos de alta gama de hasta 500 pts en la Batalla de Dados y dota a tus dados de un acabado dorado artesanal.',
+    costo: 450,
+    icon: Crown,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    color: '#FBBF24'
+  },
+
+  // 4. TÍTULOS HONORÍFICOS (VISIBLES EN CHAT Y RANKINGS)
   {
     id: 'titulo_root',
     categoria: 'titulos',
@@ -185,7 +259,19 @@ export const CATALOGO_RECOMPENSAS = [
     color: '#8E8E93'
   },
 
-  // 3. EFECTOS DE CHAT EN DIRECTO (SE ACTIVAN DESDE LA MOCHILA Y TODA LA CLASE LOS VE)
+  // EFECTOS DE CHAT EN DIRECTO Y SELLOS OFICIALES
+  {
+    id: 'sello_tinta_chat',
+    categoria: 'efectos',
+    titulo: '📜 Sello de Tinta Lacrada en Chat',
+    desc: 'Estampa un sello oficial de tinta carmesí con relieve [PRESENTE · 15:30], [VISTO EN CLASE] o [APROBADO] visible por toda la clase.',
+    costo: 45,
+    icon: Stamp,
+    duracionMs: 0,
+    duracionTexto: 'Uso instantáneo desde tu Mochila',
+    efecto: 'sello',
+    color: '#FF3B30'
+  },
   {
     id: 'confeti_chat',
     categoria: 'efectos',
@@ -1001,11 +1087,13 @@ export function TiendaRecompensas({ onClose }) {
             }}>
               {[
                 { id: 'todos', label: 'Todos' },
-                { id: 'titulos', label: 'Títulos VIP' },
-                { id: 'marcos', label: 'Auras & Marcos' },
-                { id: 'efectos', label: 'Efectos en Vivo' },
-                { id: 'burbujas', label: 'Burbujas Chat' },
-                { id: 'insignias', label: 'Pines de Perfil' }
+                { id: 'aula', label: '🏫 Privilegios Aula' },
+                { id: 'racha', label: '🔥 Racha & Retos' },
+                { id: 'juegos', label: '🎲 Ruleta & Duelos' },
+                { id: 'titulos', label: '👑 Títulos SMR2' },
+                { id: 'efectos', label: '⚡ Efectos Chat' },
+                { id: 'marcos', label: '✨ Auras & Marcos' },
+                { id: 'insignias', label: '🎖️ Pines Perfil' }
               ].map(cat => (
                 <button
                   key={cat.id}
