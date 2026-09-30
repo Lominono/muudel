@@ -39,6 +39,10 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   const [manoDealerCrupier, setManoDealerCrupier] = useState([])
   const [resultadoCrupier, setResultadoCrupier] = useState(null)
   const [cargandoCrupier, setCargandoCrupier] = useState(false)
+  const [repartiendo, setRepartiendo] = useState(false)
+  const [rachaMesa, setRachaMesa] = useState(() => {
+    return Number(localStorage.getItem('muudel_21_racha_' + perfil?.id) || 0)
+  })
 
   // --- ESTADO DUELO 1V1 PVP ---
   const [lobbiesPvp, setLobbiesPvp] = useState([])
@@ -101,11 +105,12 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   // =========================================================================
 
   const iniciarManoCrupier = async () => {
-    if (!perfil || (perfil.puntos_total || 0) < apuestaCrupier) {
+    if (!perfil || (perfil.puntos_total || 0) < apuestaCrupier || repartiendo) {
       sound.playPop()
       return
     }
 
+    setRepartiendo(true)
     setCargandoCrupier(true)
     sound.playChipSound()
 
@@ -129,31 +134,46 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     const c2_d = { ...nuevaBaraja.pop(), oculta: true }
 
     setBarajaCrupier(nuevaBaraja)
-    setManoJugadorCrupier([c1_j, c2_j])
-    setManoDealerCrupier([c1_d, c2_d])
+    setManoJugadorCrupier([])
+    setManoDealerCrupier([])
     setResultadoCrupier(null)
     setFaseCrupier('jugando')
 
+    // Secuencia física de reparto realista de casino con audio y delays
     sound.playCardDeal()
-    setTimeout(() => sound.playCardDeal(), 160)
+    setManoJugadorCrupier([c1_j])
 
-    // Comprobar Blackjack natural inmediato
-    const scoreJ = calcularPuntuacionMano([c1_j, c2_j])
-    if (scoreJ.esBlackjack) {
+    setTimeout(() => {
+      sound.playCardDeal()
+      setManoDealerCrupier([c1_d])
+
       setTimeout(() => {
-        // Revelar carta oculta del crupier
-        const dRevelada = { ...c2_d, oculta: false }
-        const manoDRev = [c1_d, dRevelada]
-        setManoDealerCrupier(manoDRev)
-        resolverFinCrupier([c1_j, c2_j], manoDRev, apuestaCrupier)
-      }, 700)
-    }
+        sound.playCardDeal()
+        setManoJugadorCrupier([c1_j, c2_j])
 
-    setCargandoCrupier(false)
+        setTimeout(() => {
+          sound.playCardDeal()
+          setManoDealerCrupier([c1_d, c2_d])
+          setRepartiendo(false)
+          setCargandoCrupier(false)
+
+          // Comprobar Blackjack natural inmediato
+          const scoreJ = calcularPuntuacionMano([c1_j, c2_j])
+          if (scoreJ.esBlackjack) {
+            setTimeout(() => {
+              // Revelar carta oculta del crupier con giro 3D
+              const dRevelada = { ...c2_d, oculta: false, fueRevelada: true }
+              setManoDealerCrupier([c1_d, dRevelada])
+              resolverFinCrupier([c1_j, c2_j], [c1_d, dRevelada], apuestaCrupier)
+            }, 650)
+          }
+        }, 180)
+      }, 180)
+    }, 180)
   }
 
   const pedirCartaCrupier = () => {
-    if (faseCrupier !== 'jugando') return
+    if (faseCrupier !== 'jugando' || repartiendo) return
     sound.playCardDeal()
 
     const barajaAct = [...barajaCrupier]
@@ -167,14 +187,14 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     if (score.sePaso) {
       sound.playBustSound()
       // Revelar carta del crupier y resolver como derrota
-      const manoDRev = manoDealerCrupier.map(c => ({ ...c, oculta: false }))
+      const manoDRev = manoDealerCrupier.map(c => ({ ...c, oculta: false, fueRevelada: true }))
       setManoDealerCrupier(manoDRev)
       resolverFinCrupier(nuevaManoJ, manoDRev, apuestaCrupier)
     }
   }
 
   const doblarApuestaCrupier = async () => {
-    if (faseCrupier !== 'jugando' || manoJugadorCrupier.length !== 2) return
+    if (faseCrupier !== 'jugando' || manoJugadorCrupier.length !== 2 || repartiendo) return
     if ((perfil.puntos_total || 0) < apuestaCrupier) {
       sound.playPop()
       return
@@ -210,30 +230,44 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     if (faseCrupier !== 'jugando' && !manoJActual) return
 
     sound.playPop()
+    setRepartiendo(true)
 
-    // 1. Revelar carta tapada del crupier
+    // 1. Revelar carta tapada del crupier con animación 3D
     let baraja = [...barajaActual]
-    let manoD = manoDealerCrupier.map(c => ({ ...c, oculta: false }))
+    let manoD = manoDealerCrupier.map(c => ({ ...c, oculta: false, fueRevelada: true }))
     setManoDealerCrupier(manoD)
 
     // Si el jugador ya se pasó, no hace falta que el crupier pida más
     const scoreJ = calcularPuntuacionMano(manoJActual)
     if (scoreJ.sePaso) {
+      setRepartiendo(false)
       resolverFinCrupier(manoJActual, manoD, betActual)
       return
     }
 
-    // 2. Crupier pide hasta tener al menos 17 puntos
+    // 2. Crupier pide secuencialmente hasta tener al menos 17 puntos
     let scoreD = calcularPuntuacionMano(manoD)
-    while (scoreD.total < 17 && baraja.length > 0) {
-      const c = baraja.pop()
-      manoD.push(c)
-      scoreD = calcularPuntuacionMano(manoD)
+
+    const robarSiguiente = () => {
+      if (scoreD.total < 17 && baraja.length > 0) {
+        setTimeout(() => {
+          const c = baraja.pop()
+          manoD.push(c)
+          sound.playCardDeal()
+          scoreD = calcularPuntuacionMano(manoD)
+          setBarajaCrupier([...baraja])
+          setManoDealerCrupier([...manoD])
+          robarSiguiente()
+        }, 420)
+      } else {
+        setRepartiendo(false)
+        resolverFinCrupier(manoJActual, manoD, betActual)
+      }
     }
 
-    setBarajaCrupier(baraja)
-    setManoDealerCrupier([...manoD])
-    resolverFinCrupier(manoJActual, manoD, betActual)
+    setTimeout(() => {
+      robarSiguiente()
+    }, 380)
   }
 
   const resolverFinCrupier = async (manoJ, manoD, bet) => {
@@ -245,18 +279,31 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     let saldoFinal = perfil?.puntos_total || 0
 
     if (desenlace.ganador === 'j1') {
-      // Ganó el jugador: recupera su apuesta + premio según ratio
-      const cobro = Math.floor(bet * desenlace.multiplicador)
-      gananciaNeta = cobro - bet
-      saldoFinal += cobro
+      // Ganó el jugador: registrar racha en mesa y bonificación combo
+      const nuevaRacha = rachaMesa + 1
+      setRachaMesa(nuevaRacha)
+      localStorage.setItem('muudel_21_racha_' + perfil?.id, String(nuevaRacha))
+
+      let bonusMulti = 1
+      if (nuevaRacha >= 4) bonusMulti = 1.5 // +50% extra
+      else if (nuevaRacha === 3) bonusMulti = 1.25 // +25% extra
+      else if (nuevaRacha === 2) bonusMulti = 1.1 // +10% extra
+
+      const cobroBase = Math.floor(bet * desenlace.multiplicador)
+      const cobroTotal = Math.floor(cobroBase * bonusMulti)
+      gananciaNeta = cobroTotal - bet
+      saldoFinal += cobroTotal
+
       sound.playWin()
       triggerConfetti()
     } else if (desenlace.ganador === 'empate') {
-      // Empate: devolución de la apuesta
+      // Empate: devolución de la apuesta sin romper racha
       saldoFinal += bet
       sound.playPop()
     } else {
-      // Derrota: ya se había descontado al repartir
+      // Derrota: reinicio de racha en la mesa
+      setRachaMesa(0)
+      localStorage.setItem('muudel_21_racha_' + perfil?.id, '0')
       sound.playLose()
     }
 
@@ -688,22 +735,97 @@ export function Duelo21PvP({ perfil, setPerfil }) {
             }}
           />
 
+          <style>{`
+            @keyframes pulsoFuego {
+              0% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); transform: scale(1); }
+              100% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.85); transform: scale(1.03); }
+            }
+            @keyframes brilloBlackjack {
+              0% { text-shadow: 0 0 6px #F59E0B; }
+              50% { text-shadow: 0 0 20px #FDE68A, 0 0 30px #F59E0B; }
+              100% { text-shadow: 0 0 6px #F59E0B; }
+            }
+          `}</style>
+
+          {/* BARRA SUPERIOR DE LA MESA: RACHA + REGLAS + ZAPATO DE CARTAS */}
           <div
             style={{
-              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
               marginBottom: 16,
-              fontSize: 11,
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: 1.5,
-              color: 'rgba(253, 230, 138, 0.7)'
+              flexWrap: 'wrap',
+              gap: 10,
+              paddingBottom: 10,
+              borderBottom: '1px solid rgba(212, 175, 55, 0.2)'
             }}
           >
-            Mesa Oficial de 21 · El Crupier se planta en 17 · Blackjack paga 3:2
+            {/* Racha de Victorias en Mesa */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {rachaMesa > 0 ? (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 12px',
+                    borderRadius: 20,
+                    backgroundColor: 'rgba(245, 158, 11, 0.22)',
+                    border: '1px solid rgba(245, 158, 11, 0.6)',
+                    color: '#FDE68A',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    boxShadow: '0 0 12px rgba(245, 158, 11, 0.4)',
+                    animation: 'pulsoFuego 1.2s infinite alternate'
+                  }}
+                >
+                  <Flame size={15} color="#F59E0B" />
+                  <span>Racha: {rachaMesa}x {rachaMesa >= 4 ? '(+50% BONUS)' : rachaMesa === 3 ? '(+25% BONUS)' : rachaMesa === 2 ? '(+10% BONUS)' : ''}</span>
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+                  Empieza tu racha ganando a la banca
+                </span>
+              )}
+            </div>
+
+            {/* Inscripción dorada de paño */}
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: 1.2,
+                color: 'rgba(253, 230, 138, 0.8)',
+                textAlign: 'center'
+              }}
+            >
+              Mesa Oficial de 21 · Blackjack Paga 3:2
+            </div>
+
+            {/* Zapato de cartas físico */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 8,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#D1D5DB',
+                fontSize: 11,
+                fontFamily: 'monospace'
+              }}
+              title="Zapato de cartas de casino"
+            >
+              <Layers size={13} color="#9CA3AF" />
+              <span>{barajaCrupier.length > 0 ? barajaCrupier.length : 104} cartas</span>
+            </div>
           </div>
 
           {/* MANO DEL CRUPIER */}
-          <div style={{ marginBottom: 26, textAlign: 'center' }}>
+          <div style={{ marginBottom: 24, textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#E5E7EB', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 Banca / Crupier SMR2
@@ -745,21 +867,27 @@ export function Duelo21PvP({ perfil, setPerfil }) {
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {manoDealerCrupier.map((c, i) => (
-                  <CartaPoker key={c.id || i} carta={c} tamano="md" />
+                  <CartaPoker
+                    key={c.id || i}
+                    carta={c}
+                    tamano="md"
+                    animarEntrada={true}
+                    delayAnimacion={i * 0.12}
+                  />
                 ))}
               </div>
             )}
           </div>
 
           {/* ÁREA CENTRAL: BOTE Y RESULTADO */}
-          <div style={{ textAlign: 'center', margin: '20px 0', minHeight: 40 }}>
+          <div style={{ textAlign: 'center', margin: '16px 0', minHeight: 40 }}>
             {resultadoCrupier && (
               <div
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  padding: '8px 18px',
+                  padding: '9px 20px',
                   borderRadius: 20,
                   backgroundColor:
                     resultadoCrupier.ganador === 'j1'
@@ -768,7 +896,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                       ? 'rgba(217, 119, 6, 0.95)'
                       : 'rgba(220, 38, 38, 0.95)',
                   color: '#FFFFFF',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.45)',
                   animation: 'aparecerEscala 0.25s ease'
                 }}
               >
@@ -785,23 +913,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '4px 14px',
+                  padding: '5px 16px',
                   borderRadius: 14,
-                  backgroundColor: 'rgba(0,0,0,0.4)',
-                  border: '1px solid rgba(212, 175, 55, 0.4)',
+                  backgroundColor: 'rgba(0,0,0,0.5)',
+                  border: '1px solid rgba(212, 175, 55, 0.45)',
                   color: '#FDE68A',
-                  fontSize: 12,
-                  fontWeight: 700
+                  fontSize: 13,
+                  fontWeight: 800
                 }}
               >
-                <Coins size={14} color="#F59E0B" />
+                <Coins size={15} color="#F59E0B" />
                 Apuesta en mesa: {apuestaCrupier} pts
               </span>
             )}
           </div>
 
           {/* MANO DEL JUGADOR */}
-          <div style={{ marginTop: 24, textAlign: 'center' }}>
+          <div style={{ marginTop: 20, textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#E5E7EB', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 Tu Mano ({perfil?.nombre || 'Tú'})
@@ -823,7 +951,8 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                       : scoreJugadorCrupier.esBlackjack
                       ? '#FDE68A'
                       : '#86EFAC',
-                    border: '1px solid rgba(255,255,255,0.1)'
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    animation: scoreJugadorCrupier.esBlackjack ? 'brilloBlackjack 1.5s infinite' : 'none'
                   }}
                 >
                   {scoreJugadorCrupier.texto}
@@ -851,7 +980,14 @@ export function Duelo21PvP({ perfil, setPerfil }) {
             ) : (
               <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {manoJugadorCrupier.map((c, i) => (
-                  <CartaPoker key={c.id || i} carta={c} tamano="md" />
+                  <CartaPoker
+                    key={c.id || i}
+                    carta={c}
+                    tamano="md"
+                    animarEntrada={true}
+                    delayAnimacion={i * 0.12}
+                    resaltar={scoreJugadorCrupier.esBlackjack || scoreJugadorCrupier.total === 21}
+                  />
                 ))}
               </div>
             )}
@@ -908,7 +1044,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                 <button
                   type="button"
                   onClick={iniciarManoCrupier}
-                  disabled={cargandoCrupier || (perfil?.puntos_total || 0) < apuestaCrupier}
+                  disabled={cargandoCrupier || repartiendo || (perfil?.puntos_total || 0) < apuestaCrupier}
                   style={{
                     minHeight: 46,
                     padding: '0 28px',
@@ -923,11 +1059,12 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                     boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 8
+                    gap: 8,
+                    opacity: repartiendo ? 0.6 : 1
                   }}
                 >
-                  {cargandoCrupier ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
-                  <span>{faseCrupier === 'resuelto' ? 'Jugar Otra Mano' : 'Repartir Cartas'}</span>
+                  {cargandoCrupier || repartiendo ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
+                  <span>{repartiendo ? 'Repartiendo...' : faseCrupier === 'resuelto' ? 'Jugar Otra Mano' : 'Repartir Cartas'}</span>
                 </button>
               </div>
             ) : (
@@ -936,6 +1073,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                 <button
                   type="button"
                   onClick={pedirCartaCrupier}
+                  disabled={repartiendo}
                   style={{
                     minHeight: 44,
                     padding: '8px 22px',
@@ -945,8 +1083,9 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                     color: '#FFFFFF',
                     fontSize: 14,
                     fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(37, 99, 235, 0.4)'
+                    cursor: repartiendo ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 3px 10px rgba(37, 99, 235, 0.4)',
+                    opacity: repartiendo ? 0.5 : 1
                   }}
                 >
                   Pedir Carta (+1)
@@ -955,6 +1094,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                 <button
                   type="button"
                   onClick={() => plantarseCrupier()}
+                  disabled={repartiendo}
                   style={{
                     minHeight: 44,
                     padding: '8px 22px',
@@ -964,8 +1104,9 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                     color: '#FFFFFF',
                     fontSize: 14,
                     fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(22, 163, 74, 0.4)'
+                    cursor: repartiendo ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 3px 10px rgba(22, 163, 74, 0.4)',
+                    opacity: repartiendo ? 0.5 : 1
                   }}
                 >
                   Plantarse (Stand)
@@ -975,6 +1116,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                   <button
                     type="button"
                     onClick={doblarApuestaCrupier}
+                    disabled={repartiendo}
                     style={{
                       minHeight: 44,
                       padding: '8px 20px',
@@ -984,7 +1126,8 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                       color: '#FDE68A',
                       fontSize: 13,
                       fontWeight: 700,
-                      cursor: 'pointer'
+                      cursor: repartiendo ? 'not-allowed' : 'pointer',
+                      opacity: repartiendo ? 0.5 : 1
                     }}
                   >
                     Doblar x2

@@ -7,7 +7,13 @@ alter table profiles enable row level security;
 drop policy if exists "lectura publica" on profiles;
 create policy "lectura publica" on profiles for select using (true);
 drop policy if exists "actualizar propio" on profiles;
-create policy "actualizar propio" on profiles for update using (auth.uid() = id);
+create policy "actualizar propio" on profiles for update using (
+  auth.uid() = id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
+drop policy if exists "borrar perfiles" on profiles;
+create policy "borrar perfiles" on profiles for delete using (
+  auth.uid() = id or exists (select 1 from profiles where id = auth.uid() and rol = 'moderador')
+);
 drop policy if exists "insert propio" on profiles;
 create policy "insert propio" on profiles for insert with check (auth.uid() = id or auth.uid() is null);
 

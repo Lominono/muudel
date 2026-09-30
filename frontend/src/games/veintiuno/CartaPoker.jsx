@@ -1,8 +1,8 @@
 // frontend/src/games/veintiuno/CartaPoker.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 /**
- * Componente visual de carta de póker.
+ * Componente visual de carta de póker con animación de reparto física realista.
  * Soporta imágenes reales de la web (Deck of Cards API) con respaldo garantizado
  * mediante gráficos vectoriales SVG artesanales de alta definición si falla la red.
  */
@@ -10,10 +10,23 @@ export function CartaPoker({
   carta,
   tamano = 'md',
   girar = false,
+  animarEntrada = true,
+  delayAnimacion = 0,
+  resaltar = false,
   className = '',
   style = {}
 }) {
   const [imgError, setImgError] = useState(false)
+  const [volteando, setVolteando] = useState(false)
+
+  // Detectar cuando una carta pasa de oculta a revelada para disparar giro 3D
+  useEffect(() => {
+    if (carta && !carta.oculta && carta.fueRevelada) {
+      setVolteando(true)
+      const t = setTimeout(() => setVolteando(false), 500)
+      return () => clearTimeout(t)
+    }
+  }, [carta?.oculta, carta?.fueRevelada])
 
   if (!carta) return null
 
@@ -43,17 +56,58 @@ export function CartaPoker({
         display: 'inline-block',
         position: 'relative',
         userSelect: 'none',
+        animation: animarEntrada
+          ? `dealCardSlide 0.38s cubic-bezier(0.18, 0.89, 0.32, 1.15) ${delayAnimacion}s both`
+          : 'none',
         ...style
       }}
     >
+      <style>{`
+        @keyframes dealCardSlide {
+          0% {
+            opacity: 0;
+            transform: translate(80px, -90px) scale(0.6) rotate(20deg);
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.6);
+          }
+          65% {
+            opacity: 1;
+            transform: translate(-3px, 3px) scale(1.04) rotate(-3deg);
+          }
+          100% {
+            opacity: 1;
+            transform: translate(0, 0) scale(1) rotate(0deg);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.22), 0 1px 3px rgba(0,0,0,0.12);
+          }
+        }
+        @keyframes flipCard3D {
+          0% {
+            transform: rotateY(180deg) scale(0.95);
+          }
+          50% {
+            transform: rotateY(90deg) scale(1.08);
+          }
+          100% {
+            transform: rotateY(0deg) scale(1);
+          }
+        }
+      `}</style>
+
       <div
         style={{
           width: '100%',
           height: '100%',
           borderRadius: medidas.radio,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.22), 0 1px 3px rgba(0,0,0,0.12)',
-          transition: 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)',
-          transform: girar ? 'rotateY(180deg)' : 'none',
+          boxShadow: resaltar
+            ? '0 0 18px rgba(245, 158, 11, 0.8), 0 4px 12px rgba(0,0,0,0.3)'
+            : '0 4px 12px rgba(0,0,0,0.22), 0 1px 3px rgba(0,0,0,0.12)',
+          border: resaltar ? '2px solid #FDE68A' : 'none',
+          transition: 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease',
+          transform: volteando
+            ? 'rotateY(0deg)'
+            : girar
+            ? 'rotateY(180deg)'
+            : 'none',
+          animation: volteando ? 'flipCard3D 0.45s ease-out' : 'none',
           transformStyle: 'preserve-3d',
           position: 'relative',
           backgroundColor: '#FFFFFF',

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { config } from '../config/env.js'
 import { apuntesRouter } from '../routes/apuntes.js'
 import { ruletaRouter } from '../routes/ruleta.js'
+import { adminRouter } from '../routes/admin.js'
 
 const app = express()
 
@@ -12,6 +13,7 @@ app.use(cors({ origin: true }))
 app.use(express.json())
 app.use('/api/apuntes', apuntesRouter)
 app.use('/api/ruleta', ruletaRouter)
+app.use('/api/admin', adminRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ estado: 'ok' })
