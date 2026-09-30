@@ -203,25 +203,57 @@ export function PantallaJuegos() {
     triggerConfetti()
   }
 
+  // Obtener ventajas activas de la tienda web para juegos
+  const mejorasActivas = (() => {
+    try {
+      const invRaw = localStorage.getItem('muudel_inventario_' + perfil?.id)
+      const tieneSeguro = localStorage.getItem('muudel_seguro_ruleta_' + perfil?.id) === 'true'
+      const items = invRaw ? JSON.parse(invRaw) : []
+      const perks = []
+
+      if (tieneSeguro || items.some(i => i.catalogoId === 'seguro_ruleta' && i.estado !== 'usado')) {
+        perks.push({ id: 'seguro', label: '🛡️ Seguro Ruleta 50%', color: '#30D158' })
+      }
+      if (items.some(i => i.catalogoId === 'dados_oro_pvp' && i.estado !== 'expirado')) {
+        perks.push({ id: 'dados_oro', label: '🎲 Dados Dorados VIP', color: '#FBBF24' })
+      }
+      if (items.some(i => i.catalogoId === 'ruleta_max_500')) {
+        perks.push({ id: 'ruleta_500', label: '👑 Licencia VIP 500', color: '#D4AF37' })
+      } else if (items.some(i => i.catalogoId === 'ruleta_max_100')) {
+        perks.push({ id: 'ruleta_100', label: '🎟️ Licencia Casino 100', color: '#FF3B30' })
+      } else if (items.some(i => i.catalogoId === 'ruleta_max_50')) {
+        perks.push({ id: 'ruleta_50', label: '🎟️ Licencia Casino 50', color: '#FF9500' })
+      }
+      if (items.some(i => i.catalogoId === 'racha_x2' && i.estado === 'activo')) {
+        perks.push({ id: 'racha_x2', label: '🔥 Racha x2', color: '#FF3B30' })
+      }
+      if (items.some(i => i.catalogoId === 'congelar_racha' && i.estado !== 'usado')) {
+        perks.push({ id: 'escudo', label: '❄️ Escudo Racha', color: '#0A84FF' })
+      }
+      return perks
+    } catch (_) {
+      return []
+    }
+  })()
+
   return (
-    <main className="app-container" style={{ maxWidth: 840, padding: 'clamp(12px, 3vw, 24px)' }}>
-      {/* Encabezado Artesanal de Aula SMR2 (Anti-IA) */}
-      <header style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            {/* Sello mecánico de recreo con borde doble */}
+    <main className="app-container" style={{ maxWidth: 880, padding: 'clamp(12px, 3vw, 24px)' }}>
+      {/* Encabezado de Recreo y Salón de Juegos */}
+      <header style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div
               style={{
-                width: 46,
-                height: 46,
-                borderRadius: 10,
-                backgroundColor: 'rgba(52, 199, 89, 0.1)',
-                border: '1.5px solid #2F9E44',
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                backgroundColor: 'rgba(52, 199, 89, 0.12)',
+                border: '1px solid rgba(52, 199, 89, 0.3)',
                 color: '#2F9E44',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1)'
+                boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
               }}
             >
               <Gamepad2 size={24} />
@@ -240,22 +272,33 @@ export function PantallaJuegos() {
                     letterSpacing: 0.6,
                     padding: '2px 7px',
                     borderRadius: 4,
-                    border: '1px solid #D93829',
+                    border: '1px solid rgba(217, 56, 41, 0.3)',
+                    backgroundColor: 'rgba(217, 56, 41, 0.08)',
                     color: '#D93829',
                     fontFamily: 'monospace'
                   }}
                 >
-                  PAUSA ACTIVA 18:10
+                  PAUSA 18:10
                 </span>
               </div>
               <p className="apple-subheadline" style={{ fontSize: 13, margin: '2px 0 0', color: 'var(--color-secondary-ink)' }}>
-                Mesa de ruleta europea, duelos 1v1 de dados y recreo arcade de clase.
+                Mesa de ruleta europea, duelos 1v1 de dados en pizarra y arcade Yoshi.
               </p>
             </div>
           </div>
 
-          {/* Selector de Juego estilo Apple Segmented Control */}
-          <div className="segmented-control" style={{ maxWidth: 460 }}>
+          {/* Selector de Juego estilo Apple Segmented Control Equilibrado */}
+          <div
+            className="segmented-control"
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              padding: 3,
+              backgroundColor: 'var(--color-fill-secondary)'
+            }}
+          >
             <button
               type="button"
               className={`segmented-control-item ${juegoSeleccionado === 'ruleta' ? 'active' : ''}`}
@@ -263,6 +306,7 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('ruleta')
               }}
+              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
             >
               🎰 Ruleta SMR2
             </button>
@@ -273,6 +317,7 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('pvp')
               }}
+              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
             >
               ⚔️ Duelo PvP
             </button>
@@ -283,12 +328,81 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('yoshi')
               }}
+              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
             >
               🦖 Yoshi Runner
             </button>
           </div>
         </div>
       </header>
+
+      {/* BARRA TÁCTIL DE SALDO Y PERKS ACTIVOS */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10,
+          padding: '10px 14px',
+          borderRadius: 10,
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-separator)',
+          marginBottom: 16,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              backgroundColor: 'rgba(255, 149, 0, 0.12)',
+              color: '#FF9500',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Coins size={16} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)', fontWeight: 600 }}>
+              Saldo disponible:
+            </span>
+            <strong style={{ fontSize: 15, color: '#D97706', fontFamily: 'monospace', fontWeight: 800 }}>
+              {perfil?.puntos_total || 0} pts
+            </strong>
+          </div>
+        </div>
+
+        {/* Perks Activos en mesa */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {mejorasActivas.length > 0 ? (
+            mejorasActivas.map(p => (
+              <span
+                key={p.id}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  backgroundColor: `${p.color}15`,
+                  border: `1px solid ${p.color}40`,
+                  color: p.color
+                }}
+              >
+                {p.label}
+              </span>
+            ))
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+              Sin perks activos · Compra ventajas en la Tienda
+            </span>
+          )}
+        </div>
+      </div>
 
       <div ref={pageRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* VISTA 1: RULETA DE APUESTAS CASINO */}

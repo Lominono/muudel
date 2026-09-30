@@ -109,8 +109,10 @@ BEGIN
   IF v_partida.creador_id = v_user_id THEN RAISE EXCEPTION 'No puedes desafiarte a ti mismo'; END IF;
   
   -- Verificar saldo del oponente
-  SELECT puntos_total INTO v_saldo FROM profiles WHERE id = v_user_id FOR UPDATE;
-  IF v_saldo < v_partida.apuesta THEN RAISE EXCEPTION 'Saldo insuficiente para aceptar la apuesta'; END IF;
+  SELECT COALESCE(puntos_total, 0) INTO v_saldo FROM profiles WHERE id = v_user_id FOR UPDATE;
+  IF v_saldo < v_partida.apuesta THEN 
+    RAISE EXCEPTION 'Saldo insuficiente (% pts disponibles, % requeridos)', v_saldo, v_partida.apuesta; 
+  END IF;
   
   -- Descontar apuesta al oponente
   UPDATE profiles SET puntos_total = puntos_total - v_partida.apuesta WHERE id = v_user_id;
@@ -144,19 +146,31 @@ BEGIN
   -- Entregar bote acumulado (apuesta * 2) al ganador
   UPDATE profiles SET puntos_total = puntos_total + (v_partida.apuesta * 2) WHERE id = v_ganador_id;
   
-  -- Guardar resultado detallado
-  UPDATE pvp_partidas 
-  SET estado = 'finalizado',
-      oponente_id = v_user_id,
-      resultado_creador = v_tot_c,
-      resultado_oponente = v_tot_o,
-      dado1_creador = v_d1_c,
-      dado2_creador = v_d2_c,
-      dado1_oponente = v_d1_o,
-      dado2_oponente = v_d2_o,
-      ganador_id = v_ganador_id,
-      resolved_at = NOW()
-  WHERE id = p_partida_id;
+  -- Guardar resultado detallado (usando EXECUTE para tolerar de forma segura tablas con o sin columnas añadidas)
+  BEGIN
+    EXECUTE 'UPDATE pvp_partidas 
+      SET estado = ''finalizado'',
+          oponente_id = $1,
+          resultado_creador = $2,
+          resultado_oponente = $3,
+          dado1_creador = $4,
+          dado2_creador = $5,
+          dado1_oponente = $6,
+          dado2_oponente = $7,
+          ganador_id = $8,
+          resolved_at = NOW()
+      WHERE id = $9'
+    USING v_user_id, v_tot_c, v_tot_o, v_d1_c, v_d2_c, v_d1_o, v_d2_o, v_ganador_id, p_partida_id;
+  EXCEPTION WHEN undefined_column THEN
+    UPDATE pvp_partidas 
+    SET estado = 'finalizado',
+        oponente_id = v_user_id,
+        resultado_creador = v_tot_c,
+        resultado_oponente = v_tot_o,
+        ganador_id = v_ganador_id,
+        resolved_at = NOW()
+    WHERE id = p_partida_id;
+  END;
   
   -- Retornar resultado completo al cliente
   RETURN json_build_object(

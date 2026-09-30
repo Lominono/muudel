@@ -205,7 +205,7 @@ export function BatallaDadosPvP() {
       if (creadorIds.length > 0) {
         const { data: perfilesData } = await supabase
           .from('profiles')
-          .select('id, nombre, avatar_url, color_acento, digito_id')
+          .select('id, nombre, avatar_emoji, color_acento, digito_id')
           .in('id', creadorIds)
 
         if (perfilesData) {
@@ -218,6 +218,7 @@ export function BatallaDadosPvP() {
         creador: perfilesMap[p.creador_id] || {
           id: p.creador_id,
           nombre: 'Compañero SMR2',
+          avatar_emoji: '🧑‍💻',
           color_acento: '#007AFF',
           digito_id: '#01'
         }
@@ -251,7 +252,7 @@ export function BatallaDadosPvP() {
       if (userIds.length > 0) {
         const { data: perfilesData } = await supabase
           .from('profiles')
-          .select('id, nombre, color_acento')
+          .select('id, nombre, avatar_emoji, color_acento, digito_id')
           .in('id', userIds)
 
         if (perfilesData) {
@@ -339,17 +340,26 @@ export function BatallaDadosPvP() {
   }
 
   // Aceptar el reto de un compañero
-  const handleAceptarDesafio = async (partidaId, betAmt) => {
+  const handleAceptarDesafio = async (partidaId, betAmt, creadorId) => {
+    if (creadorId && perfil?.id && String(creadorId) === String(perfil.id)) {
+      sound.playPop()
+      avisar('Este es tu propio reto. No puedes apostar contra ti mismo. Puedes cancelarlo para recuperar tus puntos.')
+      return
+    }
+
     if (!perfil || (perfil.puntos_total || 0) < betAmt) {
       sound.playPop()
-      avisar('No tienes suficientes puntos para cubrir la apuesta.')
+      avisar(`Saldo insuficiente. Tienes ${perfil?.puntos_total || 0} pts y este reto requiere ${betAmt} pts.`)
       return
     }
 
     setCargando(true)
     try {
       const { data, error } = await supabase.rpc('unirse_partida_pvp', { p_partida_id: partidaId })
-      if (error) throw error
+      if (error) {
+        console.error('Error al unirse a partida PvP:', error)
+        throw new Error(error.message || error.details || 'Error en servidor')
+      }
 
       // Notificar a toda la clase y al creador
       transmitirEvento('pvp_reto_resuelto', {
@@ -359,6 +369,7 @@ export function BatallaDadosPvP() {
 
       iniciarAnimacionResolucion(data)
     } catch (e) {
+      console.error('Catch handleAceptarDesafio:', e)
       avisar('Error al entrar al duelo: ' + (e.message || e))
     } finally {
       setCargando(false)
@@ -709,7 +720,7 @@ export function BatallaDadosPvP() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {lobbies.map((lobby) => {
-              const esMio = lobby.creador_id === perfil?.id
+              const esMio = Boolean(perfil?.id && String(lobby.creador_id) === String(perfil.id))
               return (
                 <div
                   key={lobby.id}
@@ -734,13 +745,13 @@ export function BatallaDadosPvP() {
                         backgroundColor: lobby.creador?.color_acento || '#007AFF',
                         color: '#FFF',
                         fontWeight: 800,
-                        fontSize: 15,
+                        fontSize: 16,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}
                     >
-                      {lobby.creador?.nombre ? lobby.creador.nombre.charAt(0).toUpperCase() : '?'}
+                      {lobby.creador?.avatar_emoji || (lobby.creador?.nombre ? lobby.creador.nombre.charAt(0).toUpperCase() : '🎲')}
                     </div>
 
                     <div>
@@ -809,7 +820,7 @@ export function BatallaDadosPvP() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleAceptarDesafio(lobby.id, lobby.apuesta)}
+                        onClick={() => handleAceptarDesafio(lobby.id, lobby.apuesta, lobby.creador_id)}
                         disabled={cargando || (perfil?.puntos_total || 0) < lobby.apuesta}
                         style={{
                           padding: '7px 16px',

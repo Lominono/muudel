@@ -749,6 +749,33 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {(() => {
+            try {
+              const tiene = localStorage.getItem('muudel_seguro_ruleta_' + perfil?.id) === 'true'
+              const inv = JSON.parse(localStorage.getItem('muudel_inventario_' + perfil?.id) || '[]')
+              if (tiene || inv.some(i => i.catalogoId === 'seguro_ruleta' && i.estado !== 'usado')) {
+                return (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      backgroundColor: 'rgba(52, 199, 89, 0.15)',
+                      border: '1px solid rgba(52, 199, 89, 0.35)',
+                      color: '#34C759',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    🛡️ Seguro 50% Activo
+                  </span>
+                )
+              }
+            } catch (_) {}
+            return null
+          })()}
           <div style={{ textAlign: 'right' }}>
             <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)', display: 'block', textTransform: 'uppercase', fontWeight: 600 }}>
               Saldo
