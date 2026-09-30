@@ -47,17 +47,41 @@ async function getEmbedding(text) {
   return data.data[0].embedding
 }
 
+router.get('/', async (_req, res) => {
+  try {
+    const supabase = getSupabaseClient()
+    const { data: apuntes, error } = await supabase
+      .from('apuntes')
+      .select('*, profiles(id, nombre, color_acento, digito_id, username)')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    res.json({ apuntes: apuntes || [] })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 router.post('/subir', checkAuth, async (req, res) => {
   try {
-    const { titulo, materia, texto, userId } = req.body
+    const { titulo, materia, texto, userId, file_url, file_name, file_size, oficial } = req.body
     if (!titulo || !materia) {
       return res.status(400).json({ error: 'Faltan título y materia' })
     }
 
+    const supabase = getSupabaseClient()
+    const insertPayload = {
+      titulo: titulo.trim(),
+      materia: materia.trim(),
+      texto: texto ? texto.trim() : null,
+      user_id: userId,
+      file_url: file_url || null
+    }
+
     const { data: apunte, error: dbError } = await supabase
       .from('apuntes')
-      .insert({ titulo, materia, texto, user_id: userId })
-      .select()
+      .insert(insertPayload)
+      .select('*, profiles(id, nombre, color_acento, digito_id, username)')
       .single()
 
     if (dbError) throw dbError
@@ -85,6 +109,57 @@ router.post('/subir', checkAuth, async (req, res) => {
     }
 
     res.json(apunte)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.put('/:id', checkAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { titulo, materia, texto, file_url } = req.body
+    const supabase = getSupabaseClient()
+
+    const updatePayload = {}
+    if (titulo) updatePayload.titulo = titulo.trim()
+    if (materia) updatePayload.materia = materia.trim()
+    if (texto !== undefined) updatePayload.texto = texto
+    if (file_url !== undefined) updatePayload.file_url = file_url
+
+    const { data: actualizado, error } = await supabase
+      .from('apuntes')
+      .update(updatePayload)
+      .eq('id', id)
+      .select('*, profiles(id, nombre, color_acento, digito_id, username)')
+      .single()
+
+    if (error) throw error
+    res.json(actualizado)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.delete('/:id', checkAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const supabase = getSupabaseClient()
+
+    const { error } = await supabase
+      .from('apuntes')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
+
+    if (config.pineconeApiKey) {
+      try {
+        const index = getPineconeIndex()
+        await index.namespace('apuntes').deleteOne(id)
+      } catch (_) {}
+    }
+
+    res.json({ ok: true, id })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

@@ -40,7 +40,17 @@ import {
   Ban,
   Bell,
   Send,
-  AlertTriangle
+  AlertTriangle,
+  Upload,
+  Folder,
+  Eye,
+  Edit3,
+  ExternalLink,
+  HardDrive,
+  Pin,
+  FileCode,
+  Copy,
+  Paperclip
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { conOneSignal } from '../utils/oneSignal'
@@ -49,6 +59,130 @@ import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 export const obtenerPinAdmin = () => {
   return localStorage.getItem('muudel_admin_pin_custom') || '2026'
 }
+
+export const formatearTamano = (bytes) => {
+  if (!bytes || isNaN(bytes)) return '—'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+export const detectarTipoArchivo = (nombre = '', mime = '') => {
+  const ext = (nombre.split('.').pop() || '').toLowerCase()
+  if (ext === 'pdf' || (mime && mime.includes('pdf'))) return { tipo: 'pdf', label: 'PDF', color: '#FF3B30' }
+  if (['sh', 'bash', 'ps1', 'py', 'js', 'sql', 'json', 'html', 'css'].includes(ext)) {
+    return { tipo: 'codigo', label: ext.toUpperCase(), color: '#0A84FF' }
+  }
+  if (['doc', 'docx', 'odt', 'rtf', 'txt', 'md'].includes(ext)) {
+    return { tipo: 'documento', label: ext.toUpperCase(), color: '#34C759' }
+  }
+  if (['zip', 'rar', 'tar', 'gz', '7z'].includes(ext)) {
+    return { tipo: 'archivo', label: 'ZIP', color: '#FF9500' }
+  }
+  if (['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext) || (mime && mime.includes('image'))) {
+    return { tipo: 'imagen', label: 'IMG', color: '#AF52DE' }
+  }
+  return { tipo: 'otro', label: ext ? ext.toUpperCase() : 'ARCHIVO', color: '#8E8E93' }
+}
+
+export const MATERIAS_SMR2 = [
+  'Sistemas Operativos (SOM)',
+  'Redes Locales (RL)',
+  'Seguridad Informática (SI)',
+  'Montaje y Mantenimiento (MME)',
+  'Aplicaciones Web (AW)',
+  'General / Miscelánea'
+]
+
+const RECURSOS_OFICIALES_INICIALES = [
+  {
+    id: 'apunte-som-01',
+    titulo: 'Comandos de Administración Bash y Permisos Chmod (Linux)',
+    materia: 'Sistemas Operativos (SOM)',
+    texto: `# Guía de Permisos Linux y Administración
+chmod 755 script.sh # rwxr-xr-x (dueño r/w/x, grupo r/x, otros r/x)
+chmod 644 config.conf # rw-r--r-- (dueño r/w, resto solo lectura)
+chmod 600 id_rsa # rw------- (privacidad total, solo dueño)
+chown usuario:grupo archivo # Cambiar propietario y grupo
+sudo usermod -aG sudo usuario # Añadir usuario a sudoers
+
+# Diagnóstico de almacenamiento y memoria
+df -h          # Espacio en particiones montadas
+free -h        # Memoria RAM y Swap disponible
+top / htop     # Monitor de procesos en tiempo real
+journalctl -xe # Inspección de logs del kernel y servicios`,
+    file_name: 'guia_bash_permisos_smr2.sh',
+    file_size: 18420,
+    file_type: 'application/x-sh',
+    file_url: null,
+    oficial: true,
+    autor_nombre: 'lominoño',
+    autor_color: '#0A84FF',
+    created_at: new Date(Date.now() - 3600 * 1000 * 24 * 2).toISOString()
+  },
+  {
+    id: 'apunte-rl-02',
+    titulo: 'Chuleta de Subnetting, VLSM y Rangos CIDR',
+    materia: 'Redes Locales (RL)',
+    texto: `=== SUBREDES Y CÁLCULO VLSM PARA SMR2 ===
+/24 -> 255.255.255.0   -> 256 IPs (254 útiles)
+/25 -> 255.255.255.128 -> 128 IPs (126 útiles)
+/26 -> 255.255.255.192 -> 64 IPs  (62 útiles)
+/27 -> 255.255.255.224 -> 32 IPs  (30 útiles)
+/28 -> 255.255.255.240 -> 16 IPs  (14 útiles)
+/29 -> 255.255.255.248 -> 8 IPs   (6 útiles)
+/30 -> 255.255.255.252 -> 4 IPs   (2 útiles para enlaces WAN punto a punto)
+
+Fórmula número de subredes: 2^n (donde n = bits robados a host)
+Fórmula hosts útiles: (2^h) - 2 (primer IP = Red, última IP = Broadcast)`,
+    file_name: 'chuleta_subnetting_vlsm.txt',
+    file_size: 12300,
+    file_type: 'text/plain',
+    file_url: null,
+    oficial: true,
+    autor_nombre: 'lominoño',
+    autor_color: '#0A84FF',
+    created_at: new Date(Date.now() - 3600 * 1000 * 24 * 1).toISOString()
+  },
+  {
+    id: 'apunte-som-03',
+    titulo: 'Configuración de Ámbito DHCP en Windows Server',
+    materia: 'Sistemas Operativos (SOM)',
+    texto: `# PowerShell: Despliegue de Rol y Ámbito DHCP
+Install-WindowsFeature DHCP -IncludeManagementTools
+Add-DhcpServerv4Scope -Name "Aula-SMR2" -StartRange 192.168.10.50 -EndRange 192.168.10.200 -SubnetMask 255.255.255.0 -State Active
+Set-DhcpServerv4OptionValue -ScopeId 192.168.10.0 -Router 192.168.10.1 -DnsServer 1.1.1.1, 8.8.8.8
+Restart-Service dhcpserver
+Get-DhcpServerv4Lease -ScopeId 192.168.10.0 # Ver concesiones activas`,
+    file_name: 'dhcp_windows_server_config.ps1',
+    file_size: 15600,
+    file_type: 'application/x-powershell',
+    file_url: null,
+    oficial: true,
+    autor_nombre: 'lominoño',
+    autor_color: '#0A84FF',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'apunte-si-04',
+    titulo: 'Checklist de Hardening y Auditoría de Seguridad de Puesto',
+    materia: 'Seguridad Informática (SI)',
+    texto: `# Protocolo de Seguridad en el Puesto de Trabajo
+1. Deshabilitar protocolos obsoletos: SMBv1, SSLv3, Telnet sin cifrar.
+2. Contraseñas robustas: mínimo 14 caracteres, rotación de 90 días, MFA obligatorio.
+3. Principio de Menor Privilegio (PoLP): cuenta estándar para trabajo diario, UAC en nivel superior.
+4. Políticas de Grupo (GPO): bloqueo de ejecución de scripts desde carpetas temporales (%AppData%, %Temp%).
+5. Copia de Seguridad 3-2-1: 3 copias, 2 soportes distintos, 1 copia externa/en la nube cifrada.`,
+    file_name: 'hardening_seguridad_puesto.md',
+    file_size: 19800,
+    file_type: 'text/markdown',
+    file_url: null,
+    oficial: true,
+    autor_nombre: 'lominoño',
+    autor_color: '#0A84FF',
+    created_at: new Date().toISOString()
+  }
+]
 
 const TIEMPO_BLOQUEO_SEGUNDOS = 60
 const TIEMPO_INACTIVIDAD_MS = 10 * 60 * 1000 // 10 minutos de inactividad
@@ -75,8 +209,26 @@ export function PantallaAdmin() {
   const [errorCambioPin, setErrorCambioPin] = useState('')
 
   // 2. Navegación entre pestañas del Panel
-  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'canjes' | 'chat' | 'alumnos' | 'retos' | 'seguridad'
+  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'archivos' | 'chat' | 'canjes' | 'alumnos' | 'retos' | 'seguridad'
   const [cargando, setCargando] = useState(true)
+
+  // 3. Gestión y Administración de Archivos y Materiales del Aula
+  const [archivosClase, setArchivosClase] = useState([])
+  const [filtroMateria, setFiltroMateria] = useState('todas')
+  const [filtroTipoArchivo, setFiltroTipoArchivo] = useState('todos')
+  const [busquedaArchivo, setBusquedaArchivo] = useState('')
+  const [modalSubirArchivo, setMostrarModalSubirArchivo] = useState(false)
+  const [modalPreviewArchivo, setModalPreviewArchivo] = useState(null)
+  const [modalEditarArchivo, setModalEditarArchivo] = useState(null)
+  const [copiadoFeedback, setCopiadoFeedback] = useState(false)
+
+  // Formulario nuevo archivo
+  const [nuevoArchivoTitulo, setNuevoArchivoTitulo] = useState('')
+  const [nuevoArchivoMateria, setNuevoArchivoMateria] = useState('Sistemas Operativos (SOM)')
+  const [nuevoArchivoTexto, setNuevoArchivoTexto] = useState('')
+  const [nuevoArchivoEsOficial, setNuevoArchivoEsOficial] = useState(true)
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState(null)
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false)
 
   // Datos de asistencia y solicitudes de las 15:30
   const [checkinsHoy, setCheckinsHoy] = useState([])
@@ -267,6 +419,22 @@ export function PantallaAdmin() {
       setMegafonoActual(data || null)
     })
 
+    // 6. Escuchar nuevos apuntes / archivos subidos
+    const desuscribirApuntes = suscribirEvento('nuevo_apunte', (nuevoApunte) => {
+      if (!nuevoApunte) return
+      sound.playStamp()
+      setArchivosClase((prev) => {
+        const sinRepetir = prev.filter(a => a.id !== nuevoApunte.id)
+        return [nuevoApunte, ...sinRepetir]
+      })
+      avisar(`📂 Nuevo material publicado: "${nuevoApunte.titulo}"`)
+    })
+
+    const desuscribirArchivoBorrado = suscribirEvento('archivo_eliminado', ({ id }) => {
+      if (!id) return
+      setArchivosClase((prev) => prev.filter(a => a.id !== id))
+    })
+
     return () => {
       desuscribirSol()
       desuscribirCanjes()
@@ -274,6 +442,8 @@ export function PantallaAdmin() {
       desuscribirEntregas()
       desuscribirAvisos()
       desuscribirMega()
+      desuscribirApuntes()
+      desuscribirArchivoBorrado()
     }
   }, [desbloqueado, fechaHoy])
 
@@ -439,6 +609,59 @@ export function PantallaAdmin() {
       // 8. Cargar registros de auditoría
       const logs = JSON.parse(localStorage.getItem('muudel_audit_log') || '[]')
       setLogsAuditoria(logs)
+
+      // 9. Cargar Archivos y Materiales del Aula
+      let listaArchivos = []
+      try {
+        const { data: apuntesRemotos } = await supabase
+          .from('apuntes')
+          .select('*, profiles(id, nombre, color_acento, digito_id, username)')
+          .order('created_at', { ascending: false })
+
+        if (apuntesRemotos && apuntesRemotos.length > 0) {
+          listaArchivos = apuntesRemotos.map(a => {
+            const metaInfo = detectarTipoArchivo(a.file_name || a.titulo, a.file_type || '')
+            return {
+              id: a.id,
+              titulo: a.titulo,
+              materia: a.materia,
+              texto: a.texto,
+              file_url: a.file_url,
+              file_name: a.file_name || `${a.titulo.toLowerCase().replace(/[^a-z0-9]/g, '_')}.${metaInfo.tipo === 'codigo' ? 'sh' : 'md'}`,
+              file_size: a.file_size || (a.texto ? a.texto.length * 2 : 12400),
+              file_type: a.file_type || (metaInfo.tipo === 'codigo' ? 'text/plain' : 'text/markdown'),
+              oficial: a.oficial ?? (a.profiles?.rol === 'moderador' || a.user_id === perfil?.id),
+              autor_id: a.user_id,
+              autor_nombre: a.profiles?.nombre || 'Compañero SMR2',
+              autor_color: a.profiles?.color_acento || '#0A84FF',
+              autor_username: a.profiles?.username || '',
+              created_at: a.created_at || new Date().toISOString()
+            }
+          })
+        }
+      } catch (errDb) {
+        console.warn('Lectura remota de apuntes omitida:', errDb)
+      }
+
+      // Combinar con almacenamiento local
+      try {
+        const localArchivos = JSON.parse(localStorage.getItem('muudel_archivos_aula') || '[]')
+        localArchivos.forEach(loc => {
+          if (!listaArchivos.find(a => a.id === loc.id)) {
+            listaArchivos.push(loc)
+          }
+        })
+      } catch (e) {}
+
+      // Si no hay archivos, poblar con recursos de seed para el aula
+      if (listaArchivos.length === 0) {
+        listaArchivos = [...RECURSOS_OFICIALES_INICIALES]
+        try {
+          localStorage.setItem('muudel_archivos_aula', JSON.stringify(listaArchivos))
+        } catch (_) {}
+      }
+
+      setArchivosClase(listaArchivos)
     } catch (err) {
       console.warn('Error al cargar datos administrativos:', err)
     } finally {
@@ -1304,6 +1527,253 @@ export function PantallaAdmin() {
     setOpcionesFlash(['', '', ''])
   }
 
+  // ==========================================
+  // GESTIÓN DE ARCHIVOS Y MATERIALES DEL AULA
+  // ==========================================
+
+  // Subir un nuevo archivo o apunte técnico
+  const handleSubirArchivo = async (e) => {
+    e.preventDefault()
+    if (!nuevoArchivoTitulo.trim()) {
+      avisar('Por favor introduce un título para el material.', 'error')
+      return
+    }
+
+    setSubiendoArchivo(true)
+    try {
+      let fileUrl = null
+      let fileName = archivoSeleccionado ? archivoSeleccionado.name : `${nuevoArchivoTitulo.toLowerCase().replace(/[^a-z0-9]/g, '_')}.md`
+      let fileSize = archivoSeleccionado ? archivoSeleccionado.size : (nuevoArchivoTexto ? nuevoArchivoTexto.length * 2 : 1024)
+      let fileType = archivoSeleccionado ? archivoSeleccionado.type : 'text/markdown'
+
+      // Si seleccionó un archivo físico, convertirlo a dataUrl y opcionalmente subir a storage
+      if (archivoSeleccionado) {
+        fileUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(archivoSeleccionado)
+        })
+
+        // Intentar guardar en Supabase Storage si el bucket existe
+        try {
+          const storagePath = `aula_${Date.now()}_${archivoSeleccionado.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+          const { data: stData } = await supabase.storage
+            .from('apuntes')
+            .upload(storagePath, archivoSeleccionado, { cacheControl: '3600', upsert: true })
+          if (stData) {
+            const { data: pubData } = supabase.storage.from('apuntes').getPublicUrl(storagePath)
+            if (pubData?.publicUrl) fileUrl = pubData.publicUrl
+          }
+        } catch (_) {}
+      }
+
+      const nuevoId = 'apunte-' + Date.now()
+      const nuevoItem = {
+        id: nuevoId,
+        titulo: nuevoArchivoTitulo.trim(),
+        materia: nuevoArchivoMateria,
+        texto: nuevoArchivoTexto.trim() || null,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_size: fileSize,
+        file_type: fileType,
+        oficial: Boolean(nuevoArchivoEsOficial),
+        autor_id: perfil?.id,
+        autor_nombre: perfil?.nombre || 'lominoño',
+        autor_color: perfil?.color_acento || '#0A84FF',
+        autor_username: perfil?.username || '',
+        created_at: new Date().toISOString()
+      }
+
+      // 1. Guardar en Supabase tabla apuntes si está disponible
+      try {
+        await supabase.from('apuntes').insert({
+          id: nuevoId,
+          user_id: perfil?.id,
+          titulo: nuevoItem.titulo,
+          materia: nuevoItem.materia,
+          texto: nuevoItem.texto,
+          file_url: nuevoItem.file_url
+        })
+      } catch (errDb) {
+        console.warn('Inserción remota en apuntes omitida:', errDb)
+      }
+
+      // 2. Persistir localmente
+      const actualizados = [nuevoItem, ...archivosClase.filter(a => a.id !== nuevoId)]
+      setArchivosClase(actualizados)
+      try {
+        localStorage.setItem('muudel_archivos_aula', JSON.stringify(actualizados))
+      } catch (e) {}
+
+      // 3. Notificar en vivo a toda la clase
+      transmitirEvento('nuevo_apunte', nuevoItem)
+      transmitirEvento('notificacion_push_clase', {
+        id: 'notif-' + Date.now(),
+        titulo: `📂 Nuevo Material: ${nuevoItem.materia}`,
+        mensaje: `${nuevoItem.titulo} publicado por ${nuevoItem.autor_nombre}.`,
+        nivel: 'general',
+        autor: perfil?.nombre || 'lominoño',
+        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })
+
+      sound.playStamp()
+      triggerConfetti()
+      avisar(`¡Material "${nuevoItem.titulo}" publicado para toda la clase!`)
+      registrarAuditoria('Subida de Archivo', `Publicado "${nuevoItem.titulo}" en ${nuevoItem.materia}`)
+
+      // Limpiar formulario y cerrar modal
+      setNuevoArchivoTitulo('')
+      setNuevoArchivoTexto('')
+      setArchivoSeleccionado(null)
+      setMostrarModalSubirArchivo(false)
+    } catch (err) {
+      sound.playPop()
+      avisar('Error al procesar el archivo.', 'error')
+    } finally {
+      setSubiendoArchivo(false)
+    }
+  }
+
+  // Descargar archivo a la máquina local
+  const handleDescargarArchivo = (archivo) => {
+    try {
+      sound.playPop()
+      if (archivo.file_url && archivo.file_url.startsWith('data:')) {
+        const link = document.createElement('a')
+        link.href = archivo.file_url
+        link.download = archivo.file_name || `${archivo.titulo.replace(/\s+/g, '_')}`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } else if (archivo.texto) {
+        const blob = new Blob([archivo.texto], { type: 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = archivo.file_name || `${archivo.titulo.replace(/\s+/g, '_')}.md`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      } else if (archivo.file_url) {
+        window.open(archivo.file_url, '_blank')
+      }
+      avisar(`Descargando "${archivo.titulo}"...`)
+      registrarAuditoria('Descarga de Archivo', `Descargado "${archivo.titulo}"`)
+    } catch (e) {
+      avisar('No se pudo descargar el archivo.', 'error')
+    }
+  }
+
+  // Marcar / Desmarcar como Material Oficial del Aula
+  const handleToggleOficial = async (archivo) => {
+    const nuevoEstado = !archivo.oficial
+    const actualizados = archivosClase.map(a => a.id === archivo.id ? { ...a, oficial: nuevoEstado } : a)
+    setArchivosClase(actualizados)
+    try {
+      localStorage.setItem('muudel_archivos_aula', JSON.stringify(actualizados))
+    } catch (e) {}
+
+    sound.playStamp()
+    avisar(`"${archivo.titulo}" ${nuevoEstado ? 'fijado como Material Oficial' : 'retirado de oficiales'}.`)
+    registrarAuditoria('Material Oficial', `${archivo.titulo} marcado como ${nuevoEstado ? 'Oficial' : 'Estándar'}`)
+  }
+
+  // Eliminar archivo
+  const handleEliminarArchivo = (archivo) => {
+    setModalConfirmacion({
+      titulo: `¿Eliminar "${archivo.titulo}"?`,
+      mensaje: 'Esta acción borrará el recurso y dejará de estar disponible para el aula.',
+      peligroso: true,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setAccionEnCurso(archivo.id)
+        try {
+          await supabase.from('apuntes').delete().eq('id', archivo.id)
+        } catch (_) {}
+
+        const actualizados = archivosClase.filter(a => a.id !== archivo.id)
+        setArchivosClase(actualizados)
+        try {
+          localStorage.setItem('muudel_archivos_aula', JSON.stringify(actualizados))
+        } catch (e) {}
+
+        transmitirEvento('archivo_eliminado', { id: archivo.id })
+        sound.playPop()
+        avisar(`Archivo "${archivo.titulo}" eliminado.`)
+        registrarAuditoria('Eliminación de Archivo', `Borrado "${archivo.titulo}" de ${archivo.materia}`)
+        setAccionEnCurso(null)
+      }
+    })
+  }
+
+  // Guardar edición de archivo
+  const handleGuardarEdicionArchivo = async (e) => {
+    e.preventDefault()
+    if (!modalEditarArchivo) return
+    const { archivo, titulo, materia, texto } = modalEditarArchivo
+    const tituloFinal = titulo.trim()
+    if (!tituloFinal) {
+      avisar('El título no puede estar vacío.', 'error')
+      return
+    }
+
+    try {
+      await supabase.from('apuntes').update({
+        titulo: tituloFinal,
+        materia,
+        texto: texto.trim() || null
+      }).eq('id', archivo.id)
+    } catch (_) {}
+
+    const actualizados = archivosClase.map(a => a.id === archivo.id ? {
+      ...a,
+      titulo: tituloFinal,
+      materia,
+      texto: texto.trim() || null
+    } : a)
+
+    setArchivosClase(actualizados)
+    try {
+      localStorage.setItem('muudel_archivos_aula', JSON.stringify(actualizados))
+    } catch (e) {}
+
+    sound.playStamp()
+    avisar('Archivo actualizado con éxito.')
+    registrarAuditoria('Edición Archivo', `Actualizado recurso "${tituloFinal}"`)
+    setModalEditarArchivo(null)
+  }
+
+  // Copiar contenido al portapapeles
+  const handleCopiarContenido = (texto) => {
+    if (!texto) return
+    navigator.clipboard.writeText(texto)
+    setCopiadoFeedback(true)
+    sound.playPop()
+    avisar('Contenido copiado al portapapeles.')
+    setTimeout(() => setCopiadoFeedback(false), 2000)
+  }
+
+  // Exportar catálogo completo de archivos en JSON
+  const handleExportarCopiaArchivos = () => {
+    try {
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(archivosClase, null, 2))
+      const downloadAnchor = document.createElement('a')
+      downloadAnchor.setAttribute('href', dataStr)
+      downloadAnchor.setAttribute('download', `muudel_archivos_smr2_${fechaHoy}.json`)
+      document.body.appendChild(downloadAnchor)
+      downloadAnchor.click()
+      downloadAnchor.remove()
+      sound.playStamp()
+      avisar('Copia de seguridad del repositorio de archivos descargada.')
+      registrarAuditoria('Exportación Archivos', 'Descarga de backup JSON del repositorio de archivos')
+    } catch (e) {
+      avisar('Error al exportar catálogo.', 'error')
+    }
+  }
+
   // PANTALLA DE BLOQUEO POR PIN (ACCESO DE ALTA SEGURIDAD)
   if (!desbloqueado) {
     return (
@@ -1501,6 +1971,7 @@ export function PantallaAdmin() {
         }}>
           {[
             { id: 'asistencia', label: `Asistencia (${solicitudesHoy.length})`, icon: Calendar },
+            { id: 'archivos', label: archivosClase.length > 0 ? `Archivos (${archivosClase.length})` : 'Archivos', icon: Folder },
             { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
             { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
@@ -1722,7 +2193,388 @@ export function PantallaAdmin() {
         </div>
       )}
 
-      {/* PESTAÑA 2: CONTROL Y MODERACIÓN DEL CHAT */}
+      {/* PESTAÑA ARCHIVOS: GESTIÓN DE ARCHIVOS Y MATERIALES DEL AULA */}
+      {tab === 'archivos' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Cabecera y Métricas de Archivos */}
+          <section className="card" style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Folder size={22} color="var(--color-accent)" />
+                  <h3 className="apple-headline" style={{ fontSize: 18 }}>
+                    Repositorio de Archivos y Materiales SMR2
+                  </h3>
+                </div>
+                <p className="apple-subheadline" style={{ fontSize: 13, marginTop: 2 }}>
+                  Publica chuletas oficiales, scripts de laboratorio, apuntes técnicos y gestiona los recursos del aula.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalSubirArchivo(true)}
+                  className="btn-primary"
+                  style={{ minHeight: 36, padding: '0 16px', fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Upload size={14} />
+                  <span>Subir Material</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportarCopiaArchivos}
+                  className="btn-secondary"
+                  style={{ minHeight: 36, padding: '0 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Descargar copia de seguridad en JSON de todos los archivos"
+                >
+                  <Download size={13} />
+                  <span>Copia Backup JSON</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tarjetas resumen */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+              gap: 10,
+              paddingTop: 12,
+              borderTop: '1px solid var(--color-separator)'
+            }}>
+              <div style={{ padding: '10px 12px', borderRadius: 10, backgroundColor: 'var(--color-surface-secondary)' }}>
+                <span className="apple-caption" style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Total Recursos</span>
+                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: 'var(--color-ink)' }}>
+                  {archivosClase.length}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', borderRadius: 10, backgroundColor: 'rgba(212, 175, 55, 0.08)' }}>
+                <span className="apple-caption" style={{ fontSize: 11, color: '#D4AF37' }}>Materiales Oficiales</span>
+                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: '#D4AF37' }}>
+                  {archivosClase.filter(a => a.oficial).length}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', borderRadius: 10, backgroundColor: 'var(--color-surface-secondary)' }}>
+                <span className="apple-caption" style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Materias Activas</span>
+                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: 'var(--color-accent)' }}>
+                  {new Set(archivosClase.map(a => a.materia)).size}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', borderRadius: 10, backgroundColor: 'var(--color-surface-secondary)' }}>
+                <span className="apple-caption" style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Espacio Estimado</span>
+                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: 'var(--color-positive)' }}>
+                  {formatearTamano(archivosClase.reduce((acc, curr) => acc + (curr.file_size || 0), 0))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Barra de Búsqueda y Filtros */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                <Search size={15} color="var(--color-secondary-ink)" style={{ position: 'absolute', left: 12, top: 12 }} />
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={busquedaArchivo}
+                  onChange={(e) => setBusquedaArchivo(e.target.value)}
+                  placeholder="Buscar archivo, comando, script o materia..."
+                  style={{ paddingLeft: 36, width: '100%', minHeight: 38 }}
+                />
+              </div>
+
+              <select
+                className="apple-input"
+                value={filtroMateria}
+                onChange={(e) => setFiltroMateria(e.target.value)}
+                style={{ minWidth: 200, minHeight: 38 }}
+              >
+                <option value="todas">Todas las materias</option>
+                {MATERIAS_SMR2.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Chips de tipo de archivo */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+              {[
+                { id: 'todos', label: `Todos (${archivosClase.length})` },
+                { id: 'oficiales', label: `Oficiales (${archivosClase.filter(a => a.oficial).length})` },
+                { id: 'codigo', label: `Scripts / Código (${archivosClase.filter(a => detectarTipoArchivo(a.file_name, a.file_type).tipo === 'codigo').length})` },
+                { id: 'pdf', label: `PDFs (${archivosClase.filter(a => detectarTipoArchivo(a.file_name, a.file_type).tipo === 'pdf').length})` },
+                { id: 'documentos', label: `Documentos (${archivosClase.filter(a => detectarTipoArchivo(a.file_name, a.file_type).tipo === 'documento').length})` }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFiltroTipoArchivo(f.id)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 9999,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    backgroundColor: filtroTipoArchivo === f.id ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: filtroTipoArchivo === f.id ? '#FFFFFF' : 'var(--color-secondary-ink)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Listado de Archivos y Materiales */}
+          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Archivos Disponibles ({archivosClase.filter(a => {
+                  if (filtroMateria !== 'todas' && a.materia !== filtroMateria) return false
+                  const metaInfo = detectarTipoArchivo(a.file_name, a.file_type)
+                  if (filtroTipoArchivo === 'oficiales' && !a.oficial) return false
+                  if (filtroTipoArchivo === 'pdf' && metaInfo.tipo !== 'pdf') return false
+                  if (filtroTipoArchivo === 'codigo' && metaInfo.tipo !== 'codigo') return false
+                  if (filtroTipoArchivo === 'documentos' && metaInfo.tipo !== 'documento') return false
+                  if (busquedaArchivo.trim()) {
+                    const q = busquedaArchivo.toLowerCase()
+                    const matchTitulo = a.titulo && a.titulo.toLowerCase().includes(q)
+                    const matchMateria = a.materia && a.materia.toLowerCase().includes(q)
+                    const matchArchivo = a.file_name && a.file_name.toLowerCase().includes(q)
+                    const matchTexto = a.texto && a.texto.toLowerCase().includes(q)
+                    const matchAutor = a.autor_nombre && a.autor_nombre.toLowerCase().includes(q)
+                    if (!matchTitulo && !matchMateria && !matchArchivo && !matchTexto && !matchAutor) return false
+                  }
+                  return true
+                }).length})
+              </h3>
+              <span className="apple-caption">
+                Organizado por fecha de actualización
+              </span>
+            </div>
+
+            {archivosClase.filter(a => {
+              if (filtroMateria !== 'todas' && a.materia !== filtroMateria) return false
+              const metaInfo = detectarTipoArchivo(a.file_name, a.file_type)
+              if (filtroTipoArchivo === 'oficiales' && !a.oficial) return false
+              if (filtroTipoArchivo === 'pdf' && metaInfo.tipo !== 'pdf') return false
+              if (filtroTipoArchivo === 'codigo' && metaInfo.tipo !== 'codigo') return false
+              if (filtroTipoArchivo === 'documentos' && metaInfo.tipo !== 'documento') return false
+              if (busquedaArchivo.trim()) {
+                const q = busquedaArchivo.toLowerCase()
+                const matchTitulo = a.titulo && a.titulo.toLowerCase().includes(q)
+                const matchMateria = a.materia && a.materia.toLowerCase().includes(q)
+                const matchArchivo = a.file_name && a.file_name.toLowerCase().includes(q)
+                const matchTexto = a.texto && a.texto.toLowerCase().includes(q)
+                const matchAutor = a.autor_nombre && a.autor_nombre.toLowerCase().includes(q)
+                if (!matchTitulo && !matchMateria && !matchArchivo && !matchTexto && !matchAutor) return false
+              }
+              return true
+            }).length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <Folder size={36} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 10px' }} />
+                <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                  No se encontraron archivos con los filtros seleccionados.
+                </p>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setFiltroMateria('todas'); setFiltroTipoArchivo('todos'); setBusquedaArchivo('') }}
+                  style={{ marginTop: 12, fontSize: 12 }}
+                >
+                  Restablecer filtros
+                </button>
+              </div>
+            ) : (
+              archivosClase.filter(a => {
+                if (filtroMateria !== 'todas' && a.materia !== filtroMateria) return false
+                const metaInfo = detectarTipoArchivo(a.file_name, a.file_type)
+                if (filtroTipoArchivo === 'oficiales' && !a.oficial) return false
+                if (filtroTipoArchivo === 'pdf' && metaInfo.tipo !== 'pdf') return false
+                if (filtroTipoArchivo === 'codigo' && metaInfo.tipo !== 'codigo') return false
+                if (filtroTipoArchivo === 'documentos' && metaInfo.tipo !== 'documento') return false
+                if (busquedaArchivo.trim()) {
+                  const q = busquedaArchivo.toLowerCase()
+                  const matchTitulo = a.titulo && a.titulo.toLowerCase().includes(q)
+                  const matchMateria = a.materia && a.materia.toLowerCase().includes(q)
+                  const matchArchivo = a.file_name && a.file_name.toLowerCase().includes(q)
+                  const matchTexto = a.texto && a.texto.toLowerCase().includes(q)
+                  const matchAutor = a.autor_nombre && a.autor_nombre.toLowerCase().includes(q)
+                  if (!matchTitulo && !matchMateria && !matchArchivo && !matchTexto && !matchAutor) return false
+                }
+                return true
+              }).map((item, idx, arr) => {
+                const tipoInfo = detectarTipoArchivo(item.file_name, item.file_type)
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '16px',
+                      borderBottom: idx < arr.length - 1 ? '0.5px solid var(--color-separator)' : 'none',
+                      backgroundColor: item.oficial ? 'rgba(212, 175, 55, 0.02)' : 'transparent',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 260 }}>
+                        {/* Insignia de tipo */}
+                        <div style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 10,
+                          backgroundColor: `${tipoInfo.color}15`,
+                          color: tipoInfo.color,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          border: `1px solid ${tipoInfo.color}30`
+                        }}>
+                          {tipoInfo.tipo === 'codigo' ? <FileCode size={18} /> : <FileText size={18} />}
+                          <span style={{ fontSize: 9, fontWeight: 800, marginTop: 1 }}>{tipoInfo.label}</span>
+                        </div>
+
+                        {/* Metadatos y título */}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-ink)' }}>
+                              {item.titulo}
+                            </span>
+                            {item.oficial && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                backgroundColor: 'rgba(212, 175, 55, 0.15)',
+                                color: '#D4AF37',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}>
+                                <Pin size={10} />
+                                <span>OFICIAL</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--color-accent)' }}>{item.materia}</span>
+                            <span>•</span>
+                            <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{item.file_name}</span>
+                            <span>•</span>
+                            <span>{formatearTamano(item.file_size)}</span>
+                            <span>•</span>
+                            <span>Por {item.autor_nombre}</span>
+                            <span>•</span>
+                            <span style={{ color: 'var(--color-tertiary-ink)', fontSize: 11 }}>
+                              {new Date(item.created_at).toLocaleDateString('es-ES')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción del archivo */}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setModalPreviewArchivo(item)}
+                          style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title="Previsualizar e inspeccionar contenido"
+                        >
+                          <Eye size={13} />
+                          <span>Ver</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => handleDescargarArchivo(item)}
+                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title="Descargar archivo"
+                        >
+                          <Download size={13} />
+                          <span>Descargar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => handleToggleOficial(item)}
+                          style={{
+                            minHeight: 32,
+                            padding: '4px 10px',
+                            fontSize: 12,
+                            color: item.oficial ? '#D4AF37' : 'var(--color-secondary-ink)',
+                            backgroundColor: item.oficial ? 'rgba(212, 175, 55, 0.1)' : 'transparent',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                          title={item.oficial ? 'Desmarcar de oficial' : 'Fijar como material oficial'}
+                        >
+                          <Pin size={13} />
+                          <span>{item.oficial ? 'Fijado' : 'Fijar'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setModalEditarArchivo({ archivo: item, titulo: item.titulo, materia: item.materia, texto: item.texto || '' })}
+                          style={{ minHeight: 32, padding: '4px 8px', fontSize: 12 }}
+                          title="Editar información"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => handleEliminarArchivo(item)}
+                          style={{ minHeight: 32, padding: '4px 8px', fontSize: 12, color: 'var(--color-negative)' }}
+                          title="Eliminar recurso"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Vista previa de fragmento de texto si tiene */}
+                    {item.texto && (
+                      <div style={{
+                        marginTop: 4,
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        backgroundColor: 'var(--color-surface-secondary)',
+                        border: '1px solid var(--color-separator)',
+                        fontSize: 12,
+                        fontFamily: tipoInfo.tipo === 'codigo' ? 'monospace' : 'inherit',
+                        color: 'var(--color-secondary-ink)',
+                        maxHeight: 68,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.4
+                      }}>
+                        {item.texto.slice(0, 240)}{item.texto.length > 240 ? '...' : ''}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </section>
+        </div>
+      )}
       {tab === 'chat' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* 1. Silencio y Emergencia */}
@@ -3565,6 +4417,455 @@ export function PantallaAdmin() {
                 Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA SUBIR NUEVO MATERIAL DE CLASE */}
+      {modalSubirArchivo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 520, width: '100%', padding: '24px', textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                  color: 'var(--color-accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Upload size={20} />
+                </div>
+                <div>
+                  <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                    Subir Material de Clase SMR2
+                  </h3>
+                  <p className="apple-caption">Publica recursos, chuletas y guías técnicas</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMostrarModalSubirArchivo(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 20,
+                  color: 'var(--color-secondary-ink)',
+                  cursor: 'pointer',
+                  padding: 4
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubirArchivo} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Título */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Título del recurso *
+                </label>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={nuevoArchivoTitulo}
+                  onChange={(e) => setNuevoArchivoTitulo(e.target.value)}
+                  placeholder="Ej: Chuleta Comandos Linux y Permisos Octales"
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+
+              {/* Materia */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Materia / Módulo *
+                </label>
+                <select
+                  className="apple-input"
+                  value={nuevoArchivoMateria}
+                  onChange={(e) => setNuevoArchivoMateria(e.target.value)}
+                  style={{ width: '100%' }}
+                >
+                  {MATERIAS_SMR2.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selector de Archivo Local */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Archivo adjunto (PDF, Script, Documento, etc.)
+                </label>
+                <div style={{
+                  padding: '16px',
+                  borderRadius: 12,
+                  border: '1.5px dashed var(--color-separator)',
+                  backgroundColor: 'var(--color-surface-secondary)',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  position: 'relative'
+                }}>
+                  <input
+                    type="file"
+                    onChange={(e) => setArchivoSeleccionado(e.target.files[0] || null)}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer'
+                    }}
+                  />
+                  {archivoSeleccionado ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <FileText size={20} color="var(--color-accent)" />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-ink)' }}>
+                        {archivoSeleccionado.name}
+                      </span>
+                      <span className="apple-badge apple-badge-neutral" style={{ fontSize: 11 }}>
+                        {formatearTamano(archivoSeleccionado.size)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload size={22} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 6px' }} />
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)', margin: 0 }}>
+                        Haz clic o arrastra un archivo aquí
+                      </p>
+                      <p style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginTop: 2 }}>
+                        Soporta .pdf, .sh, .ps1, .py, .docx, .sql, .md, .txt, .png (hasta 15 MB)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notas Técnicas / Contenido Embebido */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Notas técnicas / Código o instrucciones de laboratorio:
+                </label>
+                <textarea
+                  className="apple-input"
+                  rows={4}
+                  value={nuevoArchivoTexto}
+                  onChange={(e) => setNuevoArchivoTexto(e.target.value)}
+                  placeholder="Pega comandos, pasos de configuración o resumen técnico para los alumnos..."
+                  style={{ width: '100%', resize: 'vertical', fontSize: 12, fontFamily: 'monospace' }}
+                />
+              </div>
+
+              {/* Checkbox Oficial */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={nuevoArchivoEsOficial}
+                  onChange={(e) => setNuevoArchivoEsOficial(e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: '#D4AF37' }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)' }}>
+                  Fijar como Material Oficial del Profesor (Destacado en el aula)
+                </span>
+              </label>
+
+              {/* Acciones */}
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  type="submit"
+                  disabled={subiendoArchivo || !nuevoArchivoTitulo.trim()}
+                  className="btn-primary"
+                  style={{ flex: 1, minHeight: 42, fontSize: 14, fontWeight: 700 }}
+                >
+                  {subiendoArchivo ? 'Subiendo material...' : 'Publicar en el Aula'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalSubirArchivo(false)}
+                  className="btn-secondary"
+                  style={{ minHeight: 42, fontSize: 14 }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PREVISUALIZACIÓN E INSPECCIÓN DE ARCHIVO */}
+      {modalPreviewArchivo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 640, width: '100%', padding: '24px', textAlign: 'left', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
+                    {modalPreviewArchivo.materia}
+                  </span>
+                  {modalPreviewArchivo.oficial && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      backgroundColor: 'rgba(212, 175, 55, 0.15)',
+                      color: '#D4AF37',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3
+                    }}>
+                      <Pin size={10} />
+                      <span>OFICIAL</span>
+                    </span>
+                  )}
+                </div>
+                <h3 className="apple-headline" style={{ fontSize: 18, marginTop: 4 }}>
+                  {modalPreviewArchivo.titulo}
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 2 }}>
+                  {modalPreviewArchivo.file_name} · {formatearTamano(modalPreviewArchivo.file_size)} · Por {modalPreviewArchivo.autor_nombre}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalPreviewArchivo(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 20,
+                  color: 'var(--color-secondary-ink)',
+                  cursor: 'pointer',
+                  padding: 4
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Contenido / Visor */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              backgroundColor: 'var(--color-surface-secondary)',
+              borderRadius: 12,
+              border: '1px solid var(--color-separator)',
+              padding: '14px',
+              marginBottom: 16,
+              maxHeight: 380
+            }}>
+              {modalPreviewArchivo.texto ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase' }}>
+                      Contenido / Código Técnico:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopiarContenido(modalPreviewArchivo.texto)}
+                      className="btn-secondary"
+                      style={{ padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Copy size={12} />
+                      <span>{copiadoFeedback ? '¡Copiado!' : 'Copiar Texto'}</span>
+                    </button>
+                  </div>
+                  <pre style={{
+                    margin: 0,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    color: 'var(--color-ink)'
+                  }}>
+                    {modalPreviewArchivo.texto}
+                  </pre>
+                </div>
+              ) : (
+                <div style={{ padding: 24, textAlign: 'center' }}>
+                  <FileText size={32} color="var(--color-accent)" style={{ margin: '0 auto 8px' }} />
+                  <p style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
+                    Archivo binario o PDF adjunto listo para descargar.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Botones de acción del visor */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              {modalPreviewArchivo.file_url && (
+                <button
+                  type="button"
+                  onClick={() => window.open(modalPreviewArchivo.file_url, '_blank')}
+                  className="btn-secondary"
+                  style={{ minHeight: 38, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <ExternalLink size={14} />
+                  <span>Abrir Enlace Completo</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => handleDescargarArchivo(modalPreviewArchivo)}
+                style={{ minHeight: 38, padding: '0 18px', fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Download size={14} />
+                <span>Descargar en el Ordenador</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setModalPreviewArchivo(null)}
+                style={{ minHeight: 38, fontSize: 13 }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA EDITAR INFORMACIÓN DE ARCHIVO */}
+      {modalEditarArchivo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20
+        }}>
+          <div className="card" style={{ maxWidth: 480, width: '100%', padding: '24px', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                color: 'var(--color-accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Edit3 size={18} />
+              </div>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 17 }}>
+                  Editar Información de Archivo
+                </h3>
+                <p className="apple-caption">{modalEditarArchivo.archivo.file_name}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionArchivo} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Título del recurso *
+                </label>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={modalEditarArchivo.titulo}
+                  onChange={(e) => setModalEditarArchivo(p => ({ ...p, titulo: e.target.value }))}
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Materia *
+                </label>
+                <select
+                  className="apple-input"
+                  value={modalEditarArchivo.materia}
+                  onChange={(e) => setModalEditarArchivo(p => ({ ...p, materia: e.target.value }))}
+                  style={{ width: '100%' }}
+                >
+                  {MATERIAS_SMR2.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
+                  Texto / Código / Notas descriptivas:
+                </label>
+                <textarea
+                  className="apple-input"
+                  rows={4}
+                  value={modalEditarArchivo.texto}
+                  onChange={(e) => setModalEditarArchivo(p => ({ ...p, texto: e.target.value }))}
+                  style={{ width: '100%', resize: 'vertical', fontSize: 12, fontFamily: 'monospace' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ flex: 1, minHeight: 42, fontSize: 14, fontWeight: 700 }}
+                >
+                  Guardar Cambios
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalEditarArchivo(null)}
+                  className="btn-secondary"
+                  style={{ minHeight: 42, fontSize: 14 }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

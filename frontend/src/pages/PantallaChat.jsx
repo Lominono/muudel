@@ -25,7 +25,8 @@ import {
   Sparkles,
   Megaphone,
   Coffee,
-  Radio
+  Radio,
+  Folder
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
@@ -582,6 +583,30 @@ export function PantallaChat() {
           )
         })}
       </div>
+
+      {/* Banner Informativo Canal de Apuntes */}
+      {canal === 'apuntes' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 12px',
+          borderRadius: 10,
+          backgroundColor: 'rgba(10, 132, 255, 0.05)',
+          border: '1px solid rgba(10, 132, 255, 0.2)',
+          marginBottom: 8
+        }}>
+          <Folder size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-ink)' }}>
+              Canal de Apuntes y Archivos Técnicos
+            </span>
+            <p style={{ fontSize: 11, color: 'var(--color-secondary-ink)', margin: 0 }}>
+              Comparte comandos, chuletas y guías de clase (+10 XP de Autoría Técnica por aporte).
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Banner de Mensaje Fijado en este Canal */}
       {mensajeFijado && (
