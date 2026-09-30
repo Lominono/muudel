@@ -132,7 +132,19 @@ export function BatallaDadosPvP() {
   const [rodandoDados, setRodandoDados] = useState(false)
   const [notificacion, setNotificacion] = useState('')
 
-  const PRESETS_APUESTA = [5, 10, 25, 50, 100]
+  // Comprobar si el alumno ha adquirido los "Dados Dorados VIP" en la Tienda
+  const tieneDadosOro = (() => {
+    try {
+      const invRaw = localStorage.getItem('muudel_inventario_' + perfil?.id)
+      if (invRaw) {
+        const inv = JSON.parse(invRaw)
+        return inv.some(i => i.catalogoId === 'dados_oro_pvp' && i.estado !== 'expirado')
+      }
+    } catch (_) {}
+    return false
+  })()
+
+  const PRESETS_APUESTA = tieneDadosOro ? [10, 25, 50, 100, 250, 500] : [5, 10, 25, 50, 100]
 
   useEffect(() => {
     fetchLobbies()
@@ -956,8 +968,16 @@ export function BatallaDadosPvP() {
                 </span>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <DadoFisico valor={dadosMostrados.c1} rodando={rodandoDados} />
-                  <DadoFisico valor={dadosMostrados.c2} rodando={rodandoDados} />
+                  <DadoFisico
+                    valor={dadosMostrados.c1}
+                    rodando={rodandoDados}
+                    esDorado={tieneDadosOro && animacionBatalla.creador_id === perfil?.id}
+                  />
+                  <DadoFisico
+                    valor={dadosMostrados.c2}
+                    rodando={rodandoDados}
+                    esDorado={tieneDadosOro && animacionBatalla.creador_id === perfil?.id}
+                  />
                 </div>
 
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#FBBF24', fontFamily: 'monospace' }}>
@@ -987,8 +1007,16 @@ export function BatallaDadosPvP() {
                 </span>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <DadoFisico valor={dadosMostrados.o1} rodando={rodandoDados} />
-                  <DadoFisico valor={dadosMostrados.o2} rodando={rodandoDados} />
+                  <DadoFisico
+                    valor={dadosMostrados.o1}
+                    rodando={rodandoDados}
+                    esDorado={tieneDadosOro && animacionBatalla.oponente_id === perfil?.id}
+                  />
+                  <DadoFisico
+                    valor={dadosMostrados.o2}
+                    rodando={rodandoDados}
+                    esDorado={tieneDadosOro && animacionBatalla.oponente_id === perfil?.id}
+                  />
                 </div>
 
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#FBBF24', fontFamily: 'monospace' }}>

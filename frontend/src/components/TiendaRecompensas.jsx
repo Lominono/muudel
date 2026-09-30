@@ -32,14 +32,14 @@ import {
   Crown
 } from 'lucide-react'
 
-// CATÁLOGO DE PRODUCTOS VIRTUALES Y PRIVILEGIOS REALES DE AULA SMR2
+// CATÁLOGO DE PRODUCTOS 100% DIGITALES Y PODERES EXCLUSIVOS DE LA WEB
 export const CATALOGO_RECOMPENSAS = [
-  // 1. PRIVILEGIOS DE RACHA Y RETOS ACADÉMICOS
+  // 1. PODERES DE RACHA Y ASISTENCIA EN LA WEB
   {
     id: 'congelar_racha',
     categoria: 'racha',
-    titulo: '🛡️ Seguro de Racha (Salvavidas)',
-    desc: 'Protege tu racha de asistencia si un día no puedes venir o te retrasas. Se consume automáticamente evitando que tu racha caiga a 0.',
+    titulo: '🛡️ Escudo Congela-Racha',
+    desc: 'Si un día olvidas hacer check-in en la web, el escudo se activa automáticamente y salva tu racha de asistencia para que no vuelva a cero.',
     costo: 250,
     icon: Shield,
     duracionMs: 0,
@@ -47,68 +47,101 @@ export const CATALOGO_RECOMPENSAS = [
     color: '#FF9500'
   },
   {
-    id: 'comodin_reto_24h',
+    id: 'racha_x2',
     categoria: 'racha',
-    titulo: '📑 Comodín de Prórroga (+24h Retos)',
-    desc: 'Prórroga oficial de 24 horas para entregar cualquier reto o práctica de clase sin penalización de puntos ni retraso.',
-    costo: 220,
-    icon: Clock,
-    duracionMs: 0,
-    duracionTexto: '1 uso por práctica o reto',
-    color: '#007AFF'
-  },
-
-  // 2. PRIVILEGIOS DE AULA Y TALLER PRÁCTICO SMR2
-  {
-    id: 'dj_laboratorio',
-    categoria: 'aula',
-    titulo: '🎧 DJ del Taller: Poner Música',
-    desc: 'Pon 3 canciones de fondo o tu playlist durante la sesión práctica de montaje de hardware o cableado de redes en el aula.',
+    titulo: '🔥 Multiplicador x2 de Racha',
+    desc: 'Durante 24 horas, tu próximo check-in diario en la web te otorga el doble de puntos de clase (x2) para ascender en el podio.',
     costo: 180,
-    icon: Music,
-    stockMax: 2, // Máximo 2 alumnos por sesión
-    duracionMs: 3600 * 1000,
-    duracionTexto: '1 sesión de taller práctico',
-    color: '#AF52DE'
+    icon: Flame,
+    duracionMs: 24 * 3600 * 1000,
+    duracionTexto: '24 horas desde activación',
+    color: '#FF3B30'
   },
   {
-    id: 'reserva_pc_maestro',
-    categoria: 'aula',
-    titulo: '🖥️ Reserva de Puesto PC Maestro',
-    desc: 'Reserva tu ordenador favorito con doble pantalla en el taller de informática durante toda una semana lectiva.',
+    id: 'restaurar_racha',
+    categoria: 'racha',
+    titulo: '❤️ Fénix: Restaurador de Racha',
+    desc: '¿Se reinició tu racha por un descuido de ayer? Restaura al instante tu racha al récord máximo que tenías acumulado.',
     costo: 350,
-    icon: MapPin,
-    stockMax: 3,
-    duracionMs: 7 * 24 * 3600 * 1000,
-    duracionTexto: '1 semana completa de clase',
-    color: '#34C759'
-  },
-  {
-    id: 'pase_cafeteria',
-    categoria: 'aula',
-    titulo: '☕ Salida Anticipada a Cafetería (18:10)',
-    desc: 'Pase oficial de salida 2 minutos antes para bajar a la cafetería cuando suene el timbre del recreo de la tarde.',
-    costo: 80,
-    icon: Coffee,
-    duracionMs: 15 * 60 * 1000,
-    duracionTexto: '1 recreo de las 18:10',
-    color: '#D97706'
+    icon: RotateCcw,
+    duracionMs: 0,
+    duracionTexto: 'Restaura tu racha inmediatamente',
+    color: '#E11D48'
   },
 
-  // 3. MEJORAS DE JUEGOS Y APUESTAS DE RECREO
+  // 2. MEJORAS DE JUEGOS Y APUESTAS EN LA WEB
   {
     id: 'dados_oro_pvp',
     categoria: 'juegos',
-    titulo: '🎲 Dados de Marfil VIP (Duelos 1v1)',
-    desc: 'Permite crear desafíos de alta gama de hasta 500 pts en la Batalla de Dados y dota a tus dados de un acabado dorado artesanal.',
-    costo: 450,
+    titulo: '🎲 Dados Dorados VIP (Duelos 1v1)',
+    desc: 'Aumenta el límite de tus desafíos PvP hasta 500 pts y cambia el aspecto de tus dados a dorado brillante en las tiradas.',
+    costo: 400,
     icon: Crown,
     duracionMs: 0,
     duracionTexto: 'Mejora Permanente',
     color: '#FBBF24'
   },
+  {
+    id: 'ruleta_max_50',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino Nivel 1',
+    desc: 'Aumenta permanentemente el tope de fichas en la mesa de ruleta de 20 pts a 50 pts por tirada.',
+    costo: 250,
+    icon: Ticket,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_50',
+    color: '#FF9500'
+  },
+  {
+    id: 'ruleta_max_100',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino Nivel 2',
+    desc: 'Aumenta permanentemente el tope de fichas en la mesa de ruleta a 100 pts por tirada.',
+    costo: 600,
+    icon: Ticket,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_100',
+    color: '#FF3B30'
+  },
+  {
+    id: 'ruleta_max_500',
+    categoria: 'juegos',
+    titulo: 'Licencia Casino VIP (High Roller)',
+    desc: 'Aumenta permanentemente el límite de apuesta en la ruleta a 500 pts por tirada.',
+    costo: 1800,
+    icon: Crown,
+    stockMax: 2,
+    duracionMs: 0,
+    duracionTexto: 'Mejora Permanente',
+    efecto: 'ruleta_limit_500',
+    color: '#D4AF37'
+  },
+  {
+    id: 'seguro_ruleta',
+    categoria: 'juegos',
+    titulo: '💰 Seguro de Ruleta (Reembolso 50%)',
+    desc: 'Si pierdes todas tus fichas en tu próxima tirada en la mesa de ruleta, el seguro te reembolsa el 50% de los puntos apostados automáticamente.',
+    costo: 90,
+    icon: Shield,
+    duracionMs: 0,
+    duracionTexto: '1 uso en tu próxima tirada',
+    color: '#34C759'
+  },
+  {
+    id: 'yoshi_vida_extra',
+    categoria: 'juegos',
+    titulo: '🦖 Batería Extra Yoshi Runner (+1 Vida)',
+    desc: 'Te otorga una segunda oportunidad tras colisionar en Yoshi Runner para superar tu récord y liderar el podio arcade.',
+    costo: 110,
+    icon: Zap,
+    duracionMs: 0,
+    duracionTexto: '1 reanimación en carrera',
+    color: '#30D158'
+  },
 
-  // 4. TÍTULOS HONORÍFICOS (VISIBLES EN CHAT Y RANKINGS)
+  // 3. TÍTULOS HONORÍFICOS (VISIBLES EN CHAT Y RANKINGS)
   {
     id: 'titulo_root',
     categoria: 'titulos',
@@ -886,6 +919,32 @@ export function TiendaRecompensas({ onClose }) {
       perfilActualizado.burbuja_chat = invItem.burbujaKey
     }
 
+    // Poderes digitales de Racha y Juegos en la web
+    if (invItem.catalogoId === 'congelar_racha') {
+      perfilActualizado.racha_congelada = true
+      localStorage.setItem('muudel_racha_congelada_' + perfil.id, 'true')
+    }
+    if (invItem.catalogoId === 'racha_x2') {
+      perfilActualizado.multiplicador_racha = 2
+      localStorage.setItem('muudel_multiplicador_racha_' + perfil.id, JSON.stringify({
+        mult: 2,
+        expiraEn: ahora + 24 * 3600 * 1000
+      }))
+    }
+    if (invItem.catalogoId === 'restaurar_racha') {
+      const maxRacha = Math.max(perfilActualizado.max_dias_racha || 1, perfilActualizado.dias_racha || 1, 3)
+      perfilActualizado.dias_racha = maxRacha
+      try {
+        await supabase.from('profiles').update({ dias_racha: maxRacha }).eq('id', perfil.id)
+      } catch (_) {}
+    }
+    if (invItem.catalogoId === 'seguro_ruleta') {
+      localStorage.setItem('muudel_seguro_ruleta_' + perfil.id, 'true')
+    }
+    if (invItem.catalogoId === 'yoshi_vida_extra') {
+      localStorage.setItem('muudel_yoshi_vida_extra_' + perfil.id, 'true')
+    }
+
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
     try {
@@ -895,6 +954,7 @@ export function TiendaRecompensas({ onClose }) {
         .update({
           marco_avatar: perfilActualizado.marco_avatar,
           frase: perfilActualizado.frase,
+          dias_racha: perfilActualizado.dias_racha
         })
         .eq('id', perfil.id)
     } catch (e) {}
@@ -1087,12 +1147,12 @@ export function TiendaRecompensas({ onClose }) {
             }}>
               {[
                 { id: 'todos', label: 'Todos' },
-                { id: 'aula', label: '🏫 Privilegios Aula' },
-                { id: 'racha', label: '🔥 Racha & Retos' },
+                { id: 'racha', label: '🔥 Poderes Racha' },
                 { id: 'juegos', label: '🎲 Ruleta & Duelos' },
-                { id: 'titulos', label: '👑 Títulos SMR2' },
                 { id: 'efectos', label: '⚡ Efectos Chat' },
-                { id: 'marcos', label: '✨ Auras & Marcos' },
+                { id: 'burbujas', label: '💬 Burbujas Chat' },
+                { id: 'titulos', label: '👑 Títulos VIP' },
+                { id: 'marcos', label: '✨ Auras Avatar' },
                 { id: 'insignias', label: '🎖️ Pines Perfil' }
               ].map(cat => (
                 <button

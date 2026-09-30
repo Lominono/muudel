@@ -539,6 +539,17 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
       }
     }
 
+    // Comprobar si el alumno tenía activado el "Seguro de Ruleta" de la Tienda
+    if (gananciaTotal === 0 && totalApostado > 0) {
+      const tieneSeguro = localStorage.getItem('muudel_seguro_ruleta_' + perfil?.id) === 'true'
+      if (tieneSeguro) {
+        const reembolso = Math.max(1, Math.floor(totalApostado * 0.5))
+        localStorage.removeItem('muudel_seguro_ruleta_' + perfil?.id)
+        gananciaTotal = reembolso
+        detallesGanadores.push(`🛡️ Seguro de Ruleta: +${reembolso} pts reembolsados (50%)`)
+      }
+    }
+
     const nuevoTotalFinal = saldoBase + gananciaTotal
     const perfilLiquidado = { ...perfil, puntos_total: nuevoTotalFinal }
     setPerfil(perfilLiquidado)
