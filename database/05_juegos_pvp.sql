@@ -215,3 +215,47 @@ BEGIN
   UPDATE pvp_partidas SET estado = 'cancelado', resolved_at = NOW() WHERE id = p_partida_id;
 END;
 $$;
+
+-- ==========================================
+-- SISTEMA PVP: DUELO 21 (BLACKJACK ONLINE)
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS pvp_blackjack (
+  id TEXT PRIMARY KEY,
+  creador_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  creador_nombre TEXT,
+  oponente_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  oponente_nombre TEXT,
+  apuesta INTEGER NOT NULL CHECK (apuesta > 0),
+  estado TEXT NOT NULL DEFAULT 'esperando' CHECK (estado IN ('esperando', 'jugando', 'finalizado', 'cancelado')),
+  turno TEXT DEFAULT 'creador',
+  mano_creador JSONB DEFAULT '[]'::jsonb,
+  mano_oponente JSONB DEFAULT '[]'::jsonb,
+  baraja_restante JSONB DEFAULT '[]'::jsonb,
+  ganador_id TEXT,
+  desenlace_motivo TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+ALTER TABLE pvp_blackjack ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Todos pueden ver partidas de Blackjack 21" ON pvp_blackjack;
+CREATE POLICY "Todos pueden ver partidas de Blackjack 21" ON pvp_blackjack FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Usuarios autenticados pueden crear partidas Blackjack" ON pvp_blackjack;
+CREATE POLICY "Usuarios autenticados pueden crear partidas Blackjack" ON pvp_blackjack FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Participantes pueden actualizar partidas Blackjack" ON pvp_blackjack;
+CREATE POLICY "Participantes pueden actualizar partidas Blackjack" ON pvp_blackjack FOR UPDATE USING (true);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'pvp_blackjack'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE pvp_blackjack;
+  END IF;
+END $$;
+

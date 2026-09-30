@@ -4,6 +4,7 @@ import { useAuth } from '../App'
 import { YoshiRunnerGame } from '../games/yoshiRunner/YoshiRunnerGame'
 import { RuletaCasinoGame } from '../games/ruleta/RuletaCasinoGame'
 import { BatallaDadosPvP } from '../games/BatallaDadosPvP'
+import { Duelo21PvP } from '../games/veintiuno/Duelo21PvP'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
@@ -29,7 +30,7 @@ import { animarEscalonado } from '../utils/animations'
 
 export function PantallaJuegos() {
   const { perfil, setPerfil } = useAuth()
-  const [juegoSeleccionado, setJuegoSeleccionado] = useState('ruleta') // 'ruleta' | 'pvp' | 'yoshi'
+  const [juegoSeleccionado, setJuegoSeleccionado] = useState('ruleta') // 'ruleta' | 'veintiuno' | 'pvp' | 'yoshi'
   const [rankingArcade, setRankingArcade] = useState([])
   const [cargandoRanking, setCargandoRanking] = useState(false)
   const [monedasHoy, setMonedasHoy] = useState(() => {
@@ -299,9 +300,9 @@ export function PantallaJuegos() {
             className="segmented-control"
             style={{
               width: '100%',
-              maxWidth: 460,
+              maxWidth: 580,
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               padding: 3,
               backgroundColor: 'var(--color-fill-secondary)',
               borderRadius: 12
@@ -316,17 +317,38 @@ export function PantallaJuegos() {
               }}
               style={{
                 minHeight: 40,
-                padding: '8px 10px',
-                fontSize: 13,
+                padding: '8px 6px',
+                fontSize: 12,
                 fontWeight: 700,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6
+                gap: 5
               }}
             >
-              <Disc size={15} />
-              <span>Ruleta SMR2</span>
+              <Disc size={14} />
+              <span>Ruleta</span>
+            </button>
+            <button
+              type="button"
+              className={`segmented-control-item ${juegoSeleccionado === 'veintiuno' ? 'active' : ''}`}
+              onClick={() => {
+                sound.playPop()
+                setJuegoSeleccionado('veintiuno')
+              }}
+              style={{
+                minHeight: 40,
+                padding: '8px 6px',
+                fontSize: 12,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5
+              }}
+            >
+              <Crown size={14} />
+              <span>Duelo 21</span>
             </button>
             <button
               type="button"
@@ -337,17 +359,17 @@ export function PantallaJuegos() {
               }}
               style={{
                 minHeight: 40,
-                padding: '8px 10px',
-                fontSize: 13,
+                padding: '8px 6px',
+                fontSize: 12,
                 fontWeight: 700,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6
+                gap: 5
               }}
             >
-              <Dices size={15} />
-              <span>Duelo PvP</span>
+              <Dices size={14} />
+              <span>Dados PvP</span>
             </button>
             <button
               type="button"
@@ -358,17 +380,17 @@ export function PantallaJuegos() {
               }}
               style={{
                 minHeight: 40,
-                padding: '8px 10px',
-                fontSize: 13,
+                padding: '8px 6px',
+                fontSize: 12,
                 fontWeight: 700,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6
+                gap: 5
               }}
             >
-              <Gamepad2 size={15} />
-              <span>Yoshi Runner</span>
+              <Gamepad2 size={14} />
+              <span>Yoshi</span>
             </button>
           </div>
         </div>
@@ -457,7 +479,14 @@ export function PantallaJuegos() {
           </section>
         )}
 
-        {/* VISTA 2: DUELO PVP DE DADOS */}
+        {/* VISTA 2: DUELO 21 (BLACKJACK PVP Y CRUPIER) */}
+        {juegoSeleccionado === 'veintiuno' && (
+          <section>
+            <Duelo21PvP perfil={perfil} setPerfil={setPerfil} />
+          </section>
+        )}
+
+        {/* VISTA 3: DUELO PVP DE DADOS */}
         {juegoSeleccionado === 'pvp' && (
           <section>
             <BatallaDadosPvP />

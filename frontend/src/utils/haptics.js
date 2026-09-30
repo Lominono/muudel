@@ -215,6 +215,62 @@ class SoundEngine {
       }
     } catch (e) {}
   }
+
+  // Deslizamiento o reparto de carta de póker
+  playCardDeal() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.06)
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3))
+      }
+
+      const noise = this.ctx.createBufferSource()
+      noise.buffer = buffer
+
+      const filter = this.ctx.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.setValueAtTime(1400, this.ctx.currentTime)
+      filter.Q.setValueAtTime(3, this.ctx.currentTime)
+
+      const gain = this.ctx.createGain()
+      gain.gain.setValueAtTime(0.09, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06)
+
+      noise.connect(filter)
+      filter.connect(gain)
+      gain.connect(this.ctx.destination)
+      noise.start()
+    } catch (e) {}
+  }
+
+  // Sonido al pasarse de 21 (Bust)
+  playBustSound() {
+    try {
+      this.init()
+      if (!this.ctx) return
+      if (this.ctx.state === 'suspended') this.ctx.resume()
+
+      const osc = this.ctx.createOscillator()
+      const gain = this.ctx.createGain()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(180, this.ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.25)
+
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25)
+
+      osc.connect(gain)
+      gain.connect(this.ctx.destination)
+      osc.start()
+      osc.stop(this.ctx.currentTime + 0.25)
+    } catch (e) {}
+  }
 }
 
 export const sound = new SoundEngine()

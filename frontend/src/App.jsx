@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { TabBar } from './components/TabBar'
 import { PantallaInicio } from './pages/PantallaInicio'
@@ -13,13 +13,16 @@ import { PantallaCompletarPerfil } from './pages/PantallaCompletarPerfil'
 import { EmblemaRacha } from './components/icons/EmblemaRacha'
 import { suscribirEvento } from './utils/realtimeHub'
 import { sound } from './utils/haptics'
-import { Bell, AlertTriangle, X } from 'lucide-react'
+import { supabase } from './utils/supabase'
+import { Bell, AlertTriangle, X, Trophy, ShieldAlert, RotateCcw, ArrowRight } from 'lucide-react'
 
 export { useAuth }
 
 function ContenidoApp() {
-  const { session, perfil, cargando, cerrarSesion } = useAuth()
+  const navigate = useNavigate()
+  const { session, perfil, setPerfil, cargando, cerrarSesion } = useAuth()
   const [alertaClase, setAlertaClase] = useState(null)
+  const [pvpPopup, setPvpPopup] = useState(null)
 
   // Escuchar notificaciones y comunicados globales de clase en vivo
   useEffect(() => {
@@ -46,11 +49,119 @@ function ContenidoApp() {
       }
     })
 
+    // Escuchar resolución de desafíos de dados PvP
+    const desuscribirDados = suscribirEvento('pvp_reto_resuelto', (data) => {
+      if (!data?.resultado || !perfil?.id) return
+      const res = data.resultado
+      const soyCreador = String(res.creador_id) === String(perfil.id)
+      const soyOponente = String(res.oponente_id) === String(perfil.id)
+
+      if (!soyCreador && !soyOponente) return
+
+      // Si el usuario no estaba en la pantalla de animación activa de dados
+      const enPantallaEsperando = Boolean(window.__muudel_dados_activo)
+      if (!enPantallaEsperando) {
+        const gane = String(res.ganador_id) === String(perfil.id)
+        const empate = res.ganador_id === 'empate' || res.ganador_id === null
+        const betAmt = res.apuesta || 0
+        const rivalNombre = soyCreador ? (res.oponente_nombre || 'Compañero') : (res.creador_nombre || 'Compañero')
+        const misPuntos = soyCreador ? res.creador_roll : res.oponente_roll
+        const rivalPuntos = soyCreador ? res.oponente_roll : res.creador_roll
+
+        if (gane) {
+          sound.playWin()
+        } else if (!empate) {
+          sound.playLose()
+        }
+
+        setPvpPopup({
+          id: 'dados-' + Date.now(),
+          juego: 'dados',
+          titulo: gane ? '¡Victoria en Dados!' : (empate ? 'Empate en Dados' : 'Derrota en Dados'),
+          gane,
+          empate,
+          apuesta: betAmt,
+          rivalNombre,
+          misPuntos,
+          rivalPuntos,
+          hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })
+
+        setTimeout(() => {
+          setPvpPopup(prev => (prev?.id?.startsWith('dados-') ? null : prev))
+        }, 9000)
+      }
+
+      // Sincronizar saldo de puntos en vivo
+      supabase
+        .from('profiles')
+        .select('puntos_total')
+        .eq('id', perfil.id)
+        .single()
+        .then(({ data: pData }) => {
+          if (pData) {
+            setPerfil(prev => ({ ...prev, puntos_total: pData.puntos_total }))
+            localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: pData.puntos_total }))
+          }
+        })
+    })
+
+    // Escuchar resolución de Duelo 21 (Blackjack PvP)
+    const desuscribir21 = suscribirEvento('pvp_21_resuelto', (data) => {
+      if (!data?.resultado || !perfil?.id) return
+      const res = data.resultado
+      const soyCreador = String(res.creador_id) === String(perfil.id)
+      const soyOponente = String(res.oponente_id) === String(perfil.id)
+
+      if (!soyCreador && !soyOponente) return
+
+      const gane = String(res.ganador_id) === String(perfil.id)
+      const empate = res.ganador_id === 'empate'
+      const betAmt = res.apuesta || 0
+      const rivalNombre = soyCreador ? (res.oponente_nombre || 'Compañero') : (res.creador_nombre || 'Compañero')
+
+      if (gane) {
+        sound.playWin()
+      } else if (!empate) {
+        sound.playLose()
+      }
+
+      setPvpPopup({
+        id: '21-' + Date.now(),
+        juego: 'veintiuno',
+        titulo: gane ? '¡Victoria en Duelo 21!' : (empate ? 'Empate en Duelo 21' : 'Derrota en Duelo 21'),
+        gane,
+        empate,
+        apuesta: betAmt,
+        rivalNombre,
+        motivo: res.motivo || '',
+        hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })
+
+      setTimeout(() => {
+        setPvpPopup(prev => (prev?.id?.startsWith('21-') ? null : prev))
+      }, 9000)
+
+      supabase
+        .from('profiles')
+        .select('puntos_total')
+        .eq('id', perfil.id)
+        .single()
+        .then(({ data: pData }) => {
+          if (pData) {
+            setPerfil(prev => ({ ...prev, puntos_total: pData.puntos_total }))
+            localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: pData.puntos_total }))
+          }
+        })
+    })
+
     return () => {
       desuscribirNotif()
       desuscribirAviso()
+      desuscribirDados()
+      desuscribir21()
     }
-  }, [])
+  }, [perfil?.id])
 
   if (cargando) {
     return (
@@ -248,6 +359,151 @@ function ContenidoApp() {
           >
             <X size={16} />
           </button>
+        </aside>
+      )}
+
+      {/* Mini Pop-Up de Resultado PvP (Dados y Duelo 21) si no estabas en la pantalla de espera */}
+      {pvpPopup && (
+        <aside
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: session ? 92 : 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 32px)',
+            maxWidth: 460,
+            zIndex: 10000,
+            backgroundColor: pvpPopup.gane
+              ? 'rgba(16, 42, 22, 0.97)'
+              : pvpPopup.empate
+              ? 'rgba(38, 30, 15, 0.97)'
+              : 'rgba(38, 18, 18, 0.97)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            color: '#FFFFFF',
+            borderRadius: 16,
+            padding: '13px 16px',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.5)',
+            border: pvpPopup.gane
+              ? '1px solid rgba(52, 199, 89, 0.5)'
+              : pvpPopup.empate
+              ? '1px solid rgba(245, 158, 11, 0.5)'
+              : '1px solid rgba(239, 68, 68, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            animation: 'aparecerEscala 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+        >
+          {/* Icono de estado */}
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              backgroundColor: pvpPopup.gane
+                ? 'rgba(52, 199, 89, 0.2)'
+                : pvpPopup.empate
+                ? 'rgba(245, 158, 11, 0.2)'
+                : 'rgba(239, 68, 68, 0.2)',
+              color: pvpPopup.gane ? '#34C759' : pvpPopup.empate ? '#F59E0B' : '#EF4444',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            {pvpPopup.gane ? (
+              <Trophy size={20} />
+            ) : pvpPopup.empate ? (
+              <RotateCcw size={18} />
+            ) : (
+              <ShieldAlert size={20} />
+            )}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: pvpPopup.gane ? '#34C759' : pvpPopup.empate ? '#F59E0B' : '#EF4444' }}>
+                {pvpPopup.titulo}
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: 800,
+                  padding: '1px 6px',
+                  borderRadius: 6,
+                  backgroundColor: pvpPopup.gane
+                    ? 'rgba(52, 199, 89, 0.25)'
+                    : pvpPopup.empate
+                    ? 'rgba(245, 158, 11, 0.25)'
+                    : 'rgba(239, 68, 68, 0.25)',
+                  color: pvpPopup.gane ? '#4ADE80' : pvpPopup.empate ? '#FDE68A' : '#FCA5A5'
+                }}
+              >
+                {pvpPopup.gane
+                  ? `+${pvpPopup.apuesta} pts`
+                  : pvpPopup.empate
+                  ? `0 pts`
+                  : `-${pvpPopup.apuesta} pts`}
+              </span>
+            </div>
+
+            <div style={{ fontSize: 13, fontWeight: 700, margin: '2px 0 0', color: '#FFFFFF', lineHeight: 1.3 }}>
+              {pvpPopup.gane
+                ? `¡Has ganado el duelo contra ${pvpPopup.rivalNombre}!`
+                : pvpPopup.empate
+                ? `Empate con ${pvpPopup.rivalNombre} (Puntos devueltos)`
+                : `Has perdido contra ${pvpPopup.rivalNombre}`}
+            </div>
+
+            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2, color: '#D1D5DB' }}>
+              {pvpPopup.juego === 'dados'
+                ? `Sacaste ${pvpPopup.misPuntos} pts vs ${pvpPopup.rivalPuntos} pts de ${pvpPopup.rivalNombre}`
+                : pvpPopup.motivo || 'Partida de 21 finalizada'}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => setPvpPopup(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#9CA3AF',
+                cursor: 'pointer',
+                padding: 4
+              }}
+              title="Cerrar aviso"
+            >
+              <X size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPvpPopup(null)
+                navigate('/juegos')
+              }}
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#60A5FA',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                padding: '2px 4px'
+              }}
+            >
+              <span>Ver</span>
+              <ArrowRight size={11} />
+            </button>
+          </div>
         </aside>
       )}
 

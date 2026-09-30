@@ -188,6 +188,7 @@ export function BatallaDadosPvP() {
       .subscribe()
 
     return () => {
+      window.__muudel_dados_activo = false
       desun1()
       desun2()
       desun3()
@@ -405,7 +406,7 @@ export function BatallaDadosPvP() {
   }
 
   // Aceptar el reto de un compañero con resolución garantizada anti-400
-  const handleAceptarDesafio = async (partidaId, betAmt, creadorId) => {
+  const handleAceptarDesafio = async (partidaId, betAmt, creadorId, creadorNombre) => {
     if (creadorId && perfil?.id && String(creadorId) === String(perfil.id)) {
       sound.playPop()
       avisar('Este es tu propio reto. No puedes apostar contra ti mismo. Puedes cancelarlo para recuperar tus puntos.')
@@ -505,8 +506,11 @@ export function BatallaDadosPvP() {
 
         dataResultado = {
           partida_id: partidaId,
+          apuesta: pvpPartida.apuesta || betAmt,
           creador_id: pvpPartida.creador_id,
+          creador_nombre: creadorNombre || 'Compañero',
           oponente_id: perfil.id,
+          oponente_nombre: perfil.nombre || 'Tú',
           creador_dado1: d1_c,
           creador_dado2: d2_c,
           creador_roll: tot_c,
@@ -516,6 +520,14 @@ export function BatallaDadosPvP() {
           ganador_id: ganadorId,
           premio: premio
         }
+      }
+
+      if (dataResultado) {
+        if (!dataResultado.apuesta) dataResultado.apuesta = betAmt
+        if (!dataResultado.creador_id) dataResultado.creador_id = creadorId
+        if (!dataResultado.creador_nombre) dataResultado.creador_nombre = creadorNombre || 'Compañero'
+        if (!dataResultado.oponente_id) dataResultado.oponente_id = perfil?.id
+        if (!dataResultado.oponente_nombre) dataResultado.oponente_nombre = perfil?.nombre || 'Tú'
       }
 
       // Notificar a toda la clase y al creador
@@ -535,6 +547,7 @@ export function BatallaDadosPvP() {
 
   // Animación coreografiada de los dados
   const iniciarAnimacionResolucion = (data) => {
+    window.__muudel_dados_activo = true
     setAnimacionBatalla(data)
     setRodandoDados(true)
     sound.playDiceShake()
@@ -551,6 +564,7 @@ export function BatallaDadosPvP() {
 
       if (giros > 13) {
         clearInterval(intervalo)
+        window.__muudel_dados_activo = false
         setDadosMostrados({
           c1: data.creador_dado1 || Math.ceil((data.creador_roll || 7) / 2),
           c2: data.creador_dado2 || Math.floor((data.creador_roll || 7) / 2),
@@ -978,7 +992,7 @@ export function BatallaDadosPvP() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleAceptarDesafio(lobby.id, lobby.apuesta, lobby.creador_id)}
+                        onClick={() => handleAceptarDesafio(lobby.id, lobby.apuesta, lobby.creador_id, lobby.creador?.nombre)}
                         disabled={cargando || (perfil?.puntos_total || 0) < lobby.apuesta}
                         style={{
                           minHeight: 44,
