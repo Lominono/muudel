@@ -38,7 +38,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'congelar_racha',
     categoria: 'racha',
-    titulo: '🛡️ Escudo Congela-Racha',
+    titulo: 'Escudo Congela-Racha',
     desc: 'Si un día olvidas hacer check-in en la web, el escudo se activa automáticamente y salva tu racha de asistencia para que no vuelva a cero.',
     costo: 250,
     icon: Shield,
@@ -49,7 +49,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'racha_x2',
     categoria: 'racha',
-    titulo: '🔥 Multiplicador x2 de Racha',
+    titulo: 'Multiplicador x2 de Racha',
     desc: 'Durante 24 horas, tu próximo check-in diario en la web te otorga el doble de puntos de clase (x2) para ascender en el podio.',
     costo: 180,
     icon: Flame,
@@ -60,7 +60,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'restaurar_racha',
     categoria: 'racha',
-    titulo: '❤️ Fénix: Restaurador de Racha',
+    titulo: 'Fénix: Restaurador de Racha',
     desc: '¿Se reinició tu racha por un descuido de ayer? Restaura al instante tu racha al récord máximo que tenías acumulado.',
     costo: 350,
     icon: RotateCcw,
@@ -73,7 +73,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'dados_oro_pvp',
     categoria: 'juegos',
-    titulo: '🎲 Dados Dorados VIP (Duelos 1v1)',
+    titulo: 'Dados Dorados VIP (Duelos 1v1)',
     desc: 'Aumenta el límite de tus desafíos PvP hasta 500 pts y cambia el aspecto de tus dados a dorado brillante en las tiradas.',
     costo: 400,
     icon: Crown,
@@ -121,7 +121,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'seguro_ruleta',
     categoria: 'juegos',
-    titulo: '💰 Seguro de Ruleta (Reembolso 50%)',
+    titulo: 'Seguro de Ruleta (Reembolso 50%)',
     desc: 'Si pierdes todas tus fichas en tu próxima tirada en la mesa de ruleta, el seguro te reembolsa el 50% de los puntos apostados automáticamente.',
     costo: 90,
     icon: Shield,
@@ -132,7 +132,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'yoshi_vida_extra',
     categoria: 'juegos',
-    titulo: '🦖 Batería Extra Yoshi Runner (+1 Vida)',
+    titulo: 'Batería Extra Yoshi Runner (+1 Vida)',
     desc: 'Te otorga una segunda oportunidad tras colisionar en Yoshi Runner para superar tu récord y liderar el podio arcade.',
     costo: 110,
     icon: Zap,
@@ -145,75 +145,75 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'titulo_root',
     categoria: 'titulos',
-    titulo: 'Título: 👑 Linux Root Master',
+    titulo: 'Título: Linux Root Master',
     desc: 'Luce el título de superusuario oficial debajo de tu nombre en cada mensaje del chat y podio.',
     costo: 320,
     icon: Crown,
     stockMax: 3, // Stock limitado: solo 3 alumnos pueden tenerlo
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '👑 Linux Root Master',
+    tituloTexto: 'Linux Root Master',
     color: '#007AFF'
   },
   {
     id: 'titulo_mvp',
     categoria: 'titulos',
-    titulo: 'Título: 🏆 MVP del Aula 15:30',
+    titulo: 'Título: MVP del Aula 15:30',
     desc: 'Insignia de honor exclusiva reservada para los más veloces y participativos.',
     costo: 380,
     icon: Award,
     stockMax: 2, // Stock limitado: solo 2 en el aula
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '🏆 MVP Aula 15:30',
+    tituloTexto: 'MVP Aula 15:30',
     color: '#D4AF37'
   },
   {
     id: 'titulo_vlan',
     categoria: 'titulos',
-    titulo: 'Título: ⚡ Maestro de VLANs',
+    titulo: 'Título: Maestro de VLANs',
     desc: 'Título honorífico para los que configuran switches y routers sin mirar la chuleta.',
     costo: 220,
     icon: Zap,
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '⚡ Maestro de VLANs',
+    tituloTexto: 'Maestro de VLANs',
     color: '#FF9500'
   },
   {
     id: 'titulo_yoshi',
     categoria: 'titulos',
-    titulo: 'Título: 🐉 Domador de Yoshi',
+    titulo: 'Título: Domador de Yoshi',
     desc: 'Título especial para los expertos del recreo que dominan los saltos y bombas en el juego.',
     costo: 190,
     icon: Flame,
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '🐉 Domador de Yoshi',
+    tituloTexto: 'Domador de Yoshi',
     color: '#34C759'
   },
   {
     id: 'titulo_centinela',
     categoria: 'titulos',
-    titulo: 'Título: 🛡️ Centinela SMR2',
+    titulo: 'Título: Centinela SMR2',
     desc: 'Título de guardián de sistemas para mantener la racha de puntualidad alta.',
     costo: 160,
     icon: Shield,
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '🛡️ Centinela SMR2',
+    tituloTexto: 'Centinela SMR2',
     color: '#007AFF'
   },
   {
     id: 'titulo_terminal',
     categoria: 'titulos',
-    titulo: 'Título: 🐧 Hacker de Terminal',
+    titulo: 'Título: Hacker de Terminal',
     desc: 'Apodo para quienes resuelven todo desde Bash y PowerShell.',
     costo: 130,
     icon: Zap,
     duracionMs: 4 * 3600 * 1000,
     duracionTexto: '4 horas desde activación',
-    tituloTexto: '🐧 Hacker de Terminal',
+    tituloTexto: 'Hacker de Terminal',
     color: '#8E8E93'
   },
 
@@ -296,7 +296,7 @@ export const CATALOGO_RECOMPENSAS = [
   {
     id: 'sello_tinta_chat',
     categoria: 'efectos',
-    titulo: '📜 Sello de Tinta Lacrada en Chat',
+    titulo: 'Sello de Tinta Lacrada en Chat',
     desc: 'Estampa un sello oficial de tinta carmesí con relieve [PRESENTE · 15:30], [VISTO EN CLASE] o [APROBADO] visible por toda la clase.',
     costo: 45,
     icon: Stamp,
@@ -418,45 +418,6 @@ export const CATALOGO_RECOMPENSAS = [
     duracionTexto: '12 horas desde activación',
     pinKey: 'pin_arcade',
     color: '#34C759'
-  },
-
-  // 6. MEJORAS DE JUEGOS Y APUESTAS (RULETA)
-  {
-    id: 'ruleta_max_50',
-    categoria: 'juegos',
-    titulo: 'Licencia Casino Nivel 1',
-    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 50 pts por mesa.',
-    costo: 300,
-    icon: Ticket,
-    duracionMs: 0,
-    duracionTexto: 'Mejora Permanente',
-    efecto: 'ruleta_limit_50',
-    color: '#FF9500'
-  },
-  {
-    id: 'ruleta_max_100',
-    categoria: 'juegos',
-    titulo: 'Licencia Casino Nivel 2',
-    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 100 pts por mesa.',
-    costo: 800,
-    icon: Ticket,
-    duracionMs: 0,
-    duracionTexto: 'Mejora Permanente',
-    efecto: 'ruleta_limit_100',
-    color: '#FF3B30'
-  },
-  {
-    id: 'ruleta_max_500',
-    categoria: 'juegos',
-    titulo: 'Licencia Casino VIP (High Roller)',
-    desc: 'Aumenta permanentemente tu límite de apuesta en la Ruleta a 500 pts por mesa.',
-    costo: 2500,
-    icon: Crown,
-    stockMax: 2, // Solo 2 licencias VIP en la clase
-    duracionMs: 0,
-    duracionTexto: 'Mejora Permanente',
-    efecto: 'ruleta_limit_500',
-    color: '#D4AF37'
   }
 ]
 
@@ -1147,13 +1108,13 @@ export function TiendaRecompensas({ onClose }) {
             }}>
               {[
                 { id: 'todos', label: 'Todos' },
-                { id: 'racha', label: '🔥 Poderes Racha' },
-                { id: 'juegos', label: '🎲 Ruleta & Duelos' },
-                { id: 'efectos', label: '⚡ Efectos Chat' },
-                { id: 'burbujas', label: '💬 Burbujas Chat' },
-                { id: 'titulos', label: '👑 Títulos VIP' },
-                { id: 'marcos', label: '✨ Auras Avatar' },
-                { id: 'insignias', label: '🎖️ Pines Perfil' }
+                { id: 'racha', label: 'Poderes Racha' },
+                { id: 'juegos', label: 'Ruleta & Duelos' },
+                { id: 'efectos', label: 'Efectos Chat' },
+                { id: 'burbujas', label: 'Burbujas Chat' },
+                { id: 'titulos', label: 'Títulos VIP' },
+                { id: 'marcos', label: 'Auras Avatar' },
+                { id: 'insignias', label: 'Pines Perfil' }
               ].map(cat => (
                 <button
                   key={cat.id}

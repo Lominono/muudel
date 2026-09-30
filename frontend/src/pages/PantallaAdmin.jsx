@@ -37,9 +37,13 @@ import {
   UserX,
   UserCheck,
   Key,
-  Ban
+  Ban,
+  Bell,
+  Send,
+  AlertTriangle
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { conOneSignal } from '../utils/oneSignal'
 import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 
 export const obtenerPinAdmin = () => {
@@ -99,6 +103,11 @@ export function PantallaAdmin() {
   })
   const [textoMegafonoAdmin, setTextoMegafonoAdmin] = useState('')
   const [canalParaLimpiar, setCanalParaLimpiar] = useState('general')
+
+  // Sistema de Notificaciones Push & Alertas Globales de Clase
+  const [tituloAlertaClase, setTituloAlertaClase] = useState('')
+  const [mensajeAlertaClase, setMensajeAlertaClase] = useState('')
+  const [nivelAlertaClase, setNivelAlertaClase] = useState('general') // 'general' | 'urgente'
 
   // Búsqueda y acciones
   const [busqueda, setBusqueda] = useState('')
@@ -880,6 +889,42 @@ export function PantallaAdmin() {
     sound.playStamp()
     avisar('Megáfono oficial fijado en el chat para toda la clase.')
     registrarAuditoria('Megáfono Moderador', `Publicado: "${textoAnuncio}"`)
+  }
+
+  // MODERACIÓN: Lanzar Alerta / Notificación Push a toda la clase
+  const handleLanzarAlertaClase = async (e) => {
+    e.preventDefault()
+    if (!mensajeAlertaClase.trim()) {
+      sound.playPop()
+      avisar('Escribe el texto de la notificación para la clase.', 'error')
+      return
+    }
+
+    const alertaObj = {
+      id: 'alerta-' + Date.now(),
+      titulo: tituloAlertaClase.trim() || 'Aviso de Moderación SMR2',
+      mensaje: mensajeAlertaClase.trim(),
+      nivel: nivelAlertaClase,
+      autor: perfil?.nombre || 'Moderador',
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+
+    try {
+      localStorage.setItem('muudel_ultima_alerta_clase', JSON.stringify(alertaObj))
+    } catch (_) {}
+
+    transmitirEvento('notificacion_push_clase', alertaObj)
+
+    conOneSignal((OneSignal) => {
+      console.log('🔔 [OneSignal] Transmisión de alerta:', alertaObj.titulo)
+    })
+
+    sound.playStamp()
+    triggerConfetti()
+    avisar('¡Notificación emitida a todos los alumnos en vivo!')
+    setMensajeAlertaClase('')
+    setTituloAlertaClase('')
+    registrarAuditoria('Notificaciones', `Alerta enviada: "${alertaObj.titulo}"`)
   }
 
   // MODERACIÓN DEL CHAT: Limpiar canal
@@ -1815,6 +1860,96 @@ export function PantallaAdmin() {
               >
                 Fijar Comunicado
               </button>
+            </form>
+          </section>
+
+          {/* 3.1. Notificación Push / Alerta Emergente a toda la clase */}
+          <section className="card" style={{ border: '1px solid rgba(0, 122, 255, 0.3)', backgroundColor: 'rgba(0, 122, 255, 0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Bell size={18} color="#0A84FF" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Emitir Alerta Push Instantánea a la Clase
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 12 }}>
+              Despliega un aviso prioritario en pantalla completa a todos los alumnos conectados y sus teléfonos al instante.
+            </p>
+
+            <form onSubmit={handleLanzarAlertaClase} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={tituloAlertaClase}
+                  onChange={(e) => setTituloAlertaClase(e.target.value)}
+                  placeholder="Título (ej: ¡Atención clase!, Práctica subida, Recordatorio)"
+                  style={{ flex: '1 1 200px' }}
+                />
+
+                <div style={{ display: 'flex', gap: 4, backgroundColor: 'var(--color-fill-secondary)', padding: 3, borderRadius: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setNivelAlertaClase('general')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      border: 'none',
+                      backgroundColor: nivelAlertaClase === 'general' ? 'var(--color-surface)' : 'transparent',
+                      color: nivelAlertaClase === 'general' ? '#0A84FF' : 'var(--color-secondary-ink)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Informativa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNivelAlertaClase('urgente')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      border: 'none',
+                      backgroundColor: nivelAlertaClase === 'urgente' ? '#FF3B30' : 'transparent',
+                      color: nivelAlertaClase === 'urgente' ? '#FFFFFF' : 'var(--color-secondary-ink)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Urgente
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  className="apple-input"
+                  value={mensajeAlertaClase}
+                  onChange={(e) => setMensajeAlertaClase(e.target.value)}
+                  placeholder="Mensaje de la notificación (ej: Abrid el Moodle en la tarea 4, tenéis 15 min)"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="submit"
+                  disabled={!mensajeAlertaClase.trim()}
+                  className="btn-primary"
+                  style={{
+                    minHeight: 40,
+                    padding: '0 16px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    backgroundColor: nivelAlertaClase === 'urgente' ? '#D93829' : 'var(--color-accent)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Send size={14} />
+                  <span>Emitir</span>
+                </button>
+              </div>
             </form>
           </section>
 

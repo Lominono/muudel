@@ -307,6 +307,18 @@ export function PantallaHoy() {
   const handleMandarSolicitud = async (esTarde) => {
     if (!perfil) return
     const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    let puntosBase = esTarde ? 5 : 10
+
+    // Comprobar multiplicador x2 de Racha activo
+    try {
+      const multRaw = localStorage.getItem('muudel_multiplicador_racha_' + perfil.id)
+      if (multRaw) {
+        const parsed = JSON.parse(multRaw)
+        if (parsed.expiraEn > Date.now()) {
+          puntosBase = puntosBase * (parsed.mult || 2)
+        }
+      }
+    } catch (_) {}
 
     const nuevaSolicitud = {
       userId: perfil.id,
@@ -317,7 +329,7 @@ export function PantallaHoy() {
       hora: horaActual,
       fecha: fechaHoy,
       esTarde,
-      puntos: esTarde ? 5 : 10
+      puntos: puntosBase
     }
 
     try {

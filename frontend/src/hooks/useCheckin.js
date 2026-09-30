@@ -52,7 +52,20 @@ export function useCheckin(userId) {
   const hacerCheckin = async (esTarde = false) => {
     setError(null)
     const hoyStr = new Date().toISOString().split('T')[0]
-    const puntos = esTarde ? 5 : 10
+    let puntos = esTarde ? 5 : 10
+
+    // Comprobar si el alumno tiene multiplicador x2 de Racha activo
+    try {
+      const multRaw = localStorage.getItem('muudel_multiplicador_racha_' + userId)
+      if (multRaw) {
+        const parsed = JSON.parse(multRaw)
+        if (parsed.expiraEn > Date.now()) {
+          puntos = puntos * (parsed.mult || 2)
+          localStorage.removeItem('muudel_multiplicador_racha_' + userId)
+        }
+      }
+    } catch (_) {}
+
     const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
     const nuevoRecord = {

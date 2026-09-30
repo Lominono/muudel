@@ -567,7 +567,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             state.screenShake = 6
             retroAudio.playWarning()
             state.floatingTexts.push({
-              text: `⚡ ¡ACELERACIÓN! ${(state.speed * speedFactor).toFixed(1)}x`,
+              text: `¡ACELERACIÓN! ${(state.speed * speedFactor).toFixed(1)}x`,
               x: CANVAS_W / 2,
               y: 55,
               vy: -1.2,
@@ -611,7 +611,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           if (state.overdriveTime === 0) {
             state.adrenalina = 0
             state.floatingTexts.push({
-              text: '⚡ OVERDRIVE FINALIZADO',
+              text: 'OVERDRIVE FINALIZADO',
               x: yoshi.x + 20,
               y: yoshi.y - 14,
               vy: -1.0,
@@ -703,7 +703,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               setFeverActivo(false)
               retroAudio.playPowerDown()
               state.floatingTexts.push({
-                text: '⚡ ¡AURA AGOTADA!', x: yoshi.x + 20, y: yoshi.y - 14,
+                text: '¡AURA AGOTADA!', x: yoshi.x + 20, y: yoshi.y - 14,
                 vy: -1.3, color: '#EF4444', opacity: 1
               })
               for (let p = 0; p < 12; p++) {
@@ -899,18 +899,18 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             const spawnMult = 1 + (state.speed - SPEED_INITIAL) / (SPEED_MAX - SPEED_INITIAL) * 0.5
 
             if (state.score > 20 && r < 0.014 * spawnMult) {
-              state.alerts.push({ tipo: 'bomb', timer: 38, maxTimer: 38, label: '¡BOMBA!', icon: '💣', color: '#FF3B30', y: GROUND_Y - 38 })
+              state.alerts.push({ tipo: 'bomb', timer: 38, maxTimer: 38, label: '¡BOMBA!', icon: '!', color: '#FF3B30', y: GROUND_Y - 38 })
               retroAudio.playWarning()
             } else if (state.score > 55 && r < 0.026 * spawnMult) {
               const billY = Math.random() > 0.5 ? GROUND_Y - 48 : GROUND_Y - 72
-              state.alerts.push({ tipo: 'bulletBill', timer: 42, maxTimer: 42, label: '¡MISIL!', icon: '⚡', color: '#EF4444', y: billY })
+              state.alerts.push({ tipo: 'bulletBill', timer: 42, maxTimer: 42, label: '¡MISIL!', icon: '!', color: '#EF4444', y: billY })
               retroAudio.playWarning()
             } else if (state.score > 35 && r < 0.036 * spawnMult) {
-              state.alerts.push({ tipo: 'paratroopa', timer: 36, maxTimer: 36, label: '¡VOLADOR!', icon: '⚠️', color: '#F59E0B', y: GROUND_Y - 54 })
+              state.alerts.push({ tipo: 'paratroopa', timer: 36, maxTimer: 36, label: '¡VOLADOR!', icon: '!', color: '#F59E0B', y: GROUND_Y - 54 })
               retroAudio.playWarning()
             } else if (state.score > 80 && r < 0.018 * spawnMult) {
               // Obstáculo bajo donde obligatoriamente hay que agacharse
-              state.alerts.push({ tipo: 'lowBill', timer: 44, maxTimer: 44, label: '¡AGÁCHATE!', icon: '⬇️', color: '#8B5CF6', y: GROUND_Y - 30 })
+              state.alerts.push({ tipo: 'lowBill', timer: 44, maxTimer: 44, label: '¡AGÁCHATE!', icon: '!', color: '#8B5CF6', y: GROUND_Y - 30 })
               retroAudio.playWarning()
             }
           }
@@ -949,7 +949,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 setMonedasPartida(state.coins)
                 state.adrenalina = Math.min(100, state.adrenalina + 25)
                 state.floatingTexts.push({
-                  text: '⚡ ¡ROCE ÉPICO! +15',
+                  text: '¡ROCE ÉPICO! +15',
                   x: yoshi.x + 20,
                   y: yoshi.y - 16,
                   vy: -1.3,
@@ -1015,13 +1015,13 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 state.screenShake = 10
                 retroAudio.playOverdrive()
                 triggerConfetti()
-                state.floatingTexts.push({ text: '⚡ ¡BATERÍA TURBO! OVERDRIVE', x: yoshi.x + 20, y: yoshi.y - 14, vy: -1.4, color: '#38BDF8', opacity: 1.5 })
+                state.floatingTexts.push({ text: '¡BATERÍA TURBO! OVERDRIVE', x: yoshi.x + 20, y: yoshi.y - 14, vy: -1.4, color: '#38BDF8', opacity: 1.5 })
               } else if (item.tipo === 'superBerry') {
                 state.feverTime = 360; state.feverElapsed = 0; state.feverUnstable = false
                 setFeverActivo(true)
                 retroAudio.playFever()
                 triggerConfetti()
-                state.floatingTexts.push({ text: '★ ¡FIEBRE!', x: yoshi.x + 20, y: yoshi.y - 12, vy: -1.2, color: '#FF3B30', opacity: 1 })
+                state.floatingTexts.push({ text: '¡FIEBRE!', x: yoshi.x + 20, y: yoshi.y - 12, vy: -1.2, color: '#FF3B30', opacity: 1 })
               } else if (item.tipo === 'egg') {
                 retroAudio.playEgg()
                 state.floatingTexts.push({ text: `+${pts}`, x: item.x, y: item.y, vy: -1.0, color: '#30D158', opacity: 1 })
@@ -1093,7 +1093,39 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
                 continue // agachado pasa
               }
 
-              // Colisión fatal
+              // Colisión fatal - Verificar si el alumno tiene la Batería Extra (+1 Vida) de la Tienda
+              const tieneVidaExtra = (() => {
+                try {
+                  const flag = localStorage.getItem('muudel_yoshi_vida_extra_' + perfil?.id) === 'true'
+                  const raw = localStorage.getItem('muudel_inventario_' + perfil?.id)
+                  const inv = raw ? JSON.parse(raw) : []
+                  return flag || inv.some(i => i.catalogoId === 'yoshi_vida_extra' && i.estado !== 'usado')
+                } catch (_) { return false }
+              })()
+
+              if (tieneVidaExtra && !state.vidaExtraUsada) {
+                state.vidaExtraUsada = true
+                localStorage.removeItem('muudel_yoshi_vida_extra_' + perfil?.id)
+                try {
+                  const raw = localStorage.getItem('muudel_inventario_' + perfil?.id)
+                  if (raw) {
+                    const inv = JSON.parse(raw).map(it => it.catalogoId === 'yoshi_vida_extra' && it.estado !== 'usado' ? { ...it, estado: 'usado' } : it)
+                    localStorage.setItem('muudel_inventario_' + perfil?.id, JSON.stringify(inv))
+                  }
+                } catch (_) {}
+
+                state.screenShake = 10
+                retroAudio.playPowerup()
+                state.obstacles.splice(i, 1)
+                state.invulnerableTimer = 60
+                state.floatingTexts.push({
+                  text: '¡BATERÍA EXTRA! SEGUNDA OPORTUNIDAD',
+                  x: yoshi.x, y: yoshi.y - 25, vy: -1.5,
+                  color: '#30D158', opacity: 1
+                })
+                continue
+              }
+
               state.isRunning = false
               state.screenShake = 12
               retroAudio.playGameOver()
@@ -1354,7 +1386,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           ctx.shadowBlur = 12
           ctx.font = '900 16px -apple-system, sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText('☄️ ¡LLUVIA DE METEOROS! ☄️', CANVAS_W / 2, 40)
+          ctx.fillText('¡LLUVIA DE METEOROS!', CANVAS_W / 2, 40)
           ctx.restore()
         }
       }
@@ -1491,7 +1523,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     if (state.coins > 0) {
       ctx.fillStyle = '#D97706'
       ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif'
-      ctx.fillText(`🪙 ${state.coins}`, CANVAS_W - 16, 44)
+      ctx.fillText(`+${state.coins} pts`, CANVAS_W - 16, 44)
     }
 
     // Indicador sutil de energía / overdrive
@@ -1642,27 +1674,78 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         )}
       </div>
 
-      {/* Controles */}
-      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--color-separator)', backgroundColor: 'var(--color-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="apple-caption" style={{ fontSize: 11 }}>
-          Morado ⬇ agáchate · Rojo: salta
-        </span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" className="btn-secondary"
-            onMouseDown={() => setAgachado(true)} onMouseUp={() => setAgachado(false)} onMouseLeave={() => setAgachado(false)}
-            onTouchStart={e => { e.preventDefault(); setAgachado(true) }} onTouchEnd={e => { e.preventDefault(); setAgachado(false) }} onTouchCancel={e => { e.preventDefault(); setAgachado(false) }}
-            style={{ minHeight: 34, padding: '4px 12px', fontSize: 12, gap: 4, borderRadius: 10 }}>
-            <ArrowDown size={14} /><span>↓</span>
+      {/* Controles táctiles optimizados para móvil y teclado para PC */}
+      <div style={{
+        padding: '10px 14px',
+        borderTop: '1px solid var(--color-separator)',
+        backgroundColor: 'var(--color-surface)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="apple-caption" style={{ fontSize: 11 }}>
+            Toca la pantalla o usa la botonera táctil
+          </span>
+          <span className="apple-caption" style={{ fontSize: 10, fontFamily: 'monospace' }}>
+            ESPACIO / ↑ · FLECHA ↓
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onMouseDown={() => setAgachado(true)}
+            onMouseUp={() => setAgachado(false)}
+            onMouseLeave={() => setAgachado(false)}
+            onTouchStart={e => { e.preventDefault(); setAgachado(true) }}
+            onTouchEnd={e => { e.preventDefault(); setAgachado(false) }}
+            onTouchCancel={e => { e.preventDefault(); setAgachado(false) }}
+            style={{
+              flex: 1,
+              minHeight: 48,
+              padding: '8px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              gap: 6,
+              borderRadius: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'var(--color-fill-secondary)'
+            }}
+          >
+            <ArrowDown size={18} />
+            <span>Agacharse</span>
           </button>
-          <button type="button" className="btn-primary"
+
+          <button
+            type="button"
+            className="btn-primary"
             onMouseDown={() => { isJumpPressedRef.current = true; saltar() }}
             onMouseUp={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onMouseLeave={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onTouchStart={e => { e.preventDefault(); isJumpPressedRef.current = true; saltar() }}
             onTouchEnd={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onTouchCancel={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
-            style={{ minHeight: 34, padding: '4px 14px', fontSize: 12, gap: 4, backgroundColor: '#30D158', borderRadius: 10 }}>
-            <ArrowUp size={14} /><span>Saltar</span>
+            style={{
+              flex: 2,
+              minHeight: 48,
+              padding: '8px 20px',
+              fontSize: 14,
+              fontWeight: 800,
+              gap: 8,
+              backgroundColor: '#30D158',
+              borderRadius: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(48, 209, 88, 0.3)'
+            }}
+          >
+            <ArrowUp size={18} />
+            <span>Saltar / Aletear</span>
           </button>
         </div>
       </div>

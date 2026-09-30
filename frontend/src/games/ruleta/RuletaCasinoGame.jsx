@@ -10,7 +10,10 @@ import {
   History,
   Coins,
   Trash2,
-  Copy
+  Copy,
+  ShieldCheck,
+  Layers,
+  LayoutGrid
 } from 'lucide-react'
 
 // Secuencia oficial de la Ruleta Europea (37 sectores)
@@ -130,6 +133,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     }
   }, [perfil?.id])
 
+  const [modoApuestaMobile, setModoApuestaMobile] = useState(() => (typeof window !== 'undefined' && window.innerWidth <= 640 ? 'rapidas' : 'completo'))
   const totalApostado = Object.values(apuestas).reduce((acc, curr) => acc + curr, 0)
   const saldoActual = perfil?.puntos_total || 0
 
@@ -769,7 +773,8 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
                       gap: 4
                     }}
                   >
-                    🛡️ Seguro 50% Activo
+                    <ShieldCheck size={13} />
+                    <span>Seguro 50% Activo</span>
                   </span>
                 )
               }
@@ -984,61 +989,170 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
         </div>
       </div>
 
-      {/* BETTING TABLE — mobile-responsive */}
+      {/* BETTING TABLE — mobile-responsive with dual views */}
       <div className="card" style={{
         padding: '14px', border: '1px solid var(--color-separator)',
         backgroundColor: 'var(--color-cell-bg)', overflowX: 'auto',
         WebkitOverflowScrolling: 'touch'
       }}>
-        <div style={{ minWidth: 340, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* Zero */}
-          <button
-            type="button"
-            onClick={() => handleApostar('0')}
-            style={{
-              width: '100%', minHeight: 40, borderRadius: 8,
-              backgroundColor: '#34C759', color: '#FFF',
-              border: apuestas['0'] ? '2px solid #FFD60A' : 'none',
-              fontWeight: 900, fontSize: 15, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
-            }}
-          >
-            <span>0</span>
-            <ChipBadge amount={apuestas['0']} />
-          </button>
-
-          {/* Number grid: 3 rows × 12 cols + column bets */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr) 36px', gap: 4 }}>
-            {/* Row 3: 3,6,9... */}
-            {[3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36].map(n => <NumBtn key={n} num={n} />)}
-            <OutsideBtn id="col3" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
-
-            {/* Row 2: 2,5,8... */}
-            {[2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35].map(n => <NumBtn key={n} num={n} />)}
-            <OutsideBtn id="col2" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
-
-            {/* Row 1: 1,4,7... */}
-            {[1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34].map(n => <NumBtn key={n} num={n} />)}
-            <OutsideBtn id="col1" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+        {/* Selector de modo para pantallas móviles / táctiles */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <LayoutGrid size={14} color="var(--color-secondary-ink)" />
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-secondary-ink)' }}>
+              Mesa de Apuestas
+            </span>
           </div>
 
-          {/* Dozens */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
-            <OutsideBtn id="docena1" label="1ª Doc (1-12)" />
-            <OutsideBtn id="docena2" label="2ª Doc (13-24)" />
-            <OutsideBtn id="docena3" label="3ª Doc (25-36)" />
-          </div>
-
-          {/* Even chances */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
-            <OutsideBtn id="1-18" label="1-18" />
-            <OutsideBtn id="par" label="PAR" />
-            <OutsideBtn id="rojo" label="ROJO" bg="#FF3B30" color="#FFF" borderDefault="none" />
-            <OutsideBtn id="negro" label="NEGRO" bg="#1C1C1E" color="#FFF" borderDefault="none" />
-            <OutsideBtn id="impar" label="IMPAR" />
-            <OutsideBtn id="19-36" label="19-36" />
+          <div style={{ display: 'flex', gap: 4, backgroundColor: 'var(--color-fill-secondary)', padding: 3, borderRadius: 8 }}>
+            <button
+              type="button"
+              onClick={() => { sound.playPop(); setModoApuestaMobile('rapidas') }}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                border: 'none',
+                backgroundColor: modoApuestaMobile === 'rapidas' ? 'var(--color-surface)' : 'transparent',
+                color: modoApuestaMobile === 'rapidas' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                cursor: 'pointer',
+                boxShadow: modoApuestaMobile === 'rapidas' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <Coins size={12} />
+              <span>Apuestas Rápidas (Móvil)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { sound.playPop(); setModoApuestaMobile('completo') }}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                border: 'none',
+                backgroundColor: modoApuestaMobile === 'completo' ? 'var(--color-surface)' : 'transparent',
+                color: modoApuestaMobile === 'completo' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                cursor: 'pointer',
+                boxShadow: modoApuestaMobile === 'completo' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <Layers size={12} />
+              <span>Paño Completo (0-36)</span>
+            </button>
           </div>
         </div>
+
+        {modoApuestaMobile === 'rapidas' ? (
+          /* VISTA ACCESIBLE PARA MÓVIL: Botones amplios y táctiles (mínimo 44px) */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Cero verde */}
+            <button
+              type="button"
+              onClick={() => handleApostar('0')}
+              style={{
+                width: '100%', minHeight: 46, borderRadius: 10,
+                backgroundColor: '#34C759', color: '#FFF',
+                border: apuestas['0'] ? '2px solid #FFD60A' : 'none',
+                fontWeight: 900, fontSize: 15, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+              }}
+            >
+              <span>0 (Cero · 36x)</span>
+              <ChipBadge amount={apuestas['0']} />
+            </button>
+
+            {/* Rojo y Negro */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <OutsideBtn id="rojo" label="ROJO (2:1)" bg="#FF3B30" color="#FFF" borderDefault="none" />
+              <OutsideBtn id="negro" label="NEGRO (2:1)" bg="#1C1C1E" color="#FFF" borderDefault="none" />
+            </div>
+
+            {/* Par e Impar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <OutsideBtn id="par" label="PAR (2:1)" />
+              <OutsideBtn id="impar" label="IMPAR (2:1)" />
+            </div>
+
+            {/* Mitades 1-18 y 19-36 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <OutsideBtn id="1-18" label="1 al 18 (2:1)" />
+              <OutsideBtn id="19-36" label="19 al 36 (2:1)" />
+            </div>
+
+            {/* Docenas */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              <OutsideBtn id="docena1" label="1ª Doc (1-12)" />
+              <OutsideBtn id="docena2" label="2ª Doc (13-24)" />
+              <OutsideBtn id="docena3" label="3ª Doc (25-36)" />
+            </div>
+
+            {/* Columnas */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              <OutsideBtn id="col1" label="Columna 1" />
+              <OutsideBtn id="col2" label="Columna 2" />
+              <OutsideBtn id="col3" label="Columna 3" />
+            </div>
+          </div>
+        ) : (
+          /* VISTA COMPLETA PAÑO EUROPEO (Con 37 números, esquinas y medios) */
+          <div style={{ minWidth: 420, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Zero */}
+            <button
+              type="button"
+              onClick={() => handleApostar('0')}
+              style={{
+                width: '100%', minHeight: 40, borderRadius: 8,
+                backgroundColor: '#34C759', color: '#FFF',
+                border: apuestas['0'] ? '2px solid #FFD60A' : 'none',
+                fontWeight: 900, fontSize: 15, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+              }}
+            >
+              <span>0</span>
+              <ChipBadge amount={apuestas['0']} />
+            </button>
+
+            {/* Number grid: 3 rows × 12 cols + column bets */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr) 36px', gap: 4 }}>
+              {/* Row 3: 3,6,9... */}
+              {[3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36].map(n => <NumBtn key={n} num={n} />)}
+              <OutsideBtn id="col3" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+
+              {/* Row 2: 2,5,8... */}
+              {[2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35].map(n => <NumBtn key={n} num={n} />)}
+              <OutsideBtn id="col2" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+
+              {/* Row 1: 1,4,7... */}
+              {[1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34].map(n => <NumBtn key={n} num={n} />)}
+              <OutsideBtn id="col1" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+            </div>
+
+            {/* Dozens */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+              <OutsideBtn id="docena1" label="1ª Doc (1-12)" />
+              <OutsideBtn id="docena2" label="2ª Doc (13-24)" />
+              <OutsideBtn id="docena3" label="3ª Doc (25-36)" />
+            </div>
+
+            {/* Even chances */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
+              <OutsideBtn id="1-18" label="1-18" />
+              <OutsideBtn id="par" label="PAR" />
+              <OutsideBtn id="rojo" label="ROJO" bg="#FF3B30" color="#FFF" borderDefault="none" />
+              <OutsideBtn id="negro" label="NEGRO" bg="#1C1C1E" color="#FFF" borderDefault="none" />
+              <OutsideBtn id="impar" label="IMPAR" />
+              <OutsideBtn id="19-36" label="19-36" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

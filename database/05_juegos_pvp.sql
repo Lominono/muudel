@@ -50,7 +50,7 @@ END $$;
 -- ==========================================
 
 -- 1. Crear una nueva partida PvP
-CREATE OR REPLACE FUNCTION crear_partida_pvp(p_apuesta INTEGER)
+CREATE OR REPLACE FUNCTION crear_partida_pvp(p_apuesta INTEGER, p_user_id UUID DEFAULT NULL)
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -60,7 +60,7 @@ DECLARE
   v_saldo INTEGER;
   v_partida_id UUID;
 BEGIN
-  v_user_id := auth.uid();
+  v_user_id := COALESCE(auth.uid(), p_user_id);
   IF v_user_id IS NULL THEN RAISE EXCEPTION 'No autorizado'; END IF;
   IF p_apuesta <= 0 THEN RAISE EXCEPTION 'La apuesta debe ser mayor a 0'; END IF;
   
@@ -81,7 +81,7 @@ END;
 $$;
 
 -- 2. Unirse y resolver partida (Atómico con 2 Dados 2d6 por jugador)
-CREATE OR REPLACE FUNCTION unirse_partida_pvp(p_partida_id UUID)
+CREATE OR REPLACE FUNCTION unirse_partida_pvp(p_partida_id UUID, p_user_id UUID DEFAULT NULL)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -98,7 +98,7 @@ DECLARE
   v_tot_o INTEGER;
   v_ganador_id UUID;
 BEGIN
-  v_user_id := auth.uid();
+  v_user_id := COALESCE(auth.uid(), p_user_id);
   IF v_user_id IS NULL THEN RAISE EXCEPTION 'No autorizado'; END IF;
   
   -- Bloquear la partida para evitar que dos usuarios entren a la vez
@@ -190,7 +190,7 @@ END;
 $$;
 
 -- 3. Cancelar partida y reembolsar puntos al creador
-CREATE OR REPLACE FUNCTION cancelar_partida_pvp(p_partida_id UUID)
+CREATE OR REPLACE FUNCTION cancelar_partida_pvp(p_partida_id UUID, p_user_id UUID DEFAULT NULL)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -199,7 +199,7 @@ DECLARE
   v_user_id UUID;
   v_partida pvp_partidas%ROWTYPE;
 BEGIN
-  v_user_id := auth.uid();
+  v_user_id := COALESCE(auth.uid(), p_user_id);
   IF v_user_id IS NULL THEN RAISE EXCEPTION 'No autorizado'; END IF;
 
   SELECT * INTO v_partida FROM pvp_partidas WHERE id = p_partida_id FOR UPDATE;

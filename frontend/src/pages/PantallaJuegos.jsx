@@ -16,13 +16,20 @@ import {
   Target,
   CheckCircle2,
   Clock,
-  Sparkles
+  Sparkles,
+  Disc,
+  Dices,
+  ShieldCheck,
+  Crown,
+  Ticket,
+  Shield,
+  Swords
 } from 'lucide-react'
 import { animarEscalonado } from '../utils/animations'
 
 export function PantallaJuegos() {
   const { perfil, setPerfil } = useAuth()
-  const [juegoSeleccionado, setJuegoSeleccionado] = useState('ruleta') // 'ruleta' | 'yoshi'
+  const [juegoSeleccionado, setJuegoSeleccionado] = useState('ruleta') // 'ruleta' | 'pvp' | 'yoshi'
   const [rankingArcade, setRankingArcade] = useState([])
   const [cargandoRanking, setCargandoRanking] = useState(false)
   const [monedasHoy, setMonedasHoy] = useState(() => {
@@ -212,23 +219,23 @@ export function PantallaJuegos() {
       const perks = []
 
       if (tieneSeguro || items.some(i => i.catalogoId === 'seguro_ruleta' && i.estado !== 'usado')) {
-        perks.push({ id: 'seguro', label: '🛡️ Seguro Ruleta 50%', color: '#30D158' })
+        perks.push({ id: 'seguro', label: 'Seguro Ruleta 50%', Icon: ShieldCheck, color: '#30D158' })
       }
       if (items.some(i => i.catalogoId === 'dados_oro_pvp' && i.estado !== 'expirado')) {
-        perks.push({ id: 'dados_oro', label: '🎲 Dados Dorados VIP', color: '#FBBF24' })
+        perks.push({ id: 'dados_oro', label: 'Dados Dorados VIP', Icon: Crown, color: '#FBBF24' })
       }
       if (items.some(i => i.catalogoId === 'ruleta_max_500')) {
-        perks.push({ id: 'ruleta_500', label: '👑 Licencia VIP 500', color: '#D4AF37' })
+        perks.push({ id: 'ruleta_500', label: 'Licencia VIP 500', Icon: Crown, color: '#D4AF37' })
       } else if (items.some(i => i.catalogoId === 'ruleta_max_100')) {
-        perks.push({ id: 'ruleta_100', label: '🎟️ Licencia Casino 100', color: '#FF3B30' })
+        perks.push({ id: 'ruleta_100', label: 'Licencia Casino 100', Icon: Ticket, color: '#FF3B30' })
       } else if (items.some(i => i.catalogoId === 'ruleta_max_50')) {
-        perks.push({ id: 'ruleta_50', label: '🎟️ Licencia Casino 50', color: '#FF9500' })
+        perks.push({ id: 'ruleta_50', label: 'Licencia Casino 50', Icon: Ticket, color: '#FF9500' })
       }
       if (items.some(i => i.catalogoId === 'racha_x2' && i.estado === 'activo')) {
-        perks.push({ id: 'racha_x2', label: '🔥 Racha x2', color: '#FF3B30' })
+        perks.push({ id: 'racha_x2', label: 'Racha x2 Activa', Icon: Flame, color: '#FF3B30' })
       }
       if (items.some(i => i.catalogoId === 'congelar_racha' && i.estado !== 'usado')) {
-        perks.push({ id: 'escudo', label: '❄️ Escudo Racha', color: '#0A84FF' })
+        perks.push({ id: 'escudo', label: 'Escudo Racha', Icon: Shield, color: '#0A84FF' })
       }
       return perks
     } catch (_) {
@@ -287,16 +294,17 @@ export function PantallaJuegos() {
             </div>
           </div>
 
-          {/* Selector de Juego estilo Apple Segmented Control Equilibrado */}
+          {/* Selector de Juego estilo Apple Segmented Control Equilibrado (con Iconos) */}
           <div
             className="segmented-control"
             style={{
               width: '100%',
-              maxWidth: 440,
+              maxWidth: 460,
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
               padding: 3,
-              backgroundColor: 'var(--color-fill-secondary)'
+              backgroundColor: 'var(--color-fill-secondary)',
+              borderRadius: 12
             }}
           >
             <button
@@ -306,9 +314,19 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('ruleta')
               }}
-              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
+              style={{
+                minHeight: 40,
+                padding: '8px 10px',
+                fontSize: 13,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
+              }}
             >
-              🎰 Ruleta SMR2
+              <Disc size={15} />
+              <span>Ruleta SMR2</span>
             </button>
             <button
               type="button"
@@ -317,9 +335,19 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('pvp')
               }}
-              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
+              style={{
+                minHeight: 40,
+                padding: '8px 10px',
+                fontSize: 13,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
+              }}
             >
-              ⚔️ Duelo PvP
+              <Dices size={15} />
+              <span>Duelo PvP</span>
             </button>
             <button
               type="button"
@@ -328,9 +356,19 @@ export function PantallaJuegos() {
                 sound.playPop()
                 setJuegoSeleccionado('yoshi')
               }}
-              style={{ padding: '7px 8px', fontSize: 12, fontWeight: 700 }}
+              style={{
+                minHeight: 40,
+                padding: '8px 10px',
+                fontSize: 13,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
+              }}
             >
-              🦖 Yoshi Runner
+              <Gamepad2 size={15} />
+              <span>Yoshi Runner</span>
             </button>
           </div>
         </div>
@@ -355,8 +393,8 @@ export function PantallaJuegos() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
             style={{
-              width: 30,
-              height: 30,
+              width: 32,
+              height: 32,
               borderRadius: 8,
               backgroundColor: 'rgba(255, 149, 0, 0.12)',
               color: '#FF9500',
@@ -377,25 +415,32 @@ export function PantallaJuegos() {
           </div>
         </div>
 
-        {/* Perks Activos en mesa */}
+        {/* Perks Activos en mesa con iconos */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {mejorasActivas.length > 0 ? (
-            mejorasActivas.map(p => (
-              <span
-                key={p.id}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  backgroundColor: `${p.color}15`,
-                  border: `1px solid ${p.color}40`,
-                  color: p.color
-                }}
-              >
-                {p.label}
-              </span>
-            ))
+            mejorasActivas.map(p => {
+              const IconComp = p.Icon
+              return (
+                <span
+                  key={p.id}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    backgroundColor: `${p.color}15`,
+                    border: `1px solid ${p.color}40`,
+                    color: p.color,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                >
+                  <IconComp size={12} />
+                  <span>{p.label}</span>
+                </span>
+              )
+            })
           ) : (
             <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
               Sin perks activos · Compra ventajas en la Tienda

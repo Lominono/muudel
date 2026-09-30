@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { TabBar } from './components/TabBar'
@@ -10,11 +11,46 @@ import { PantallaPerfil } from './pages/PantallaPerfil'
 import { PantallaAdmin } from './pages/PantallaAdmin'
 import { PantallaCompletarPerfil } from './pages/PantallaCompletarPerfil'
 import { EmblemaRacha } from './components/icons/EmblemaRacha'
+import { suscribirEvento } from './utils/realtimeHub'
+import { sound } from './utils/haptics'
+import { Bell, AlertTriangle, X } from 'lucide-react'
 
 export { useAuth }
 
 function ContenidoApp() {
   const { session, perfil, cargando, cerrarSesion } = useAuth()
+  const [alertaClase, setAlertaClase] = useState(null)
+
+  // Escuchar notificaciones y comunicados globales de clase en vivo
+  useEffect(() => {
+    const desuscribirNotif = suscribirEvento('notificacion_push_clase', (data) => {
+      if (data) {
+        sound.playPop()
+        setAlertaClase(data)
+        setTimeout(() => {
+          setAlertaClase(prev => (prev?.id === data.id ? null : prev))
+        }, 9000)
+      }
+    })
+
+    const desuscribirAviso = suscribirEvento('aviso_admin', (data) => {
+      if (data?.texto) {
+        sound.playPop()
+        setAlertaClase({
+          id: 'aviso-' + Date.now(),
+          titulo: 'Comunicado de Moderación',
+          mensaje: data.texto,
+          nivel: 'general',
+          hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })
+      }
+    })
+
+    return () => {
+      desuscribirNotif()
+      desuscribirAviso()
+    }
+  }, [])
 
   if (cargando) {
     return (
@@ -134,6 +170,87 @@ function ContenidoApp() {
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: session ? 84 : 0 }}>
+      {/* Banner flotante de Notificación / Alerta de Clase */}
+      {alertaClase && (
+        <aside
+          role="alert"
+          style={{
+            position: 'fixed',
+            top: 14,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 28px)',
+            maxWidth: 520,
+            zIndex: 9999,
+            backgroundColor: alertaClase.nivel === 'urgente' ? 'rgba(217, 56, 41, 0.95)' : 'rgba(26, 29, 33, 0.95)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            color: '#FFFFFF',
+            borderRadius: 16,
+            padding: '12px 16px',
+            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.35)',
+            border: alertaClase.nivel === 'urgente' ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid rgba(255, 255, 255, 0.15)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: alertaClase.nivel === 'urgente' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 122, 255, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            {alertaClase.nivel === 'urgente' ? (
+              <AlertTriangle size={20} color="#FFFFFF" />
+            ) : (
+              <Bell size={20} color="#60A5FA" />
+            )}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <strong style={{ fontSize: 14, fontWeight: 700, letterSpacing: -0.2 }}>
+                {alertaClase.titulo || 'Aviso de Clase SMR2'}
+              </strong>
+              {alertaClase.hora && (
+                <span style={{ fontSize: 11, opacity: 0.7, fontFamily: 'monospace' }}>
+                  {alertaClase.hora}
+                </span>
+              )}
+            </div>
+            <p style={{ margin: '3px 0 0', fontSize: 13, lineHeight: 1.35, opacity: 0.92, wordBreak: 'break-word' }}>
+              {alertaClase.mensaje}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAlertaClase(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#FFFFFF',
+              opacity: 0.7,
+              cursor: 'pointer',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Cerrar notificación"
+          >
+            <X size={16} />
+          </button>
+        </aside>
+      )}
+
       <Routes>
         {!session ? (
           <Route path="*" element={<PantallaInicio />} />
