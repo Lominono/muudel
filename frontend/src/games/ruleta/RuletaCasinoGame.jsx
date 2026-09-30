@@ -1,5 +1,5 @@
 // frontend/src/games/ruleta/RuletaCasinoGame.jsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { sound, triggerConfetti } from '../../utils/haptics'
 import { supabase } from '../../utils/supabase'
 import { transmitirEvento } from '../../utils/realtimeHub'
@@ -9,8 +9,6 @@ import {
   Trophy,
   History,
   Coins,
-  ChevronRight,
-  Volume2,
   Trash2,
   Copy
 } from 'lucide-react'
@@ -36,7 +34,45 @@ const FICHAS_DISPONIBLES = [
   { valor: 20, color: '#FF9500', borde: '#C97500', texto: '#FFF' },
 ]
 
-export const APUESTA_MAXIMA_MESA = 25 // Nerf: Máximo 25 puntos por tirada en la mesa
+export const APUESTA_MAXIMA_MESA = 25
+
+const TOTAL_SECTORS = ROULETTE_NUMBERS.length
+const ANGLE_PER_SECTOR = (Math.PI * 2) / TOTAL_SECTORS
+
+function generateSecureRandomClient(max) {
+  const array = new Uint32Array(1)
+  crypto.getRandomValues(array)
+  return array[0] % max
+}
+
+async function obtenerNumeroGanadorServidor(token) {
+  try {
+    const resp = await fetch('/api/ruleta/girar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    return data.numeroGanador
+  } catch (e) {
+    return null
+  }
+}
+
+// Helper: get color for a roulette number
+function getNumColor(num) {
+  if (num === 0) return '#34C759'
+  if (RED_NUMBERS.has(num)) return '#FF3B30'
+  return '#1C1C1E'
+}
+
+// Cubic ease-out for smooth deceleration
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3)
+}
 
 export function RuletaCasinoGame({ perfil, setPerfil }) {
   const canvasRef = useRef(null)
@@ -44,8 +80,8 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
 
   // Estados del juego
   const [girando, setGirando] = useState(false)
-  const [fichaSeleccionada, setFichaSeleccionada] = useState(1) // Empezar en ficha de 1 pt
-  const [apuestas, setApuestas] = useState({}) // { 'rojo': 10, '17': 5, 'par': 5 }
+  const [fichaSeleccionada, setFichaSeleccionada] = useState(1)
+  const [apuestas, setApuestas] = useState({})
   const [ultimaApuesta, setUltimaApuesta] = useState(null)
   const [ultimoNumero, setUltimoNumero] = useState(null)
   const [historial, setHistorial] = useState(() => {
@@ -68,174 +104,199 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     }
   })
 
-  // Referencias para la animación física en Canvas
-  const physicsRef = useRef({
-    wheelAngle: 0,
-    ballAngle: 0,
-    ballRadius: 110,
-    wheelSpeed: 0,
-    ballSpeed: 0,
-    targetNumber: 0,
-    isStopping: false,
-    lastClickSector: -1,
-  })
+  // Canvas sizing — responsive to container
+  const [canvasSize, setCanvasSize] = useState(300)
+  const containerRef = useRef(null)
+
+  // Persistent wheel angle so the wheel stays where it stopped
+  const wheelAngleRef = useRef(0)
 
   const totalApostado = Object.values(apuestas).reduce((acc, curr) => acc + curr, 0)
   const saldoActual = perfil?.puntos_total || 0
 
-  // Inicializar canvas y loop de render
+  // Responsive canvas sizing
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const dpr = window.devicePixelRatio || 1
-
-    canvas.width = 340 * dpr
-    canvas.height = 340 * dpr
-    ctx.scale(dpr, dpr)
-
-    drawRoulette(ctx, physicsRef.current.wheelAngle, physicsRef.current.ballAngle, physicsRef.current.ballRadius)
-
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    const updateSize = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth
+        const sz = Math.min(w - 24, 340) // max 340px, with 12px padding each side
+        setCanvasSize(Math.max(220, sz))
+      }
     }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Función para dibujar la Ruleta en Canvas estilo Apple HIG
-  const drawRoulette = (ctx, wheelAngle, ballAngle, ballRadius) => {
-    const centerX = 170
-    const centerY = 170
-    const outerRadius = 160
-    const innerRadius = 100
-    const hubRadius = 45
+  // Draw function: pure, no side effects
+  const drawRoulette = useCallback((ctx, wheelAngle, ballAngle, ballRadius, size) => {
+    const cx = size / 2
+    const cy = size / 2
+    const scale = size / 340
+    const outerR = 160 * scale
+    const innerR = 100 * scale
+    const hubR = 45 * scale
 
-    ctx.clearRect(0, 0, 340, 340)
+    ctx.clearRect(0, 0, size, size)
 
-    // Sombra suave bajo la rueda
+    // Shadow beneath wheel
     ctx.save()
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.15)'
-    ctx.shadowBlur = 16
-    ctx.shadowOffsetY = 4
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.18)'
+    ctx.shadowBlur = 14 * scale
+    ctx.shadowOffsetY = 3 * scale
     ctx.beginPath()
-    ctx.arc(centerX, centerY, outerRadius, 0, Math.PI * 2)
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2)
     ctx.fillStyle = '#1C1C1E'
     ctx.fill()
     ctx.restore()
 
-    // Borde exterior de madera / bronce satinado
+    // Outer chrome ring
     ctx.beginPath()
-    ctx.arc(centerX, centerY, outerRadius, 0, Math.PI * 2)
-    ctx.lineWidth = 8
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2)
+    ctx.lineWidth = 6 * scale
     ctx.strokeStyle = '#3A3A3C'
     ctx.stroke()
 
-    // Pista de la bola
+    // Ball track
     ctx.beginPath()
-    ctx.arc(centerX, centerY, outerRadius - 6, 0, Math.PI * 2)
-    ctx.lineWidth = 14
+    ctx.arc(cx, cy, outerR - 5 * scale, 0, Math.PI * 2)
+    ctx.lineWidth = 12 * scale
     ctx.strokeStyle = '#2C2C2E'
     ctx.stroke()
 
-    // Casillas de números
-    const totalSectors = ROULETTE_NUMBERS.length
-    const anglePerSector = (Math.PI * 2) / totalSectors
-
-    for (let i = 0; i < totalSectors; i++) {
+    // Number sectors
+    for (let i = 0; i < TOTAL_SECTORS; i++) {
       const num = ROULETTE_NUMBERS[i]
-      const startAngle = wheelAngle + i * anglePerSector
-      const endAngle = startAngle + anglePerSector
+      const startA = wheelAngle + i * ANGLE_PER_SECTOR
+      const endA = startA + ANGLE_PER_SECTOR
 
       ctx.beginPath()
-      ctx.moveTo(centerX, centerY)
-      ctx.arc(centerX, centerY, outerRadius - 14, startAngle, endAngle)
+      ctx.moveTo(cx, cy)
+      ctx.arc(cx, cy, outerR - 12 * scale, startA, endA)
       ctx.closePath()
 
-      if (num === 0) {
-        ctx.fillStyle = '#34C759' // Verde Apple
-      } else if (RED_NUMBERS.has(num)) {
-        ctx.fillStyle = '#FF3B30' // Rojo Apple
-      } else {
-        ctx.fillStyle = '#1C1C1E' // Negro mate
-      }
+      ctx.fillStyle = getNumColor(num)
       ctx.fill()
 
-      // Separador dorado/plateado fino
-      ctx.lineWidth = 1
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
+      // Sector separator
+      ctx.lineWidth = 0.8 * scale
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)'
       ctx.stroke()
 
-      // Número
+      // Number label
       ctx.save()
-      ctx.translate(centerX, centerY)
-      ctx.rotate(startAngle + anglePerSector / 2)
+      ctx.translate(cx, cy)
+      ctx.rotate(startA + ANGLE_PER_SECTOR / 2)
       ctx.textAlign = 'right'
       ctx.textBaseline = 'middle'
       ctx.fillStyle = '#FFFFFF'
-      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
-      ctx.fillText(String(num), outerRadius - 20, 0)
+      ctx.font = `bold ${Math.round(10 * scale)}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`
+      ctx.fillText(String(num), outerR - 18 * scale, 0)
       ctx.restore()
     }
 
-    // Pista interior cónica
+    // Inner cone track
     ctx.beginPath()
-    ctx.arc(centerX, centerY, innerRadius, 0, Math.PI * 2)
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2)
     ctx.fillStyle = '#2C2C2E'
     ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
+    ctx.lineWidth = 1.5 * scale
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)'
     ctx.stroke()
 
-    // Torreta central (torreta de ruleta de 4 brazos)
+    // Hub
     ctx.beginPath()
-    ctx.arc(centerX, centerY, hubRadius, 0, Math.PI * 2)
+    ctx.arc(cx, cy, hubR, 0, Math.PI * 2)
     ctx.fillStyle = '#48484A'
     ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+    ctx.lineWidth = 1.5 * scale
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
     ctx.stroke()
 
-    // 4 brazos de la torreta girando con la rueda
+    // 4 spokes rotating with wheel
     ctx.save()
-    ctx.translate(centerX, centerY)
+    ctx.translate(cx, cy)
     ctx.rotate(wheelAngle)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'
-    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)'
+    ctx.lineWidth = 2.5 * scale
     ctx.lineCap = 'round'
     for (let b = 0; b < 4; b++) {
       ctx.rotate(Math.PI / 2)
       ctx.beginPath()
       ctx.moveTo(0, 0)
-      ctx.lineTo(hubRadius - 6, 0)
+      ctx.lineTo(hubR - 5 * scale, 0)
       ctx.stroke()
       ctx.beginPath()
-      ctx.arc(hubRadius - 6, 0, 4, 0, Math.PI * 2)
+      ctx.arc(hubR - 5 * scale, 0, 3.5 * scale, 0, Math.PI * 2)
       ctx.fillStyle = '#FFFFFF'
       ctx.fill()
     }
     ctx.restore()
 
-    // Cúpula central
+    // Center dome
     ctx.beginPath()
-    ctx.arc(centerX, centerY, 14, 0, Math.PI * 2)
+    ctx.arc(cx, cy, 12 * scale, 0, Math.PI * 2)
     ctx.fillStyle = '#E5E5EA'
     ctx.fill()
 
-    // DIBUJAR LA BOLA DE MARFIL
-    const ballX = centerX + Math.cos(ballAngle) * ballRadius
-    const ballY = centerY + Math.sin(ballAngle) * ballRadius
+    // BALL — draw at specified angle and radius
+    const ballX = cx + Math.cos(ballAngle) * (ballRadius * scale)
+    const ballY = cy + Math.sin(ballAngle) * (ballRadius * scale)
 
     ctx.save()
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
-    ctx.shadowBlur = 6
-    ctx.shadowOffsetY = 2
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+    ctx.shadowBlur = 5 * scale
+    ctx.shadowOffsetY = 2 * scale
     ctx.beginPath()
-    ctx.arc(ballX, ballY, 5.5, 0, Math.PI * 2)
+    ctx.arc(ballX, ballY, 5 * scale, 0, Math.PI * 2)
     ctx.fillStyle = '#FFFFFF'
     ctx.fill()
+    // Shine dot
+    ctx.beginPath()
+    ctx.arc(ballX - 1.5 * scale, ballY - 1.5 * scale, 1.5 * scale, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'
+    ctx.fill()
     ctx.restore()
-  }
 
-  // Manejo de giro de la ruleta
+    // POINTER / MARKER at top (12 o'clock) — drawn outside the wheel
+    const pointerY = cy - outerR - 2 * scale
+    ctx.save()
+    ctx.translate(cx, pointerY)
+    ctx.beginPath()
+    ctx.moveTo(-7 * scale, -12 * scale)
+    ctx.lineTo(7 * scale, -12 * scale)
+    ctx.lineTo(0, 2 * scale)
+    ctx.closePath()
+    ctx.fillStyle = '#FFD60A'
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'
+    ctx.shadowBlur = 4 * scale
+    ctx.fill()
+    ctx.restore()
+  }, [])
+
+  // Initial static draw
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const sz = canvasSize
+
+    canvas.width = sz * dpr
+    canvas.height = sz * dpr
+    canvas.style.width = sz + 'px'
+    canvas.style.height = sz + 'px'
+    const ctx = canvas.getContext('2d')
+    ctx.scale(dpr, dpr)
+
+    // Draw static wheel at last known angle, ball resting in the stopped position
+    drawRoulette(ctx, wheelAngleRef.current, -Math.PI / 2, 117, sz)
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    }
+  }, [canvasSize, drawRoulette])
+
+  // ─── SPIN LOGIC ─────────────────────────────────────────────
   const girarRuleta = async () => {
     if (girando || totalApostado <= 0) return
     if (saldoActual < totalApostado) {
@@ -247,7 +308,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     setResultadoGanancia(null)
     setUltimaApuesta({ ...apuestas })
 
-    // Descontar inmediatamente la apuesta del saldo
+    // Deduct bet immediately
     const nuevoSaldoTrasApuesta = saldoActual - totalApostado
     const perfilActualizado = { ...perfil, puntos_total: nuevoSaldoTrasApuesta }
     setPerfil(perfilActualizado)
@@ -257,75 +318,104 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
       await supabase.from('profiles').update({ puntos_total: nuevoSaldoTrasApuesta }).eq('id', perfil.id)
     } catch (e) {}
 
-    // Elegir número ganador de forma justa (0 al 36)
-    const indexGanador = Math.floor(Math.random() * ROULETTE_NUMBERS.length)
-    const numeroGanador = ROULETTE_NUMBERS[indexGanador]
+    // 1. Determine winning number (server-first, fallback to crypto client)
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    let numeroGanador = null
 
-    const totalSectors = ROULETTE_NUMBERS.length
-    const anglePerSector = (Math.PI * 2) / totalSectors
+    if (token) {
+      numeroGanador = await obtenerNumeroGanadorServidor(token)
+    }
 
-    // Configurar física de animación: rueda gira en un sentido, bola en el opuesto
-    const physics = physicsRef.current
-    physics.wheelSpeed = 0.18 + Math.random() * 0.05 // Velocidad rueda
-    physics.ballSpeed = -(0.32 + Math.random() * 0.08) // Velocidad bola (inversa)
-    physics.ballRadius = 145 // Pista exterior
-    physics.targetNumber = numeroGanador
-    physics.isStopping = false
+    if (numeroGanador === null) {
+      const indexGanador = generateSecureRandomClient(TOTAL_SECTORS)
+      numeroGanador = ROULETTE_NUMBERS[indexGanador]
+    }
 
+    // 2. Calculate final wheel angle so that the winning sector sits under the pointer (top, -PI/2)
+    const targetIndex = ROULETTE_NUMBERS.indexOf(numeroGanador)
+    // The pointer reads the sector at angle -PI/2 (top). We need:
+    //   wheelAngle + targetIndex * ANGLE_PER_SECTOR + ANGLE_PER_SECTOR/2 = -PI/2 + 2*PI*k
+    // Solve for wheelAngle:
+    const sectorCenterAngle = targetIndex * ANGLE_PER_SECTOR + ANGLE_PER_SECTOR / 2
+    const finalWheelAngle = -Math.PI / 2 - sectorCenterAngle
+
+    // 3. Animate: wheel spins forward N full rotations and lands at finalWheelAngle
+    //    Ball spins backward in the track, then drops into the pocket
+    const startWheelAngle = wheelAngleRef.current
+    // Guarantee at least 5 full rotations for visual effect
+    const fullRotations = 5
+    const totalWheelTravel = fullRotations * Math.PI * 2 + ((finalWheelAngle - startWheelAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
+
+    const DURATION = 5500 // ms
     const startTime = performance.now()
-    const DURATION = 6500 // 6.5 segundos de tensión realista
+
+    // Ball starts at a random position on the outer track and spins opposite to the wheel
+    const ballStartAngle = Math.random() * Math.PI * 2
+    // Ball ends at the pointer position (-PI/2) in world space, which relative to wheel = -PI/2 - finalWheelAngle
+    const ballFinalAngle = -Math.PI / 2
+    // Total ball travel: spins in the opposite direction (negative) for several rotations
+    const ballRotations = 7
+    const ballTotalTravel = -(ballRotations * Math.PI * 2 + ((ballStartAngle - ballFinalAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2))
+
+    let lastClickSector = -1
 
     const animar = (currentTime) => {
       const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / DURATION, 1)
+      const t = Math.min(elapsed / DURATION, 1)
 
-      // Desaceleración suave física (ease-out cúbico)
-      const factorFrenado = Math.pow(1 - progress, 2.2)
+      // Eased progress — smooth deceleration
+      const easedT = easeOutCubic(t)
 
-      physics.wheelAngle = (physics.wheelAngle + physics.wheelSpeed * factorFrenado) % (Math.PI * 2)
-      physics.ballAngle = (physics.ballAngle + physics.ballSpeed * factorFrenado) % (Math.PI * 2)
+      // Wheel position
+      const currentWheelAngle = startWheelAngle + totalWheelTravel * easedT
 
-      // La bola cae hacia el centro al final de la tirada
-      if (progress > 0.6) {
-        const fallProgress = (progress - 0.6) / 0.4
-        physics.ballRadius = 145 - 28 * Math.sin(fallProgress * Math.PI * 0.5)
+      // Ball angle (world-space)
+      const currentBallAngle = ballStartAngle + ballTotalTravel * easedT
 
-        // Pequeño rebote al final
-        if (progress > 0.88 && progress < 0.98) {
-          physics.ballRadius += Math.sin((progress - 0.88) * Math.PI * 8) * 3
+      // Ball radius: stays on outer track, then drops into pocket in last 30%
+      let ballR = 145
+      if (t > 0.7) {
+        const dropT = (t - 0.7) / 0.3
+        ballR = 145 - 28 * easeOutCubic(dropT)
+        // Small bounce near the end
+        if (t > 0.88 && t < 0.97) {
+          ballR += Math.sin((t - 0.88) * Math.PI * 10) * 2.5
         }
       }
 
-      // Sonido mecánico de casilla/aguja al pasar
-      const currentSector = Math.floor((physics.ballAngle / (Math.PI * 2)) * totalSectors)
-      if (currentSector !== physics.lastClickSector) {
-        physics.lastClickSector = currentSector
-        if (progress < 0.92) {
-          sound.playRouletteClick()
+      // Click sounds based on sector changes
+      const relAngle = ((currentBallAngle - currentWheelAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
+      const currentSector = Math.floor(relAngle / ANGLE_PER_SECTOR)
+      if (currentSector !== lastClickSector) {
+        lastClickSector = currentSector
+        if (t < 0.93) {
+          try { sound.playRouletteClick() } catch (e) {}
         }
       }
 
-      // Al terminar: forzar posición exacta de la casilla ganadora
-      if (progress >= 1) {
-        const targetIndex = ROULETTE_NUMBERS.indexOf(numeroGanador)
-        const targetAngle = physics.wheelAngle + targetIndex * anglePerSector + anglePerSector / 2
-        physics.ballAngle = targetAngle
-        physics.ballRadius = 117 // Asentada en la casilla
-
+      // Final frame: snap to exact positions
+      if (t >= 1) {
+        wheelAngleRef.current = finalWheelAngle
         const canvas = canvasRef.current
         if (canvas) {
+          const dpr = window.devicePixelRatio || 1
+          const sz = canvasSize
           const ctx = canvas.getContext('2d')
-          drawRoulette(ctx, physics.wheelAngle, physics.ballAngle, physics.ballRadius)
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          drawRoulette(ctx, finalWheelAngle, ballFinalAngle, 117, sz)
         }
-
         finalizarGiro(numeroGanador, nuevoSaldoTrasApuesta)
         return
       }
 
+      // Draw current frame
       const canvas = canvasRef.current
       if (canvas) {
+        const dpr = window.devicePixelRatio || 1
+        const sz = canvasSize
         const ctx = canvas.getContext('2d')
-        drawRoulette(ctx, physics.wheelAngle, physics.ballAngle, physics.ballRadius)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        drawRoulette(ctx, currentWheelAngle, currentBallAngle, ballR, sz)
       }
 
       animFrameRef.current = requestAnimationFrame(animar)
@@ -334,17 +424,15 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     animFrameRef.current = requestAnimationFrame(animar)
   }
 
-  // Evaluar premios y actualizar saldo del alumno
+  // ─── PAYOUT LOGIC ──────────────────────────────────────────
   const finalizarGiro = async (numeroGanador, saldoBase) => {
     setGirando(false)
     setUltimoNumero(numeroGanador)
 
-    // Actualizar historial
     const nuevoHistorial = [numeroGanador, ...historial.slice(0, 9)]
     setHistorial(nuevoHistorial)
     localStorage.setItem('muudel_ruleta_historial', JSON.stringify(nuevoHistorial))
 
-    // Calcular ganancias según la tabla oficial de ruleta europea
     let gananciaTotal = 0
     let detallesGanadores = []
 
@@ -357,87 +445,62 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     const esDocena1 = numeroGanador >= 1 && numeroGanador <= 12
     const esDocena2 = numeroGanador >= 13 && numeroGanador <= 24
     const esDocena3 = numeroGanador >= 25 && numeroGanador <= 36
-    const colIndex = numeroGanador === 0 ? -1 : (numeroGanador - 1) % 3 // 0: Col1, 1: Col2, 2: Col3
+    const colIndex = numeroGanador === 0 ? -1 : (numeroGanador - 1) % 3
 
-    // 1. Plenos a números (36x)
     if (apuestas[String(numeroGanador)]) {
-      const monto = apuestas[String(numeroGanador)]
-      const pago = monto * 36
+      const pago = apuestas[String(numeroGanador)] * 36
       gananciaTotal += pago
-      detallesGanadores.push(`Pleno al ${numeroGanador} (+${pago} pts)`)
+      detallesGanadores.push(`Pleno ${numeroGanador} (+${pago})`)
     }
-
-    // 2. Rojo / Negro (2x)
     if (esRojo && apuestas['rojo']) {
-      const pago = apuestas['rojo'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`Rojo (+${pago} pts)`)
+      const pago = apuestas['rojo'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`Rojo (+${pago})`)
     }
     if (esNegro && apuestas['negro']) {
-      const pago = apuestas['negro'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`Negro (+${pago} pts)`)
+      const pago = apuestas['negro'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`Negro (+${pago})`)
     }
-
-    // 3. Par / Impar (2x)
     if (esPar && apuestas['par']) {
-      const pago = apuestas['par'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`Par (+${pago} pts)`)
+      const pago = apuestas['par'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`Par (+${pago})`)
     }
     if (esImpar && apuestas['impar']) {
-      const pago = apuestas['impar'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`Impar (+${pago} pts)`)
+      const pago = apuestas['impar'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`Impar (+${pago})`)
     }
-
-    // 4. Falta (1-18) / Pasa (19-36) (2x)
     if (esFalta && apuestas['1-18']) {
-      const pago = apuestas['1-18'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`1-18 (+${pago} pts)`)
+      const pago = apuestas['1-18'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`1-18 (+${pago})`)
     }
     if (esPasa && apuestas['19-36']) {
-      const pago = apuestas['19-36'] * 2
-      gananciaTotal += pago
-      detallesGanadores.push(`19-36 (+${pago} pts)`)
+      const pago = apuestas['19-36'] * 2; gananciaTotal += pago
+      detallesGanadores.push(`19-36 (+${pago})`)
     }
-
-    // 5. Docenas (3x)
     if (esDocena1 && apuestas['docena1']) {
-      const pago = apuestas['docena1'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`1ª Docena (+${pago} pts)`)
+      const pago = apuestas['docena1'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`1ª Doc (+${pago})`)
     }
     if (esDocena2 && apuestas['docena2']) {
-      const pago = apuestas['docena2'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`2ª Docena (+${pago} pts)`)
+      const pago = apuestas['docena2'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`2ª Doc (+${pago})`)
     }
     if (esDocena3 && apuestas['docena3']) {
-      const pago = apuestas['docena3'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`3ª Docena (+${pago} pts)`)
+      const pago = apuestas['docena3'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`3ª Doc (+${pago})`)
     }
-
-    // 6. Columnas (3x)
     if (colIndex === 0 && apuestas['col1']) {
-      const pago = apuestas['col1'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`Columna 1 (+${pago} pts)`)
+      const pago = apuestas['col1'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`Col 1 (+${pago})`)
     }
     if (colIndex === 1 && apuestas['col2']) {
-      const pago = apuestas['col2'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`Columna 2 (+${pago} pts)`)
+      const pago = apuestas['col2'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`Col 2 (+${pago})`)
     }
     if (colIndex === 2 && apuestas['col3']) {
-      const pago = apuestas['col3'] * 3
-      gananciaTotal += pago
-      detallesGanadores.push(`Columna 3 (+${pago} pts)`)
+      const pago = apuestas['col3'] * 3; gananciaTotal += pago
+      detallesGanadores.push(`Col 3 (+${pago})`)
     }
 
-    // Liquidar puntos finales
     const nuevoTotalFinal = saldoBase + gananciaTotal
     const perfilLiquidado = { ...perfil, puntos_total: nuevoTotalFinal }
     setPerfil(perfilLiquidado)
@@ -457,7 +520,6 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
       sound.playWinFanfare()
       if (gananciaTotal >= 30 || detallesGanadores.some(d => d.includes('Pleno'))) {
         triggerConfetti()
-        // Transmitir gran premio a la clase
         transmitirEvento('ruleta_gran_premio', {
           nombre: perfil?.nombre || 'Alumno SMR2',
           numero: numeroGanador,
@@ -469,931 +531,389 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     }
   }
 
-  // Añadir ficha a una casilla (nerf: límite máximo APUESTA_MAXIMA_MESA)
+  // ─── BET HANDLERS ──────────────────────────────────────────
   const handleApostar = (tipo) => {
     if (girando) return
-    const apostadoActual = apuestas[tipo] || 0
-    const disponibleParaApostar = saldoActual - totalApostado
-
-    if (totalApostado + fichaSeleccionada > APUESTA_MAXIMA_MESA) {
-      sound.playPop()
-      return
-    }
-
-    if (disponibleParaApostar < fichaSeleccionada) {
-      sound.playPop()
-      return
-    }
-
+    if (totalApostado + fichaSeleccionada > APUESTA_MAXIMA_MESA) { sound.playPop(); return }
+    if (saldoActual - totalApostado < fichaSeleccionada) { sound.playPop(); return }
     sound.playChipSound()
-    setApuestas(prev => ({
-      ...prev,
-      [tipo]: (prev[tipo] || 0) + fichaSeleccionada
-    }))
+    setApuestas(prev => ({ ...prev, [tipo]: (prev[tipo] || 0) + fichaSeleccionada }))
   }
 
-  // Limpiar todas las apuestas
   const limpiarApuestas = () => {
-    if (girando) return
-    sound.playPop()
-    setApuestas({})
-    setResultadoGanancia(null)
+    if (girando) return; sound.playPop(); setApuestas({}); setResultadoGanancia(null)
   }
 
-  // Doblar apuestas actuales (nerf: sin superar APUESTA_MAXIMA_MESA)
   const doblarApuestas = () => {
     if (girando || totalApostado === 0) return
-    if (totalApostado * 2 > APUESTA_MAXIMA_MESA) {
-      sound.playPop()
-      return
-    }
-    if (saldoActual - totalApostado < totalApostado) {
-      sound.playPop()
-      return
-    }
+    if (totalApostado * 2 > APUESTA_MAXIMA_MESA) { sound.playPop(); return }
+    if (saldoActual - totalApostado < totalApostado) { sound.playPop(); return }
     sound.playChipSound()
-    const dobladas = {}
-    for (const [k, v] of Object.entries(apuestas)) {
-      dobladas[k] = v * 2
-    }
-    setApuestas(dobladas)
+    const d = {}; for (const [k, v] of Object.entries(apuestas)) d[k] = v * 2; setApuestas(d)
   }
 
-  // Repetir última apuesta (nerf: sin superar APUESTA_MAXIMA_MESA)
   const repetirUltima = () => {
     if (girando || !ultimaApuesta) return
-    const requeridos = Object.values(ultimaApuesta).reduce((a, b) => a + b, 0)
-    if (requeridos > APUESTA_MAXIMA_MESA) {
-      sound.playPop()
-      return
-    }
-    if (saldoActual < requeridos) {
-      sound.playPop()
-      return
-    }
-    sound.playChipSound()
-    setApuestas({ ...ultimaApuesta })
+    const req = Object.values(ultimaApuesta).reduce((a, b) => a + b, 0)
+    if (req > APUESTA_MAXIMA_MESA || saldoActual < req) { sound.playPop(); return }
+    sound.playChipSound(); setApuestas({ ...ultimaApuesta })
   }
 
-  // Solicitar bono de emergencia único diario si el alumno se quedó a 0 puntos (+5 pts)
   const solicitarBono = async () => {
     if (solicitandoBono || saldoActual > 0 || yaReclamoBonoHoy) return
-    setSolicitandoBono(true)
-    sound.playStamp()
-
-    const nuevosPuntos = 5 // Nerf: +5 pts de emergencia (no 15 infinitos)
+    setSolicitandoBono(true); sound.playStamp()
+    const nuevosPuntos = 5
     const actualizado = { ...perfil, puntos_total: nuevosPuntos }
     setPerfil(actualizado)
-    try {
-      localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
-      localStorage.setItem(bonoStorageKey, '1')
-    } catch (e) {}
+    try { localStorage.setItem('racha_local_user', JSON.stringify(actualizado)); localStorage.setItem(bonoStorageKey, '1') } catch (e) {}
     setYaReclamoBonoHoy(true)
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-    } catch (e) {}
-
-    triggerConfetti()
-    setSolicitandoBono(false)
+    try { await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id) } catch (e) {}
+    triggerConfetti(); setSolicitandoBono(false)
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* CABECERA DE LA MESA Y SALDO */}
-      <div
-        className="card"
+  // ─── REUSABLE CHIP BADGE ─────────────────────────────────
+  const ChipBadge = ({ amount }) => amount ? (
+    <span style={{
+      backgroundColor: '#FFD60A', color: '#000', borderRadius: 8,
+      padding: '1px 5px', fontSize: 9, fontWeight: 900, marginTop: 1
+    }}>{amount}p</span>
+  ) : null
+
+  // ─── NUM BUTTON ──────────────────────────────────────────
+  const NumBtn = ({ num }) => {
+    const apostado = apuestas[String(num)]
+    return (
+      <button
+        type="button"
+        onClick={() => handleApostar(String(num))}
         style={{
-          padding: '16px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12,
-          border: '1px solid var(--color-separator)'
+          minHeight: 38, borderRadius: 7,
+          backgroundColor: getNumColor(num),
+          color: '#FFF',
+          border: apostado ? '2px solid #FFD60A' : '1px solid rgba(255,255,255,0.08)',
+          fontWeight: 800, fontSize: 13, cursor: 'pointer',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '3px 2px', lineHeight: 1.1
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: 'rgba(255, 59, 48, 0.12)',
-              color: '#FF3B30',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(255, 59, 48, 0.15)'
-            }}
-          >
-            <Sparkles size={24} />
-          </div>
+        <span>{num}</span>
+        <ChipBadge amount={apostado} />
+      </button>
+    )
+  }
 
+  // ─── OUTSIDE BET BUTTON ─────────────────────────────────
+  const OutsideBtn = ({ id, label, bg, color: c, borderDefault }) => {
+    const apostado = apuestas[id]
+    return (
+      <button
+        type="button"
+        onClick={() => handleApostar(id)}
+        style={{
+          minHeight: 40, borderRadius: 8,
+          backgroundColor: bg || 'var(--color-surface-secondary)',
+          border: apostado ? '2px solid #FFD60A' : (borderDefault || '1px solid var(--color-separator)'),
+          color: c || 'var(--color-ink)',
+          fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '4px 2px', gap: 1
+        }}
+      >
+        <span>{label}</span>
+        <ChipBadge amount={apostado} />
+      </button>
+    )
+  }
+
+  // ─── RENDER ────────────────────────────────────────────────
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* HEADER: saldo + apuesta */}
+      <div className="card" style={{
+        padding: '12px 16px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexWrap: 'wrap', gap: 10,
+        border: '1px solid var(--color-separator)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 12,
+            backgroundColor: 'rgba(255, 59, 48, 0.12)', color: '#FF3B30',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Sparkles size={20} />
+          </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--color-ink)' }}>
-                Ruleta SMR2 Casino
-              </h2>
-              <span style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: 9999,
-                backgroundColor: 'rgba(52, 199, 89, 0.12)',
-                color: '#34C759',
-                textTransform: 'uppercase'
-              }}>
-                Europea 0-36
-              </span>
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', margin: '2px 0 0' }}>
-              Apuesta tus puntos de clase con multiplicadores oficiales hasta 36x.
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--color-ink)' }}>
+              Ruleta SMR2
+            </h2>
+            <p style={{ fontSize: 11, color: 'var(--color-secondary-ink)', margin: 0 }}>
+              Europea 0-36 · Hasta 36x
             </p>
           </div>
         </div>
 
-        {/* Saldo y Apuesta actual */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)', display: 'block', textTransform: 'uppercase', fontWeight: 600 }}>
-              Mis Puntos
+            <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)', display: 'block', textTransform: 'uppercase', fontWeight: 600 }}>
+              Saldo
             </span>
-            <strong style={{ fontSize: 18, color: 'var(--color-accent)', fontWeight: 800 }}>
-              {saldoActual} pts
+            <strong style={{ fontSize: 16, color: 'var(--color-accent)', fontWeight: 800 }}>
+              {saldoActual}
             </strong>
           </div>
-
-          <div style={{
-            height: 32,
-            width: 1,
-            backgroundColor: 'var(--color-separator)'
-          }} />
-
+          <div style={{ height: 28, width: 1, backgroundColor: 'var(--color-separator)' }} />
           <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)', display: 'block', textTransform: 'uppercase', fontWeight: 600 }}>
-              Apuesta Mesa
+            <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)', display: 'block', textTransform: 'uppercase', fontWeight: 600 }}>
+              Mesa
             </span>
-            <strong style={{ fontSize: 18, color: totalApostado > 0 ? '#FF9500' : 'var(--color-secondary-ink)', fontWeight: 800 }}>
-              {totalApostado} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>/ {APUESTA_MAXIMA_MESA} pts máx</span>
+            <strong style={{ fontSize: 16, color: totalApostado > 0 ? '#FF9500' : 'var(--color-secondary-ink)', fontWeight: 800 }}>
+              {totalApostado}<span style={{ fontSize: 10, fontWeight: 600 }}>/{APUESTA_MAXIMA_MESA}</span>
             </strong>
           </div>
         </div>
       </div>
 
-      {/* ÁREA PRINCIPAL: RUEDA CANVAS + PANEL DE RESULTADOS / HISTORIAL */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: 16,
-        alignItems: 'center'
-      }}>
-        {/* Canvas de la Ruleta */}
+      {/* WHEEL + RESULT — stacked on mobile */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Canvas */}
         <div
+          ref={containerRef}
           className="card"
           style={{
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid var(--color-separator)',
-            position: 'relative'
+            padding: 12, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            border: '1px solid var(--color-separator)', position: 'relative',
+            overflow: 'hidden'
           }}
         >
           <canvas
             ref={canvasRef}
-            style={{
-              width: 320,
-              height: 320,
-              maxWidth: '100%',
-              aspectRatio: '1/1',
-              borderRadius: '50%',
-              userSelect: 'none'
-            }}
+            style={{ width: canvasSize, height: canvasSize, maxWidth: '100%', userSelect: 'none' }}
           />
-
-          {/* Aguja / Marcador fijo superior */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 26,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '8px solid transparent',
-              borderRight: '8px solid transparent',
-              borderTop: '16px solid #FFD60A',
-              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
-              zIndex: 2,
-              pointerEvents: 'none'
-            }}
-          />
-
           {girando && (
             <div style={{
-              position: 'absolute',
-              bottom: 28,
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-              color: '#FFF',
-              padding: '6px 16px',
-              borderRadius: 20,
-              fontSize: 13,
-              fontWeight: 700,
-              backdropFilter: 'blur(8px)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
+              position: 'absolute', bottom: 16,
+              backgroundColor: 'rgba(0, 0, 0, 0.72)', color: '#FFF',
+              padding: '5px 14px', borderRadius: 16, fontSize: 12, fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 6
             }}>
-              <RotateCcw size={14} className="spin-slow" />
-              <span>Girando ruleta...</span>
+              <RotateCcw size={13} className="spin-slow" />
+              <span>Girando...</span>
             </div>
           )}
         </div>
 
-        {/* Panel lateral: Último resultado, Historial y Acciones */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Tarjeta del Último Número Salido */}
-          <div
-            className="card"
-            style={{
-              padding: '18px',
-              border: '1px solid var(--color-separator)',
-              textAlign: 'center',
-              backgroundColor: ultimoNumero === null
-                ? 'var(--color-cell-bg)'
-                : ultimoNumero === 0
-                ? 'rgba(52, 199, 89, 0.08)'
-                : RED_NUMBERS.has(ultimoNumero)
-                ? 'rgba(255, 59, 48, 0.08)'
-                : 'rgba(28, 28, 30, 0.08)'
-            }}
-          >
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-secondary-ink)' }}>
-              Último Número
+        {/* Last number + result + history */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {/* Last number */}
+          <div className="card" style={{
+            flex: '1 1 140px', padding: 14, border: '1px solid var(--color-separator)',
+            textAlign: 'center', minWidth: 140
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--color-secondary-ink)' }}>
+              Resultado
             </span>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, margin: '8px 0' }}>
-              <div
-                style={{
-                  width: 58,
-                  height: 58,
-                  borderRadius: 18,
-                  backgroundColor: ultimoNumero === null
-                    ? '#8E8E93'
-                    : ultimoNumero === 0
-                    ? '#34C759'
-                    : RED_NUMBERS.has(ultimoNumero)
-                    ? '#FF3B30'
-                    : '#1C1C1E',
-                  color: '#FFFFFF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 26,
-                  fontWeight: 900,
-                  boxShadow: '0 4px 14px rgba(0,0,0,0.18)'
-                }}
-              >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '6px 0' }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 14,
+                backgroundColor: ultimoNumero === null ? '#8E8E93' : getNumColor(ultimoNumero),
+                color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 22, fontWeight: 900, boxShadow: '0 3px 10px rgba(0,0,0,0.15)'
+              }}>
                 {ultimoNumero !== null ? ultimoNumero : '-'}
               </div>
-
               {ultimoNumero !== null && (
                 <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-ink)' }}>
-                    {ultimoNumero === 0 ? 'Cero (Verde)' : RED_NUMBERS.has(ultimoNumero) ? 'Rojo' : 'Negro'}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-ink)' }}>
+                    {ultimoNumero === 0 ? 'Cero' : RED_NUMBERS.has(ultimoNumero) ? 'Rojo' : 'Negro'}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                    {ultimoNumero === 0
-                      ? 'Casa'
-                      : `${ultimoNumero % 2 === 0 ? 'Par' : 'Impar'} • ${ultimoNumero <= 18 ? 'Falta (1-18)' : 'Pasa (19-36)'}`}
+                  <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+                    {ultimoNumero === 0 ? 'Casa' : `${ultimoNumero % 2 === 0 ? 'Par' : 'Impar'} · ${ultimoNumero <= 18 ? '1-18' : '19-36'}`}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Aviso de ganancia o pérdida */}
             {resultadoGanancia && (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  backgroundColor: resultadoGanancia.ganancia > 0 ? 'rgba(52, 199, 89, 0.15)' : 'rgba(255, 59, 48, 0.1)',
-                  color: resultadoGanancia.ganancia > 0 ? '#34C759' : '#FF3B30',
-                  fontSize: 13,
-                  fontWeight: 700
-                }}
-              >
-                {resultadoGanancia.ganancia > 0 ? (
-                  <>🎉 ¡Ganaste +{resultadoGanancia.ganancia} pts! ({resultadoGanancia.detalles.join(', ')})</>
-                ) : (
-                  <>Sin aciertos en esta tirada (-{totalApostado} pts). ¡Prueba de nuevo!</>
-                )}
+              <div style={{
+                marginTop: 6, padding: '6px 10px', borderRadius: 8,
+                backgroundColor: resultadoGanancia.ganancia > 0 ? 'rgba(52, 199, 89, 0.12)' : 'rgba(255, 59, 48, 0.08)',
+                color: resultadoGanancia.ganancia > 0 ? '#34C759' : '#FF3B30',
+                fontSize: 12, fontWeight: 700
+              }}>
+                {resultadoGanancia.ganancia > 0
+                  ? `+${resultadoGanancia.ganancia} pts (${resultadoGanancia.detalles.join(', ')})`
+                  : `Sin aciertos (-${totalApostado} pts)`}
               </div>
             )}
           </div>
 
-          {/* Historial de últimos 7 números */}
-          <div className="card" style={{ padding: '14px 16px', border: '1px solid var(--color-separator)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <History size={14} color="var(--color-secondary-ink)" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase' }}>
-                Historial de Tiradas
+          {/* History */}
+          <div className="card" style={{
+            flex: '1 1 200px', padding: '12px 14px', border: '1px solid var(--color-separator)', minWidth: 200
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+              <History size={13} color="var(--color-secondary-ink)" />
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase' }}>
+                Historial
               </span>
             </div>
-
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {historial.map((num, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 10,
-                    backgroundColor: num === 0 ? '#34C759' : RED_NUMBERS.has(num) ? '#FF3B30' : '#1C1C1E',
-                    color: '#FFF',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}
-                >
+                <div key={idx} style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  backgroundColor: getNumColor(num), color: '#FFF',
+                  fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
                   {num}
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Botón principal de Giro */}
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={girando || totalApostado <= 0}
-            onClick={girarRuleta}
-            style={{
-              minHeight: 52,
-              fontSize: 16,
-              fontWeight: 800,
-              borderRadius: 16,
-              backgroundColor: totalApostado > 0 && !girando ? 'var(--color-accent)' : undefined,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              boxShadow: totalApostado > 0 ? '0 4px 16px rgba(0,122,255,0.3)' : 'none'
-            }}
-          >
-            <RotateCcw size={18} className={girando ? 'spin-slow' : ''} />
-            <span>{girando ? 'GIRANDO...' : `GIRAR RULETA (${totalApostado} pts)`}</span>
-          </button>
-
-          {/* Si no tiene puntos suficientes (saldo 0), auxilio con estricto límite diario */}
-          {saldoActual <= 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', width: '100%' }}>
-              <button
-                type="button"
-                onClick={solicitarBono}
-                disabled={solicitandoBono || yaReclamoBonoHoy}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: 12,
-                  border: yaReclamoBonoHoy ? '1px dashed var(--color-separator)' : '1px dashed #34C759',
-                  backgroundColor: yaReclamoBonoHoy ? 'rgba(142, 142, 147, 0.08)' : 'rgba(52, 199, 89, 0.08)',
-                  color: yaReclamoBonoHoy ? 'var(--color-secondary-ink)' : '#34C759',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: yaReclamoBonoHoy ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  opacity: yaReclamoBonoHoy ? 0.7 : 1
-                }}
-              >
-                <Coins size={16} />
-                <span>
-                  {yaReclamoBonoHoy
-                    ? 'Bono de emergencia agotado hoy (Vuelve mañana)'
-                    : 'Bono de emergencia (+5 pts, 1 vez al día)'}
-                </span>
-              </button>
-              <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)', textAlign: 'center' }}>
-                {yaReclamoBonoHoy
-                  ? 'Gana puntos asistiendo a clase a las 15:30, en el reto de Yoshi o en el chat.'
-                  : 'Fondo de rescate único por día para evitar bancarrota total.'}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* SELECTOR DE FICHAS */}
-      <div
-        className="card"
+      {/* SPIN BUTTON */}
+      <button
+        type="button"
+        className="btn-primary"
+        disabled={girando || totalApostado <= 0}
+        onClick={girarRuleta}
         style={{
-          padding: '14px 18px',
-          border: '1px solid var(--color-separator)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12
+          minHeight: 48, fontSize: 15, fontWeight: 800, borderRadius: 14,
+          backgroundColor: totalApostado > 0 && !girando ? 'var(--color-accent)' : undefined,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          boxShadow: totalApostado > 0 ? '0 3px 12px rgba(0,122,255,0.25)' : 'none'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
-            Ficha activa:
-          </span>
-          <div style={{ display: 'flex', gap: 10 }}>
+        <RotateCcw size={16} className={girando ? 'spin-slow' : ''} />
+        <span>{girando ? 'GIRANDO...' : `GIRAR (${totalApostado} pts)`}</span>
+      </button>
+
+      {/* Emergency bonus */}
+      {saldoActual <= 0 && (
+        <button
+          type="button"
+          onClick={solicitarBono}
+          disabled={solicitandoBono || yaReclamoBonoHoy}
+          style={{
+            padding: '10px 14px', borderRadius: 12,
+            border: yaReclamoBonoHoy ? '1px dashed var(--color-separator)' : '1px dashed #34C759',
+            backgroundColor: yaReclamoBonoHoy ? 'rgba(142, 142, 147, 0.06)' : 'rgba(52, 199, 89, 0.06)',
+            color: yaReclamoBonoHoy ? 'var(--color-secondary-ink)' : '#34C759',
+            fontSize: 12, fontWeight: 700, cursor: yaReclamoBonoHoy ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: yaReclamoBonoHoy ? 0.6 : 1
+          }}
+        >
+          <Coins size={15} />
+          <span>{yaReclamoBonoHoy ? 'Bono agotado hoy' : 'Bono emergencia (+5 pts, 1/día)'}</span>
+        </button>
+      )}
+
+      {/* CHIP SELECTOR */}
+      <div className="card" style={{
+        padding: '10px 14px', border: '1px solid var(--color-separator)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 8
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>Ficha:</span>
+          <div style={{ display: 'flex', gap: 6 }}>
             {FICHAS_DISPONIBLES.map((f) => {
               const activa = fichaSeleccionada === f.valor
               return (
                 <button
-                  key={f.valor}
-                  type="button"
-                  onClick={() => {
-                    sound.playChipSound()
-                    setFichaSeleccionada(f.valor)
-                  }}
+                  key={f.valor} type="button"
+                  onClick={() => { sound.playChipSound(); setFichaSeleccionada(f.valor) }}
                   style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: '50%',
-                    backgroundColor: f.color,
-                    color: f.texto,
+                    width: 38, height: 38, borderRadius: '50%',
+                    backgroundColor: f.color, color: f.texto,
                     border: activa ? '3px solid #FFD60A' : `2px solid ${f.borde}`,
-                    boxShadow: activa ? '0 0 10px rgba(255, 214, 10, 0.6)' : '0 2px 6px rgba(0,0,0,0.15)',
-                    transform: activa ? 'scale(1.12)' : 'scale(1)',
-                    transition: 'transform 0.15s ease, border-color 0.15s ease',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 900,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
+                    boxShadow: activa ? '0 0 8px rgba(255, 214, 10, 0.5)' : '0 1px 4px rgba(0,0,0,0.12)',
+                    transform: activa ? 'scale(1.1)' : 'scale(1)',
+                    transition: 'transform 0.12s ease',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 900,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}
-                >
-                  {f.valor}
-                </button>
+                >{f.valor}</button>
               )
             })}
           </div>
         </div>
 
-        {/* Acciones de tapete */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={girando || !ultimaApuesta}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" className="btn-secondary" disabled={girando || !ultimaApuesta}
             onClick={repetirUltima}
-            style={{ fontSize: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 5 }}
-            title="Repetir última apuesta"
-          >
-            <Copy size={13} />
-            <span>Repetir</span>
+            style={{ fontSize: 11, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Copy size={12} /><span>Repetir</span>
           </button>
-
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={girando || totalApostado === 0}
+          <button type="button" className="btn-secondary" disabled={girando || totalApostado === 0}
             onClick={doblarApuestas}
-            style={{ fontSize: 12, padding: '8px 12px' }}
-            title="Doblar apuesta"
-          >
-            2x Doblar
+            style={{ fontSize: 11, padding: '6px 10px' }}>
+            2x
           </button>
-
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={girando || totalApostado === 0}
+          <button type="button" className="btn-secondary" disabled={girando || totalApostado === 0}
             onClick={limpiarApuestas}
-            style={{ fontSize: 12, padding: '8px 12px', color: '#FF3B30', display: 'flex', alignItems: 'center', gap: 5 }}
-            title="Limpiar tapete"
-          >
-            <Trash2 size={13} />
-            <span>Limpiar</span>
+            style={{ fontSize: 11, padding: '6px 10px', color: '#FF3B30', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Trash2 size={12} /><span>Borrar</span>
           </button>
         </div>
       </div>
 
-      {/* TAPETE DE APUESTAS ESTILO CASINO EUROPEO */}
-      <div
-        className="card"
-        style={{
-          padding: '18px',
-          border: '1px solid var(--color-separator)',
-          backgroundColor: 'var(--color-cell-bg)',
-          overflowX: 'auto'
-        }}
-      >
-        <div style={{ minWidth: 640, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* FILA 1: CASILLA DEL CERO (0) */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => handleApostar('0')}
-              style={{
-                flex: 1,
-                minHeight: 46,
-                borderRadius: 10,
-                backgroundColor: '#34C759',
-                color: '#FFF',
-                border: apuestas['0'] ? '2px solid #FFD60A' : 'none',
-                fontWeight: 900,
-                fontSize: 16,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                position: 'relative'
-              }}
-            >
-              <span>0 (Cero - Pago 36x)</span>
-              {apuestas['0'] && (
-                <span style={{
-                  backgroundColor: '#FFD60A',
-                  color: '#000',
-                  borderRadius: 12,
-                  padding: '2px 8px',
-                  fontSize: 11,
-                  fontWeight: 900
-                }}>
-                  {apuestas['0']} pts
-                </span>
-              )}
-            </button>
+      {/* BETTING TABLE — mobile-responsive */}
+      <div className="card" style={{
+        padding: '14px', border: '1px solid var(--color-separator)',
+        backgroundColor: 'var(--color-cell-bg)', overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch'
+      }}>
+        <div style={{ minWidth: 340, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Zero */}
+          <button
+            type="button"
+            onClick={() => handleApostar('0')}
+            style={{
+              width: '100%', minHeight: 40, borderRadius: 8,
+              backgroundColor: '#34C759', color: '#FFF',
+              border: apuestas['0'] ? '2px solid #FFD60A' : 'none',
+              fontWeight: 900, fontSize: 15, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+            }}
+          >
+            <span>0</span>
+            <ChipBadge amount={apuestas['0']} />
+          </button>
+
+          {/* Number grid: 3 rows × 12 cols + column bets */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr) 36px', gap: 4 }}>
+            {/* Row 3: 3,6,9... */}
+            {[3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36].map(n => <NumBtn key={n} num={n} />)}
+            <OutsideBtn id="col3" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+
+            {/* Row 2: 2,5,8... */}
+            {[2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35].map(n => <NumBtn key={n} num={n} />)}
+            <OutsideBtn id="col2" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
+
+            {/* Row 1: 1,4,7... */}
+            {[1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34].map(n => <NumBtn key={n} num={n} />)}
+            <OutsideBtn id="col1" label="2:1" bg="rgba(0,122,255,0.1)" color="var(--color-accent)" />
           </div>
 
-          {/* CUADRÍCULA DE NÚMEROS DEL 1 AL 36 (12 filas x 3 columnas) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr) 50px', gap: 6 }}>
-            {/* Fila 3: 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36 */}
-            {[3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36].map((num) => {
-              const esRojo = RED_NUMBERS.has(num)
-              const apostado = apuestas[String(num)]
-              return (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handleApostar(String(num))}
-                  style={{
-                    minHeight: 42,
-                    borderRadius: 8,
-                    backgroundColor: esRojo ? '#FF3B30' : '#1C1C1E',
-                    color: '#FFF',
-                    border: apostado ? '2px solid #FFD60A' : 'none',
-                    fontWeight: 800,
-                    fontSize: 14,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 4
-                  }}
-                >
-                  <span>{num}</span>
-                  {apostado && (
-                    <span style={{
-                      backgroundColor: '#FFD60A',
-                      color: '#000',
-                      borderRadius: 8,
-                      padding: '1px 4px',
-                      fontSize: 9,
-                      fontWeight: 900,
-                      marginTop: 2
-                    }}>
-                      {apostado}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-
-            {/* Botón Columna 3 (3x) */}
-            <button
-              type="button"
-              onClick={() => handleApostar('col3')}
-              style={{
-                borderRadius: 8,
-                backgroundColor: 'rgba(0,122,255,0.12)',
-                color: 'var(--color-accent)',
-                border: apuestas['col3'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-            >
-              2 a 1
-              {apuestas['col3'] && <div style={{ fontSize: 9 }}>{apuestas['col3']}p</div>}
-            </button>
-
-            {/* Fila 2: 2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35 */}
-            {[2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35].map((num) => {
-              const esRojo = RED_NUMBERS.has(num)
-              const apostado = apuestas[String(num)]
-              return (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handleApostar(String(num))}
-                  style={{
-                    minHeight: 42,
-                    borderRadius: 8,
-                    backgroundColor: esRojo ? '#FF3B30' : '#1C1C1E',
-                    color: '#FFF',
-                    border: apostado ? '2px solid #FFD60A' : 'none',
-                    fontWeight: 800,
-                    fontSize: 14,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 4
-                  }}
-                >
-                  <span>{num}</span>
-                  {apostado && (
-                    <span style={{
-                      backgroundColor: '#FFD60A',
-                      color: '#000',
-                      borderRadius: 8,
-                      padding: '1px 4px',
-                      fontSize: 9,
-                      fontWeight: 900,
-                      marginTop: 2
-                    }}>
-                      {apostado}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-
-            {/* Botón Columna 2 (3x) */}
-            <button
-              type="button"
-              onClick={() => handleApostar('col2')}
-              style={{
-                borderRadius: 8,
-                backgroundColor: 'rgba(0,122,255,0.12)',
-                color: 'var(--color-accent)',
-                border: apuestas['col2'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-            >
-              2 a 1
-              {apuestas['col2'] && <div style={{ fontSize: 9 }}>{apuestas['col2']}p</div>}
-            </button>
-
-            {/* Fila 1: 1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34 */}
-            {[1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34].map((num) => {
-              const esRojo = RED_NUMBERS.has(num)
-              const apostado = apuestas[String(num)]
-              return (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handleApostar(String(num))}
-                  style={{
-                    minHeight: 42,
-                    borderRadius: 8,
-                    backgroundColor: esRojo ? '#FF3B30' : '#1C1C1E',
-                    color: '#FFF',
-                    border: apostado ? '2px solid #FFD60A' : 'none',
-                    fontWeight: 800,
-                    fontSize: 14,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 4
-                  }}
-                >
-                  <span>{num}</span>
-                  {apostado && (
-                    <span style={{
-                      backgroundColor: '#FFD60A',
-                      color: '#000',
-                      borderRadius: 8,
-                      padding: '1px 4px',
-                      fontSize: 9,
-                      fontWeight: 900,
-                      marginTop: 2
-                    }}>
-                      {apostado}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-
-            {/* Botón Columna 1 (3x) */}
-            <button
-              type="button"
-              onClick={() => handleApostar('col1')}
-              style={{
-                borderRadius: 8,
-                backgroundColor: 'rgba(0,122,255,0.12)',
-                color: 'var(--color-accent)',
-                border: apuestas['col1'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-            >
-              2 a 1
-              {apuestas['col1'] && <div style={{ fontSize: 9 }}>{apuestas['col1']}p</div>}
-            </button>
+          {/* Dozens */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+            <OutsideBtn id="docena1" label="1ª Doc (1-12)" />
+            <OutsideBtn id="docena2" label="2ª Doc (13-24)" />
+            <OutsideBtn id="docena3" label="3ª Doc (25-36)" />
           </div>
 
-          {/* FILA DE DOCENAS (1-12, 13-24, 25-36) (Pago 3x) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-            {[
-              { id: 'docena1', label: '1ª DOCENA (1-12)', mult: '3x' },
-              { id: 'docena2', label: '2ª DOCENA (13-24)', mult: '3x' },
-              { id: 'docena3', label: '3ª DOCENA (25-36)', mult: '3x' }
-            ].map(d => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => handleApostar(d.id)}
-                style={{
-                  minHeight: 40,
-                  borderRadius: 8,
-                  backgroundColor: 'var(--color-fill-secondary, rgba(0,0,0,0.04))',
-                  border: apuestas[d.id] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                  color: 'var(--color-ink)',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6
-                }}
-              >
-                <span>{d.label}</span>
-                {apuestas[d.id] && (
-                  <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>
-                    {apuestas[d.id]}p
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* FILA DE SUERTES SENCILLAS: 1-18, PAR, ROJO, NEGRO, IMPAR, 19-36 (Pago 2x) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
-            {/* 1-18 */}
-            <button
-              type="button"
-              onClick={() => handleApostar('1-18')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: 'var(--color-fill-secondary, rgba(0,0,0,0.04))',
-                border: apuestas['1-18'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                color: 'var(--color-ink)',
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>1 a 18</span>
-              {apuestas['1-18'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['1-18']}p</span>}
-            </button>
-
-            {/* PAR */}
-            <button
-              type="button"
-              onClick={() => handleApostar('par')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: 'var(--color-fill-secondary, rgba(0,0,0,0.04))',
-                border: apuestas['par'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                color: 'var(--color-ink)',
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>PAR</span>
-              {apuestas['par'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['par']}p</span>}
-            </button>
-
-            {/* ROJO (Pago 2x) */}
-            <button
-              type="button"
-              onClick={() => handleApostar('rojo')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: '#FF3B30',
-                border: apuestas['rojo'] ? '2px solid #FFD60A' : 'none',
-                color: '#FFF',
-                fontSize: 13,
-                fontWeight: 900,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>ROJO</span>
-              {apuestas['rojo'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['rojo']}p</span>}
-            </button>
-
-            {/* NEGRO (Pago 2x) */}
-            <button
-              type="button"
-              onClick={() => handleApostar('negro')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: '#1C1C1E',
-                border: apuestas['negro'] ? '2px solid #FFD60A' : 'none',
-                color: '#FFF',
-                fontSize: 13,
-                fontWeight: 900,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>NEGRO</span>
-              {apuestas['negro'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['negro']}p</span>}
-            </button>
-
-            {/* IMPAR */}
-            <button
-              type="button"
-              onClick={() => handleApostar('impar')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: 'var(--color-fill-secondary, rgba(0,0,0,0.04))',
-                border: apuestas['impar'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                color: 'var(--color-ink)',
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>IMPAR</span>
-              {apuestas['impar'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['impar']}p</span>}
-            </button>
-
-            {/* 19-36 */}
-            <button
-              type="button"
-              onClick={() => handleApostar('19-36')}
-              style={{
-                minHeight: 42,
-                borderRadius: 8,
-                backgroundColor: 'var(--color-fill-secondary, rgba(0,0,0,0.04))',
-                border: apuestas['19-36'] ? '2px solid #FFD60A' : '1px solid var(--color-separator)',
-                color: 'var(--color-ink)',
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <span>19 a 36</span>
-              {apuestas['19-36'] && <span style={{ backgroundColor: '#FFD60A', color: '#000', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 900 }}>{apuestas['19-36']}p</span>}
-            </button>
+          {/* Even chances */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
+            <OutsideBtn id="1-18" label="1-18" />
+            <OutsideBtn id="par" label="PAR" />
+            <OutsideBtn id="rojo" label="ROJO" bg="#FF3B30" color="#FFF" borderDefault="none" />
+            <OutsideBtn id="negro" label="NEGRO" bg="#1C1C1E" color="#FFF" borderDefault="none" />
+            <OutsideBtn id="impar" label="IMPAR" />
+            <OutsideBtn id="19-36" label="19-36" />
           </div>
         </div>
       </div>

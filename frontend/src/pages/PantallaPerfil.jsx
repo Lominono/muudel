@@ -29,11 +29,14 @@ import {
   Lock,
   User,
   AtSign,
-  AlertCircle
+  AlertCircle,
+  Bell,
+  BellRing
 } from 'lucide-react'
-import { sound } from '../utils/haptics'
+import { sound, triggerConfetti } from '../utils/haptics'
 import { animarEscalonado } from '../utils/animations'
 import { transmitirEvento } from '../utils/realtimeHub'
+import { solicitarPermisoNotificaciones, obtenerEstadoNotificaciones } from '../utils/oneSignal'
 import gsap from 'gsap'
 
 // Catálogo de Marcos disponibles
@@ -97,6 +100,33 @@ export function PantallaPerfil() {
 
   const progressBarRef = useRef(null)
   const pageRef = useRef(null)
+
+  // Estado para notificaciones push
+  const [pushState, setPushState] = useState({
+    soportado: false,
+    permiso: false,
+    suscrito: false,
+    cargando: true
+  })
+
+  // Consultar estado de notificaciones al montar
+  useEffect(() => {
+    obtenerEstadoNotificaciones((estado) => {
+      setPushState(prev => ({ ...prev, ...estado, cargando: false }))
+    })
+  }, [])
+
+  const alternarNotificaciones = async () => {
+    if (pushState.suscrito) {
+      console.log('Para desactivar, usa la configuración de notificaciones del navegador')
+      return
+    }
+    sound.playPop()
+    const concedido = await solicitarPermisoNotificaciones()
+    if (concedido) {
+      setPushState(prev => ({ ...prev, permiso: true, suscrito: true }))
+    }
+  }
 
   useEffect(() => {
     if (tema === 'auto') {
@@ -999,6 +1029,93 @@ export function PantallaPerfil() {
               <Monitor size={15} />
               <span>Automático</span>
             </button>
+          </div>
+        </section>
+
+        {/* Notificaciones Push (OneSignal) */}
+        <section className="card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              backgroundColor: 'rgba(255, 149, 0, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FF9500'
+            }}>
+              {pushState.suscrito ? <BellRing size={16} /> : <Bell size={16} />}
+            </div>
+            <div>
+              <h3 className="apple-headline" style={{ fontSize: 15 }}>Notificaciones Push</h3>
+              <p className="apple-caption" style={{ fontSize: 12 }}>
+                Recibe avisos de clase, retos y mensajes aunque la app esté cerrada.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                backgroundColor: pushState.suscrito ? 'var(--color-positive)' : 'var(--color-tertiary-ink)',
+                boxShadow: pushState.suscrito ? '0 0 8px var(--color-positive)' : 'none'
+              }} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  {pushState.suscrito ? 'Activadas' : 'Desactivadas'}
+                </div>
+                <div className="apple-caption" style={{ fontSize: 11 }}>
+                  {pushState.suscrito
+                    ? 'Recibirás notificaciones en segundo plano'
+                    : pushState.cargando
+                      ? 'Comprobando estado...'
+                      : pushState.soportado
+                        ? 'Pulsa para activar'
+                        : 'No disponible en este navegador'}
+                </div>
+              </div>
+            </div>
+
+            {!pushState.suscrito && pushState.soportado && !pushState.cargando && (
+              <button
+                className="btn-primary"
+                onClick={alternarNotificaciones}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 10,
+                  backgroundColor: 'var(--color-accent)',
+                  color: '#FFFFFF'
+                }}
+              >
+                Activar
+              </button>
+            )}
+
+            {pushState.suscrito && (
+              <span style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--color-positive)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-positive)' }} />
+                Conectado
+              </span>
+            )}
+
+            {!pushState.soportado && !pushState.cargando && (
+              <span className="apple-caption" style={{ fontSize: 12, color: 'var(--color-tertiary-ink)' }}>
+                Navegador no compatible
+              </span>
+            )}
           </div>
         </section>
 

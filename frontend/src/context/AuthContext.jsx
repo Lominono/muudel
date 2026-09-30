@@ -1,5 +1,6 @@
 import { useState, createContext, useContext, useEffect, useRef } from 'react'
 import { supabase } from '../utils/supabase'
+import { identificarUsuarioOneSignal, cerrarSesionOneSignal } from '../utils/oneSignal'
 
 export const AuthContext = createContext(null)
 
@@ -95,6 +96,13 @@ export function AuthProvider({ children }) {
   const [loginError, setLoginError] = useState(null)
   const [loginNotice, setLoginNotice] = useState(null)
   const cargandoRef = useRef(false)
+
+  // Sincronizar usuario y sus atributos en OneSignal Web Push
+  useEffect(() => {
+    if (perfil?.id) {
+      identificarUsuarioOneSignal(perfil)
+    }
+  }, [perfil?.id, perfil?.rol, perfil?.nombre, perfil?.email])
 
   useEffect(() => {
     // 1. Detectar errores de OAuth en la URL
@@ -750,6 +758,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('racha_local_user')
     try {
       await supabase.auth.signOut()
+    } catch (e) {}
+    try {
+      cerrarSesionOneSignal()
     } catch (e) {}
     setSession(null)
     setPerfil(null)

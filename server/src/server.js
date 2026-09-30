@@ -4,12 +4,14 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { config } from '../config/env.js'
 import { apuntesRouter } from '../routes/apuntes.js'
+import { ruletaRouter } from '../routes/ruleta.js'
 
 const app = express()
 
 app.use(cors({ origin: true }))
 app.use(express.json())
 app.use('/api/apuntes', apuntesRouter)
+app.use('/api/ruleta', ruletaRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ estado: 'ok' })
@@ -24,6 +26,19 @@ const frontendDistPath = path.resolve(__dirname, '../../frontend/dist')
 const distPath = fs.existsSync(rootDistPath) ? rootDistPath : frontendDistPath
 
 app.use(express.static(distPath))
+
+// Endpoint explícito para el Service Worker de OneSignal
+app.get('/OneSignalSDKWorker.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+  res.setHeader('Service-Worker-Allowed', '/')
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
+  const workerFile = path.join(distPath, 'OneSignalSDKWorker.js')
+  if (fs.existsSync(workerFile)) {
+    res.sendFile(workerFile)
+  } else {
+    res.send('importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");')
+  }
+})
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next()
