@@ -415,7 +415,7 @@ export function BatallaDadosPvP() {
 
     if (!perfil || (perfil.puntos_total || 0) < betAmt) {
       sound.playPop()
-      avisar(`Saldo insuficiente. Tienes ${perfil?.puntos_total || 0} pts y este reto requiere ${betAmt} pts.`)
+      avisar(`Saldo insuficiente. Tienes ${perfil?.puntos_total || 0} SE y este reto requiere ${betAmt} SE.`)
       return
     }
 
@@ -688,7 +688,7 @@ export function BatallaDadosPvP() {
               Saldo disponible:
             </span>
             <strong style={{ fontSize: 15, color: '#FBBF24', fontFamily: 'monospace' }}>
-              {perfil?.puntos_total || 0} pts
+              {perfil?.puntos_total || 0} SE 💶
             </strong>
           </div>
         </div>
@@ -729,7 +729,7 @@ export function BatallaDadosPvP() {
             <Swords size={14} /> Lanzar Nuevo Reto a la Clase
           </span>
           <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-            Bote en disputa: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{apuesta * 2} pts</strong>
+            Bote en disputa: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{apuesta * 2} SE 💶</strong>
           </span>
         </div>
 
@@ -757,7 +757,7 @@ export function BatallaDadosPvP() {
                   fontFamily: 'monospace'
                 }}
               >
-                {val} pts
+                {val} SE
               </button>
             ))}
 
@@ -949,11 +949,11 @@ export function BatallaDadosPvP() {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
                         <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-                          Apuesta: <strong style={{ color: '#E5E7EB', fontFamily: 'monospace' }}>{lobby.apuesta} pts</strong>
+                          Apuesta: <strong style={{ color: '#E5E7EB', fontFamily: 'monospace' }}>{lobby.apuesta} SE 💶</strong>
                         </span>
                         <span style={{ fontSize: 12, color: '#4B5563' }}>•</span>
                         <span style={{ fontSize: 12, color: '#34C759', fontWeight: 600 }}>
-                          Bote: {lobby.apuesta * 2} pts
+                          Bote: {lobby.apuesta * 2} SE 💶
                         </span>
                       </div>
                     </div>
@@ -1012,7 +1012,7 @@ export function BatallaDadosPvP() {
                         }}
                       >
                         <Swords size={15} />
-                        Aceptar ({lobby.apuesta} pts)
+                        Aceptar ({lobby.apuesta} SE 💶)
                       </button>
                     )}
                   </div>
@@ -1073,7 +1073,7 @@ export function BatallaDadosPvP() {
                   </div>
 
                   <span style={{ fontWeight: 700, color: '#34C759', fontFamily: 'monospace' }}>
-                    +{batalla.apuesta * 2} pts
+                    +{batalla.apuesta * 2} SE 💶
                   </span>
                 </div>
               )
@@ -1130,7 +1130,7 @@ export function BatallaDadosPvP() {
               {rodandoDados ? '🎲 Tirada de Dados en Mesa' : 'Duelo Resuelto'}
             </h2>
             <p style={{ fontSize: 13, color: '#9CA3AF', margin: '0 0 24px' }}>
-              Bote disputado: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{animacionBatalla.premio} pts</strong>
+              Bote disputado: <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>{animacionBatalla.premio} SE 💶</strong>
             </p>
 
             {/* TABLERO DE LOS DOS JUGADORES */}
@@ -1236,7 +1236,7 @@ export function BatallaDadosPvP() {
                       <span>VICTORIA SELLADA</span>
                     </div>
                     <p style={{ fontSize: 14, color: '#D1D5DB', margin: 0 }}>
-                      Cobraste el bote completo de <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>+{animacionBatalla.premio} pts</strong>.
+                      Cobraste el bote completo de <strong style={{ color: '#FBBF24', fontFamily: 'monospace' }}>+{animacionBatalla.premio} SE 💶</strong>.
                     </p>
                   </div>
                 ) : (

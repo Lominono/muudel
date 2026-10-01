@@ -1088,7 +1088,7 @@ export function PantallaChat() {
                           border: '1.5px solid #34C759'
                         }}
                       >
-                        ✓ SOLUCIÓN OFICIAL SMR2 · +10 PTS
+                        ✓ SOLUCIÓN OFICIAL SMR2 · +10 SE 💶
                       </div>
                     )}
 

@@ -724,7 +724,7 @@ export function TiendaRecompensas({ onClose }) {
 
     if (puntosActuales < item.costo) {
       sound.playPop()
-      avisar(`Te faltan ${item.costo - puntosActuales} puntos para comprar este artículo.`, 'error')
+      avisar(`Te faltan ${item.costo - puntosActuales} StevenEuros (SE) para comprar este artículo.`, 'error')
       return
     }
 
@@ -746,6 +746,8 @@ export function TiendaRecompensas({ onClose }) {
     const perfilActualizado = { ...perfil, puntos_total: nuevosPuntos }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: perfil.id } }))
+    transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos, userId: perfil.id })
     try {
       await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
     } catch (e) {}
@@ -1024,10 +1026,10 @@ export function TiendaRecompensas({ onClose }) {
         }}>
           <div>
             <span className="apple-caption" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Tus Puntos de Clase
+              Tus StevenEuros Disponibles
             </span>
             <div className="tabular-nums" style={{ fontSize: 24, fontWeight: 800, color: 'var(--color-ink)', marginTop: 1 }}>
-              {puntosActuales} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-secondary-ink)' }}>pts</span>
+              {puntosActuales} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-secondary-ink)' }}>SE 💶</span>
             </div>
           </div>
 
@@ -1224,7 +1226,7 @@ export function TiendaRecompensas({ onClose }) {
                         cursor: estaAgotado ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {estaAgotado ? 'Agotado' : (comprandoId === item.id ? 'Comprando...' : `${item.costo} pts`)}
+                      {estaAgotado ? 'Agotado' : (comprandoId === item.id ? 'Comprando...' : `${item.costo} SE 💶`)}
                     </button>
                   </div>
                 )
@@ -1479,7 +1481,7 @@ export function TiendaRecompensas({ onClose }) {
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                         <span className="apple-caption">
-                          Coste: <strong>{c.costo} pts</strong>
+                          Coste: <strong>{c.costo} SE 💶</strong>
                         </span>
 
                         <span className={`sello-tinta ${yaCaducado ? 'sello-tinta-rojo' : c.estado === 'entregado' ? 'sello-tinta-verde' : 'sello-tinta-azul'}`} style={{ fontSize: 10, padding: '2px 8px' }}>

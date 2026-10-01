@@ -715,6 +715,8 @@ export function useChat(canal, perfil = null) {
           const nuevosPts = (p.puntos_total || 0) + 10
           await supabase.from('profiles').update({ puntos_total: nuevosPts }).eq('id', autorId)
           transmitirEvento('puntos_actualizados', { userId: autorId, nuevosPuntos: nuevosPts })
+          transmitirEvento('steveneuros_actualizados', { userId: autorId, nuevosPuntos: nuevosPts })
+          window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { userId: autorId, nuevosPuntos: nuevosPts } }))
         }
         await sumarXpSkill(autorId, 'redes_vlans', 20)
         await sumarXpSkill(autorId, 'autoria_tecnica', 15)

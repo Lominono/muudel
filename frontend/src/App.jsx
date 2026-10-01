@@ -155,11 +155,21 @@ function ContenidoApp() {
         })
     })
 
+    // Sincronizar inmediatamente cuando cualquier componente modifique StevenEuros
+    const handleSyncStevenEuros = (e) => {
+      const { puntos, userId } = e.detail || {}
+      if (puntos != null && (!userId || userId === perfil?.id)) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: puntos } : prev)
+      }
+    }
+    window.addEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+
     return () => {
       desuscribirNotif()
       desuscribirAviso()
       desuscribirDados()
       desuscribir21()
+      window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
     }
   }, [perfil?.id])
 
@@ -444,10 +454,10 @@ function ContenidoApp() {
                 }}
               >
                 {pvpPopup.gane
-                  ? `+${pvpPopup.apuesta} pts`
+                  ? `+${pvpPopup.apuesta} SE 💶`
                   : pvpPopup.empate
-                  ? `0 pts`
-                  : `-${pvpPopup.apuesta} pts`}
+                  ? `0 SE`
+                  : `-${pvpPopup.apuesta} SE 💶`}
               </span>
             </div>
 
@@ -455,7 +465,7 @@ function ContenidoApp() {
               {pvpPopup.gane
                 ? `¡Has ganado el duelo contra ${pvpPopup.rivalNombre}!`
                 : pvpPopup.empate
-                ? `Empate con ${pvpPopup.rivalNombre} (Puntos devueltos)`
+                ? `Empate con ${pvpPopup.rivalNombre} (StevenEuros devueltos)`
                 : `Has perdido contra ${pvpPopup.rivalNombre}`}
             </div>
 

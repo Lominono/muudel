@@ -67,7 +67,18 @@ export function PantallaJuegos() {
       }
     })
 
-    return () => desuscribirRecord()
+    const handleSyncWindow = (e) => {
+      const { puntos, userId } = e.detail || {}
+      if (puntos != null && (!userId || userId === perfil?.id)) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: puntos } : prev)
+      }
+    }
+    window.addEventListener('steveneuros_actualizados', handleSyncWindow)
+
+    return () => {
+      desuscribirRecord()
+      window.removeEventListener('steveneuros_actualizados', handleSyncWindow)
+    }
   }, [perfil?.id, fechaHoy])
 
   const cargarRankingArcade = async () => {
@@ -144,10 +155,13 @@ export function PantallaJuegos() {
     localStorage.setItem(`muudel_arcade_monedas_${fecha}_${perfil?.id}`, String(nuevoTotal))
 
     if (perfil) {
+      const nuevoSaldo = (perfil?.puntos_total || 0) + nuevasMonedas
       setPerfil(prev => ({
         ...prev,
-        puntos_total: (prev?.puntos_total || 0) + nuevasMonedas
+        puntos_total: nuevoSaldo
       }))
+      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
+      transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
     }
   }
 
@@ -164,6 +178,8 @@ export function PantallaJuegos() {
     const perfilActualizado = { ...perfil, puntos_total: nuevosPuntos }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: perfil.id } }))
+    transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos, userId: perfil.id })
 
     try {
       await supabase
@@ -432,7 +448,7 @@ export function PantallaJuegos() {
               Saldo disponible:
             </span>
             <strong style={{ fontSize: 15, color: '#D97706', fontFamily: 'monospace', fontWeight: 800 }}>
-              {perfil?.puntos_total || 0} pts
+              {perfil?.puntos_total || 0} SE 💶
             </strong>
           </div>
         </div>
@@ -541,7 +557,7 @@ export function PantallaJuegos() {
                       {retoArcadeCompletado ? '¡Reto Completado!' : 'Reto Arcade de Hoy'}
                     </span>
                     <span className="apple-badge apple-badge-accent" style={{ fontSize: 11 }}>
-                      +{RECOMPENSA_RETO} pts
+                      +{RECOMPENSA_RETO} SE 💶
                     </span>
                   </div>
                   <h3 className="apple-headline" style={{ fontSize: 16, marginTop: 2 }}>
@@ -549,8 +565,8 @@ export function PantallaJuegos() {
                   </h3>
                   <p className="apple-caption" style={{ fontSize: 12, marginTop: 2 }}>
                     {retoArcadeCompletado
-                      ? 'Reto superado. Puntos acreditados a tu cuenta.'
-                      : `Llega a ${OBJETIVO_RETO}m en tu partida para completarlo automáticamente.`}
+                      ? 'Reto superado. StevenEuros (SE) acreditados a tu cuenta.'
+                      : `Llega a ${OBJETIVO_RETO}m en tu partida para completarlo automáticamente y ganar +${RECOMPENSA_RETO} SE 💶.`}
                   </p>
                 </div>
               </div>
@@ -613,16 +629,16 @@ export function PantallaJuegos() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <Coins size={18} color="#D97706" />
               <h3 className="apple-headline" style={{ fontSize: 15 }}>
-                Monedas Acumuladas en Recreos
+                StevenEuros Ganados en Recreos
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 12 }}>
-              ¡Sin límite de monedas diarias! Juega en cualquier dificultad y acumula todas las monedas que consigas para canjear en la tienda o subir en el ranking.
+              ¡Sin límite de StevenEuros diarios! Juega en cualquier dificultad y acumula todos los StevenEuros (SE 💶) que consigas para canjear en la tienda o subir en el ranking.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span className="apple-caption">Ganados hoy:</span>
-              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} pts (Ilimitado)</strong>
+              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} SE (Ilimitado)</strong>
             </div>
 
             <div
@@ -645,7 +661,7 @@ export function PantallaJuegos() {
             </div>
 
             <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.4 }}>
-              Frutas y huevos Yoshi: <strong>+1 a +3 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Modo Pesadilla: <strong>x2.5 multiplicador</strong> · <strong>Sin tope diario</strong>.
+              Frutas y huevos Yoshi: <strong>+1 a +3 SE</strong> · Monedas doradas: <strong>+1 SE</strong> · Modo Pesadilla: <strong>x2.5 multiplicador</strong> · <strong>Sin tope diario</strong>.
             </div>
           </section>
 

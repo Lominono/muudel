@@ -853,7 +853,7 @@ export function PantallaAdmin() {
   const handleEliminarAlumno = (alumno) => {
     setModalConfirmacion({
       titulo: `¿Eliminar permanentemente a ${alumno.nombre}?`,
-      mensaje: `Esta acción borrará de forma irreversible al usuario, sus puntos acumulados (${alumno.puntos_total || 0} pts), sus asistencias y todos sus registros. Esta acción NO se puede deshacer.`,
+      mensaje: `Esta acción borrará de forma irreversible al usuario, sus StevenEuros acumulados (${alumno.puntos_total || 0} SE 💶), sus asistencias y todos sus registros. Esta acción NO se puede deshacer.`,
       peligroso: true,
       accion: async () => {
         setModalConfirmacion(null)
@@ -965,8 +965,8 @@ export function PantallaAdmin() {
     // 4. Actualizar estado
     setCheckinsHoy((prev) => [nuevoRecord, ...prev.filter((c) => c.user_id !== solicitud.userId)])
     sound.playStamp()
-    avisar(`Asistencia de ${solicitud.nombre} aprobada (+${puntos} pts).`)
-    registrarAuditoria('Pase de Lista', `Asistencia aprobada a ${solicitud.nombre} (+${puntos} pts)`)
+    avisar(`Asistencia de ${solicitud.nombre} aprobada (+${puntos} SE 💶).`)
+    registrarAuditoria('Pase de Lista', `Asistencia aprobada a ${solicitud.nombre} (+${puntos} SE 💶)`)
     
     // Transmitir en tiempo real al alumno y a toda la clase
     transmitirEvento('asistencia_confirmada', {
@@ -976,6 +976,8 @@ export function PantallaAdmin() {
       esTarde: solicitud.esTarde,
       puntos
     })
+    transmitirEvento('steveneuros_actualizados', { userId: solicitud.userId })
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados'))
     
     setAccionEnCurso(null)
   }
@@ -1005,11 +1007,11 @@ export function PantallaAdmin() {
     setAccionEnCurso(null)
   }
 
-  // Marcar a todos los alumnos de la clase como presentes (+10 pts)
+  // Marcar a todos los alumnos de la clase como presentes (+10 SE 💶)
   const handleMarcarTodosPresentes = async () => {
     setModalConfirmacion({
       titulo: '¿Pase de lista general?',
-      mensaje: `Se registrará asistencia puntual (+10 pts) para todos los ${todosAlumnos.length} alumnos registrados en la clase.`,
+      mensaje: `Se registrará asistencia puntual (+10 SE 💶) para todos los ${todosAlumnos.length} alumnos registrados en la clase.`,
       accion: async () => {
         setModalConfirmacion(null)
         setAccionEnCurso('masivo')
@@ -1033,10 +1035,12 @@ export function PantallaAdmin() {
         localStorage.setItem('muudel_solicitudes_' + fechaHoy, '[]')
         await cargarDatos()
         transmitirEvento('asistencia_masiva', { fecha: fechaHoy })
+        transmitirEvento('steveneuros_actualizados', {})
+        window.dispatchEvent(new CustomEvent('steveneuros_actualizados'))
         triggerConfetti()
         sound.playStamp()
-        avisar('Pase de lista general completado para toda la clase.')
-        registrarAuditoria('Pase Masivo', 'Todos los alumnos marcados presentes (+10 pts)')
+        avisar('Pase de lista general completado para toda la clase (+10 SE 💶 cada uno).')
+        registrarAuditoria('Pase Masivo', 'Todos los alumnos marcados presentes (+10 SE 💶)')
         setAccionEnCurso(null)
       }
     })
@@ -1057,7 +1061,7 @@ export function PantallaAdmin() {
   const handleRechazarCanje = async (canje) => {
     setModalConfirmacion({
       titulo: `¿Rechazar canje de ${canje.nombre}?`,
-      mensaje: `Se le devolverán los ${canje.costo} puntos inmediatamente a su saldo.`,
+      mensaje: `Se le devolverán los ${canje.costo} StevenEuros (SE 💶) inmediatamente a su saldo.`,
       accion: async () => {
         setModalConfirmacion(null)
         // 1. Devolver puntos al alumno
@@ -1077,10 +1081,12 @@ export function PantallaAdmin() {
 
         transmitirEvento('estado_canje', { canjeId: canje.id, estado: 'rechazado', userId: canje.userId, costo: canje.costo })
         transmitirEvento('puntos_actualizados', { userId: canje.userId })
+        transmitirEvento('steveneuros_actualizados', { userId: canje.userId })
+        window.dispatchEvent(new CustomEvent('steveneuros_actualizados'))
 
         sound.playPop()
-        avisar(`Canje rechazado. ${canje.costo} pts devueltos a ${canje.nombre}.`)
-        registrarAuditoria('Reembolso Canje', `Rechazado canje de ${canje.costo} pts a ${canje.nombre}`)
+        avisar(`Canje rechazado. ${canje.costo} SE 💶 devueltos a ${canje.nombre}.`)
+        registrarAuditoria('Reembolso Canje', `Rechazado canje de ${canje.costo} SE 💶 a ${canje.nombre}`)
       }
     })
   }
@@ -1378,9 +1384,11 @@ export function PantallaAdmin() {
 
       sound.playStamp()
       triggerConfetti()
-      avisar(`Puntaje de ${alumno.nombre} establecido en ${nuevoPuntaje} pts.`)
-      registrarAuditoria('Ajuste de Puntos', `${alumno.nombre} fijado a ${nuevoPuntaje} pts ${modificarRacha ? `(racha: ${payloadUpdate.racha_actual}d)` : ''} · Motivo: ${motivo}`)
+      avisar(`StevenEuros de ${alumno.nombre} establecidos en ${nuevoPuntaje} SE 💶.`)
+      registrarAuditoria('Ajuste de StevenEuros', `${alumno.nombre} fijado a ${nuevoPuntaje} SE 💶 ${modificarRacha ? `(racha: ${payloadUpdate.racha_actual}d)` : ''} · Motivo: ${motivo}`)
       transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: nuevoPuntaje, userId: alumnoId })
+      transmitirEvento('steveneuros_actualizados', { alumnoId, nuevosPuntos: nuevoPuntaje, userId: alumnoId })
+      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoPuntaje, userId: alumnoId } }))
       setModalPuntaje(null)
     } catch (err) {
       avisar('Error al actualizar el puntaje: ' + (err.message || err), 'error')
@@ -1432,11 +1440,13 @@ export function PantallaAdmin() {
       feedback: '¡Aprobado por lominoño!'
     })
     transmitirEvento('puntos_actualizados', { userId: entrega.userId, nuevosPuntos })
+    transmitirEvento('steveneuros_actualizados', { userId: entrega.userId, nuevosPuntos })
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados'))
 
     sound.playStamp()
     triggerConfetti()
-    avisar(`Reto "${entrega.retoTitulo}" aprobado para ${entrega.nombre} (+${puntos} pts).`)
-    registrarAuditoria('Reto Aprobado', `Entrega de "${entrega.retoTitulo}" validada a ${entrega.nombre} (+${puntos} pts)`)
+    avisar(`Reto "${entrega.retoTitulo}" aprobado para ${entrega.nombre} (+${puntos} SE 💶).`)
+    registrarAuditoria('Reto Aprobado', `Entrega de "${entrega.retoTitulo}" validada a ${entrega.nombre} (+${puntos} SE 💶)`)
     setAccionEnCurso(null)
   }
 
@@ -1508,8 +1518,8 @@ export function PantallaAdmin() {
     })
   }
 
-  // Bonificar o penalizar puntos a un alumno
-  const handleModificarPuntos = async (alumnoId, deltaPuntos, motivo) => {
+  // Bonificar o penalizar StevenEuros a un alumno
+  const handleModificarPuntos = async (alumnoId, deltaPuntos, motivo = 'Ajuste StevenEuros') => {
     setAccionEnCurso(alumnoId)
     const alumno = todosAlumnos.find((a) => a.id === alumnoId)
     if (!alumno) return
@@ -1517,25 +1527,67 @@ export function PantallaAdmin() {
     const nuevosPuntos = Math.max(0, (alumno.puntos_total || 0) + deltaPuntos)
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          puntos_total: nuevosPuntos,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', alumnoId)
+      let actualizado = false
 
-      if (!error) {
-        sound.playPop()
-        avisar(`${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} pts aplicados a ${alumno.nombre}.`)
-        setTodosAlumnos((prev) =>
-          prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
-        )
-        transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos })
-        registrarAuditoria('Ajuste de Puntos', `${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} pts a ${alumno.nombre} (${motivo})`)
+      // 1. Intentar endpoint API con Service Key
+      try {
+        const resp = await fetch('/api/admin/modificar-puntaje', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: alumnoId, puntos_total: nuevosPuntos, motivo })
+        })
+        if (resp.ok) actualizado = true
+      } catch (_) {}
+
+      // 2. Fallback directo a Supabase
+      if (!actualizado) {
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              puntos_total: nuevosPuntos,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', alumnoId)
+          if (!error) actualizado = true
+        } catch (_) {}
       }
+
+      // 3. Fallback RPC
+      if (!actualizado) {
+        try {
+          await supabase.rpc('admin_modificar_puntos', { p_user_id: alumnoId, p_nuevos_puntos: nuevosPuntos })
+          actualizado = true
+        } catch (_) {}
+      }
+
+      sound.playPop()
+      avisar(`${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} StevenEuros (${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} SE 💶) para ${alumno.nombre}.`)
+      setTodosAlumnos((prev) =>
+        prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
+      )
+
+      // Actualizar usuario en sesión si corresponde
+      const localUser = localStorage.getItem('racha_local_user')
+      if (localUser) {
+        try {
+          const parsed = JSON.parse(localUser)
+          if (String(parsed.id) === String(alumnoId)) {
+            const actUser = { ...parsed, puntos_total: nuevosPuntos }
+            localStorage.setItem('racha_local_user', JSON.stringify(actUser))
+            if (perfil && String(perfil.id) === String(alumnoId)) {
+              setPerfil(actUser)
+            }
+          }
+        } catch (_) {}
+      }
+
+      transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos, userId: alumnoId })
+      transmitirEvento('steveneuros_actualizados', { alumnoId, nuevosPuntos, userId: alumnoId })
+      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: alumnoId } }))
+      registrarAuditoria('Ajuste StevenEuros', `${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} SE a ${alumno.nombre} (${motivo})`)
     } catch (err) {
-      avisar('Error al modificar puntos.', 'error')
+      avisar('Error al modificar StevenEuros.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
@@ -1568,8 +1620,8 @@ export function PantallaAdmin() {
     const motivoTexto = (motivo || 'Recompensa general de clase').trim()
 
     setModalConfirmacion({
-      titulo: `¿Otorgar ${cant > 0 ? '+' : ''}${cant} monedas a TODOS los alumnos?`,
-      mensaje: `Esta acción modificará el saldo de monedas de los ${todosAlumnos.length} estudiantes registrados en la clase. Motivo: "${motivoTexto}".`,
+      titulo: `¿Otorgar ${cant > 0 ? '+' : ''}${cant} StevenEuros a TODOS los alumnos?`,
+      mensaje: `Esta acción modificará el saldo de StevenEuros de los ${todosAlumnos.length} estudiantes registrados en la clase. Motivo: "${motivoTexto}".`,
       accion: async () => {
         setModalConfirmacion(null)
         setEnviandoAjusteMasivo(true)
@@ -1619,8 +1671,8 @@ export function PantallaAdmin() {
 
           sound.playStamp()
           triggerConfetti()
-          avisar(`¡${cant > 0 ? '+' : ''}${cant} monedas entregadas con éxito a toda la clase!`)
-          registrarAuditoria('Reparto Masivo', `${cant > 0 ? '+' : ''}${cant} monedas a todos los alumnos (${motivoTexto})`)
+          avisar(`¡${cant > 0 ? '+' : ''}${cant} StevenEuros entregados con éxito a toda la clase!`)
+          registrarAuditoria('Reparto Masivo', `${cant > 0 ? '+' : ''}${cant} StevenEuros a todos los alumnos (${motivoTexto})`)
         } catch (err) {
           avisar('Error en reparto masivo: ' + (err.message || err), 'error')
         } finally {
@@ -1630,10 +1682,10 @@ export function PantallaAdmin() {
     })
   }
 
-  // ECONOMÍA: Fijar saldo exacto de monedas a un alumno
+  // ECONOMÍA: Fijar saldo exacto de StevenEuros a un alumno
   const handleFijarMonedasDirecto = async (alumno, nuevoSaldo, motivo = 'Saldo fijado por moderador') => {
     const alumnoId = alumno.id
-    const puntajeFinal = Math.max(0, Number(nuevoSaldo) || 0)
+    const puntajeFinal = Math.max(0, Math.round(Number(nuevoSaldo) || 0))
     setAccionEnCurso(alumnoId)
     try {
       let actualizado = false
@@ -1648,18 +1700,44 @@ export function PantallaAdmin() {
 
       if (!actualizado) {
         try {
-          await supabase.from('profiles').update({ puntos_total: puntajeFinal }).eq('id', alumnoId)
+          const { error } = await supabase.from('profiles').update({ puntos_total: puntajeFinal, updated_at: new Date().toISOString() }).eq('id', alumnoId)
+          if (!error) actualizado = true
+        } catch (_) {}
+      }
+
+      if (!actualizado) {
+        try {
+          await supabase.rpc('admin_modificar_puntos', { p_user_id: alumnoId, p_nuevos_puntos: puntajeFinal })
           actualizado = true
         } catch (_) {}
       }
 
       setTodosAlumnos(prev => prev.map(a => a.id === alumnoId ? { ...a, puntos_total: puntajeFinal } : a))
+
+      // Actualizar si es el usuario en sesión
+      const localUser = localStorage.getItem('racha_local_user')
+      if (localUser) {
+        try {
+          const parsed = JSON.parse(localUser)
+          if (String(parsed.id) === String(alumnoId)) {
+            const actUser = { ...parsed, puntos_total: puntajeFinal }
+            localStorage.setItem('racha_local_user', JSON.stringify(actUser))
+            if (perfil && String(perfil.id) === String(alumnoId)) {
+              setPerfil(actUser)
+            }
+          }
+        } catch (_) {}
+      }
+
       transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: puntajeFinal, userId: alumnoId })
+      transmitirEvento('steveneuros_actualizados', { alumnoId, nuevosPuntos: puntajeFinal, userId: alumnoId })
+      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: puntajeFinal, userId: alumnoId } }))
       sound.playStamp()
-      avisar(`Monedas de ${alumno.nombre} establecidas en ${puntajeFinal} 🪙.`)
-      registrarAuditoria('Fijar Monedas', `${alumno.nombre} tiene ahora ${puntajeFinal} monedas (${motivo})`)
+      triggerConfetti()
+      avisar(`StevenEuros de ${alumno.nombre} fijados en ${puntajeFinal} SE 💶.`)
+      registrarAuditoria('Fijar StevenEuros', `${alumno.nombre} tiene ahora ${puntajeFinal} StevenEuros (${motivo})`)
     } catch (err) {
-      avisar('Error al fijar monedas.', 'error')
+      avisar('Error al fijar StevenEuros.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
@@ -2204,7 +2282,7 @@ export function PantallaAdmin() {
             { id: 'archivos', label: archivosClase.length > 0 ? `Archivos (${archivosClase.length})` : 'Archivos', icon: Folder },
             { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
-            { id: 'economia', label: 'Monedas & Ganancias', icon: Coins },
+            { id: 'economia', label: 'StevenEuros (SE 💶)', icon: Coins },
             { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
             { id: 'retos', label: entregasRetos.filter(e => e.estado === 'pendiente').length > 0 ? `Retos (${entregasRetos.filter(e => e.estado === 'pendiente').length} pend.)` : `Retos (${retosActivos.length})`, icon: Target },
             { id: 'seguridad', label: 'Auditoría', icon: ShieldAlert }
@@ -2329,7 +2407,7 @@ export function PantallaAdmin() {
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-                        {sol.email ? `${sol.email} · ` : ''}Aviso: {sol.hora} · {sol.esTarde ? 'Retraso (+5 pts)' : 'Puntual (+10 pts)'}
+                        {sol.email ? `${sol.email} · ` : ''}Aviso: {sol.hora} · {sol.esTarde ? 'Retraso (+5 SE 💶)' : 'Puntual (+10 SE 💶)'}
                       </div>
                     </div>
 
@@ -2415,7 +2493,7 @@ export function PantallaAdmin() {
                   </div>
 
                   <span className={`apple-badge ${c.es_tarde ? 'apple-badge-warning' : 'apple-badge-positive'}`} style={{ fontSize: 12 }}>
-                    {c.es_tarde ? '+5 pts (Tarde)' : '+10 pts (A tiempo)'}
+                    {c.es_tarde ? '+5 SE 💶 (Tarde)' : '+10 SE 💶 (A tiempo)'}
                   </span>
                 </div>
               ))
@@ -3256,7 +3334,7 @@ export function PantallaAdmin() {
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 600, marginTop: 2 }}>
-                    {canje.titulo} · <span style={{ color: 'var(--color-secondary-ink)', fontWeight: 400 }}>{canje.costo} pts</span>
+                    {canje.titulo} · <span style={{ color: 'var(--color-secondary-ink)', fontWeight: 400 }}>{canje.costo} SE 💶</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)' }}>
@@ -3294,7 +3372,7 @@ export function PantallaAdmin() {
                         onClick={() => handleRechazarCanje(canje)}
                         style={{ minHeight: 32, padding: '4px 10px', fontSize: 12, color: 'var(--color-negative)' }}
                       >
-                        Rechazar y Devolver Pts
+                        Rechazar y Devolver SE 💶
                       </button>
                     </>
                   ) : (
@@ -3431,7 +3509,7 @@ export function PantallaAdmin() {
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-                          {alumno.email ? `${alumno.email} · ` : ''}<strong>{alumno.puntos_total || 0} pts</strong> · {alumno.racha_actual || 0} días racha
+                          {alumno.email ? `${alumno.email} · ` : ''}<strong>{alumno.puntos_total || 0} SE 💶</strong> · {alumno.racha_actual || 0} días racha
                         </div>
                       </div>
                     </div>
@@ -3460,10 +3538,10 @@ export function PantallaAdmin() {
                         alignItems: 'center',
                         gap: 5
                       }}
-                      title="Establecer puntaje exacto o ajustar racha de clase"
+                      title="Establecer saldo exacto de StevenEuros o ajustar racha de clase"
                     >
                       <Award size={13} />
-                      <span>Modificar Puntaje</span>
+                      <span>Modificar StevenEuros</span>
                     </button>
 
                     <button
@@ -3473,7 +3551,7 @@ export function PantallaAdmin() {
                       onClick={() => handleModificarPuntos(alumno.id, 5, 'Participación')}
                       style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
                     >
-                      +5 pts (Participar)
+                      +5 SE (Participar)
                     </button>
                     <button
                       type="button"
@@ -3482,37 +3560,37 @@ export function PantallaAdmin() {
                       onClick={() => handleModificarPuntos(alumno.id, 10, 'Aporte destacado')}
                       style={{ minHeight: 30, padding: '3px 10px', fontSize: 12 }}
                     >
-                      +10 pts (Aporte)
+                      +10 SE (Aporte)
                     </button>
                     <button
                       type="button"
                       className="btn-secondary"
                       disabled={accionEnCurso === alumno.id || alumno.baneado}
-                      onClick={() => handleModificarPuntos(alumno.id, 25, 'Premio de monedas')}
+                      onClick={() => handleModificarPuntos(alumno.id, 25, 'Premio StevenEuros')}
                       style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
-                      title="Entregar 25 monedas"
+                      title="Entregar 25 StevenEuros"
                     >
-                      +25 🪙
+                      +25 SE 💶
                     </button>
                     <button
                       type="button"
                       className="btn-secondary"
                       disabled={accionEnCurso === alumno.id || alumno.baneado}
-                      onClick={() => handleModificarPuntos(alumno.id, 50, 'Reto de monedas')}
+                      onClick={() => handleModificarPuntos(alumno.id, 50, 'Reto StevenEuros')}
                       style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
-                      title="Entregar 50 monedas"
+                      title="Entregar 50 StevenEuros"
                     >
-                      +50 🪙
+                      +50 SE 💶
                     </button>
                     <button
                       type="button"
                       className="btn-secondary"
                       disabled={accionEnCurso === alumno.id || alumno.baneado}
-                      onClick={() => handleModificarPuntos(alumno.id, 100, 'Beca de clase')}
+                      onClick={() => handleModificarPuntos(alumno.id, 100, 'Beca StevenEuros')}
                       style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
-                      title="Entregar 100 monedas"
+                      title="Entregar 100 StevenEuros"
                     >
-                      +100 🪙
+                      +100 SE 💶
                     </button>
                     <button
                       type="button"
@@ -3521,7 +3599,7 @@ export function PantallaAdmin() {
                       onClick={() => handleModificarPuntos(alumno.id, -10, 'Penalización')}
                       style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
                     >
-                      -10 pts (Sanción)
+                      -10 SE (Sanción)
                     </button>
                     <button
                       type="button"
@@ -3792,11 +3870,11 @@ export function PantallaAdmin() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Zap size={18} color="var(--color-warning)" />
               <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Reparto Masivo de Monedas a Toda la Clase
+                Reparto Masivo de StevenEuros (SE 💶) a Toda la Clase
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 14 }}>
-              Premia a todos los estudiantes registrados al mismo tiempo tras una dinámica grupal o actividad destacada.
+              Premia a todos los estudiantes registrados al mismo tiempo con StevenEuros tras una dinámica grupal o actividad destacada.
             </p>
 
             {/* Accesos rápidos de reparto */}
@@ -3806,7 +3884,7 @@ export function PantallaAdmin() {
                   key={cant}
                   type="button"
                   disabled={enviandoAjusteMasivo}
-                  onClick={() => handleAjusteMasivoMonedas(cant, `Premio de +${cant} monedas para toda la clase`)}
+                  onClick={() => handleAjusteMasivoMonedas(cant, `Premio de +${cant} StevenEuros para toda la clase`)}
                   className="btn-secondary"
                   style={{
                     padding: '8px 14px',
@@ -3818,7 +3896,7 @@ export function PantallaAdmin() {
                     gap: 6
                   }}
                 >
-                  <span>+{cant} 🪙 a todos</span>
+                  <span>+{cant} SE a todos</span>
                 </button>
               ))}
             </div>
@@ -3836,7 +3914,7 @@ export function PantallaAdmin() {
             }}>
               <div style={{ width: 120 }}>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
-                  Cantidad 🪙
+                  Cantidad SE 💶
                 </label>
                 <input
                   type="number"
@@ -3878,7 +3956,7 @@ export function PantallaAdmin() {
                 }}
               >
                 <Coins size={14} />
-                <span>{enviandoAjusteMasivo ? 'Repartiendo...' : `Repartir +${ajusteMasivoCantidad} a Todos`}</span>
+                <span>{enviandoAjusteMasivo ? 'Repartiendo...' : `Repartir +${ajusteMasivoCantidad} SE a Todos`}</span>
               </button>
             </div>
           </section>
@@ -3896,10 +3974,10 @@ export function PantallaAdmin() {
             }}>
               <div>
                 <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                  Modificar Monedas de Jugadores
+                  Modificar StevenEuros (SE 💶) de Jugadores
                 </h3>
                 <p className="apple-caption" style={{ marginTop: 2 }}>
-                  Suma, resta o establece el saldo exacto de monedas de cada estudiante.
+                  Suma, resta o establece el saldo exacto de StevenEuros (SE 💶) de cada estudiante.
                 </p>
               </div>
 
@@ -3954,62 +4032,62 @@ export function PantallaAdmin() {
                             )}
                           </div>
                           <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                            <strong style={{ color: 'var(--color-warning)' }}>{alumno.puntos_total || 0} 🪙</strong> · {alumno.racha_actual || 0}d racha
+                            <strong style={{ color: 'var(--color-warning)' }}>{alumno.puntos_total || 0} SE 💶</strong> · {alumno.racha_actual || 0}d racha
                           </div>
                         </div>
                       </div>
 
-                      {/* Botones de acción rápida de monedas */}
+                      {/* Botones de acción rápida de StevenEuros */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn-secondary"
                           disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, -50, 'Ajuste monedas (-50)')}
+                          onClick={() => handleModificarPuntos(alumno.id, -50, 'Ajuste StevenEuros (-50)')}
                           style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
-                          title="Restar 50 monedas"
+                          title="Restar 50 StevenEuros"
                         >
-                          -50 🪙
+                          -50 SE
                         </button>
                         <button
                           type="button"
                           className="btn-secondary"
                           disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, -20, 'Ajuste monedas (-20)')}
+                          onClick={() => handleModificarPuntos(alumno.id, -20, 'Ajuste StevenEuros (-20)')}
                           style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
-                          title="Restar 20 monedas"
+                          title="Restar 20 StevenEuros"
                         >
-                          -20 🪙
+                          -20 SE
                         </button>
                         <button
                           type="button"
                           className="btn-secondary"
                           disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 20, 'Premio monedas (+20)')}
+                          onClick={() => handleModificarPuntos(alumno.id, 20, 'Premio StevenEuros (+20)')}
                           style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 20 monedas"
+                          title="Sumar 20 StevenEuros"
                         >
-                          +20 🪙
+                          +20 SE
                         </button>
                         <button
                           type="button"
                           className="btn-secondary"
                           disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 50, 'Premio monedas (+50)')}
+                          onClick={() => handleModificarPuntos(alumno.id, 50, 'Premio StevenEuros (+50)')}
                           style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 50 monedas"
+                          title="Sumar 50 StevenEuros"
                         >
-                          +50 🪙
+                          +50 SE
                         </button>
                         <button
                           type="button"
                           className="btn-secondary"
                           disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 100, 'Premio monedas (+100)')}
+                          onClick={() => handleModificarPuntos(alumno.id, 100, 'Premio StevenEuros (+100)')}
                           style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 100 monedas"
+                          title="Sumar 100 StevenEuros"
                         >
-                          +100 🪙
+                          +100 SE
                         </button>
 
                         {/* Input para fijar saldo exacto */}
@@ -4024,7 +4102,7 @@ export function PantallaAdmin() {
                               setSaldoCustomInputs(prev => ({ ...prev, [alumno.id]: val }))
                             }}
                             style={{ width: 68, height: 28, fontSize: 12, padding: '2px 6px', textAlign: 'center' }}
-                            title="Saldo exacto de monedas"
+                            title="Saldo exacto de StevenEuros"
                           />
                           <button
                             type="button"
@@ -4032,9 +4110,9 @@ export function PantallaAdmin() {
                             disabled={accionEnCurso === alumno.id}
                             onClick={() => handleFijarMonedasDirecto(alumno, saldoInput)}
                             style={{ minHeight: 28, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}
-                            title="Fijar este saldo exacto en base de datos"
+                            title="Fijar este saldo exacto de StevenEuros en base de datos"
                           >
-                            Fijar
+                            Fijar SE
                           </button>
                         </div>
                       </div>
@@ -4140,7 +4218,7 @@ export function PantallaAdmin() {
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                          Reto: <strong>{entrega.retoTitulo}</strong> · <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>+{entrega.puntos} pts</span>
+                          Reto: <strong>{entrega.retoTitulo}</strong> · <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>+{entrega.puntos} SE 💶</span>
                         </div>
                       </div>
                     </div>
@@ -4149,7 +4227,7 @@ export function PantallaAdmin() {
                       <span className={`apple-badge ${
                         entrega.estado === 'aprobado' ? 'apple-badge-positive' : entrega.estado === 'rechazado' ? 'apple-badge-negative' : 'apple-badge-warning'
                       }`} style={{ fontSize: 11 }}>
-                        {entrega.estado === 'aprobado' ? 'Aprobado (+pts)' : entrega.estado === 'rechazado' ? 'Rechazado' : 'Pendiente de Revisión'}
+                        {entrega.estado === 'aprobado' ? 'Aprobado (+SE 💶)' : entrega.estado === 'rechazado' ? 'Rechazado' : 'Pendiente de Revisión'}
                       </span>
                       <span className="apple-caption" style={{ fontSize: 11 }}>
                         {entrega.fecha} {entrega.hora || ''}
@@ -4198,7 +4276,7 @@ export function PantallaAdmin() {
                         onClick={() => handleAprobarEntregaReto(entrega)}
                         style={{ minHeight: 32, padding: '4px 14px', fontSize: 12, fontWeight: 700, backgroundColor: 'var(--color-positive)' }}
                       >
-                        Aprobar y Sumar +{entrega.puntos} pts
+                        Aprobar y Sumar +{entrega.puntos} SE 💶
                       </button>
                     </div>
                   )}
@@ -4283,7 +4361,7 @@ export function PantallaAdmin() {
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 14 }}>
-              Caduca a medianoche. Los alumnos reciben +5 pts al responder y ven estadísticas colectivas.
+              Caduca a medianoche. Los alumnos reciben +5 SE 💶 al responder y ven estadísticas colectivas.
             </p>
 
             <form onSubmit={handleGuardarPreguntaFlash} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -4774,7 +4852,7 @@ export function PantallaAdmin() {
               </div>
               <div>
                 <h3 className="apple-headline" style={{ fontSize: 17 }}>
-                  Modificar Puntuación
+                  Modificar StevenEuros y Racha
                 </h3>
                 <p className="apple-caption" style={{ marginTop: 1 }}>
                   {modalPuntaje.alumno.nombre} {modalPuntaje.alumno.username ? `(@${modalPuntaje.alumno.username})` : ''}
@@ -4793,9 +4871,9 @@ export function PantallaAdmin() {
               marginBottom: 16
             }}>
               <div>
-                <span className="apple-caption" style={{ display: 'block' }}>Puntos actuales</span>
+                <span className="apple-caption" style={{ display: 'block' }}>StevenEuros actuales</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-ink)' }}>
-                  {modalPuntaje.alumno.puntos_total || 0} pts
+                  {modalPuntaje.alumno.puntos_total || 0} SE 💶
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -4830,7 +4908,7 @@ export function PantallaAdmin() {
                   cursor: 'pointer'
                 }}
               >
-                Puntaje Exacto
+                Saldo Exacto (SE)
               </button>
               <button
                 type="button"
@@ -4855,7 +4933,7 @@ export function PantallaAdmin() {
             {modalPuntaje.modo === 'exacto' ? (
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
-                  Nuevo valor exacto de puntos
+                  Nuevo saldo exacto de StevenEuros (SE 💶)
                 </label>
                 <input
                   type="number"
@@ -4871,7 +4949,7 @@ export function PantallaAdmin() {
             ) : (
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)', display: 'block', marginBottom: 4 }}>
-                  Cantidad a sumar o restar (usa negativos para restar)
+                  Cantidad de StevenEuros a sumar o restar (usa negativos para restar)
                 </label>
                 <input
                   type="number"
@@ -4898,14 +4976,14 @@ export function PantallaAdmin() {
                         cursor: 'pointer'
                       }}
                     >
-                      {val > 0 ? `+${val}` : val}
+                      {val > 0 ? `+${val} SE` : `${val} SE`}
                     </button>
                   ))}
                 </div>
                 <p className="apple-caption" style={{ marginTop: 6 }}>
                   Resultado final:{' '}
                   <strong>
-                    {Math.max(0, (modalPuntaje.alumno.puntos_total || 0) + (Number(modalPuntaje.deltaPuntos) || 0))} pts
+                    {Math.max(0, (modalPuntaje.alumno.puntos_total || 0) + (Number(modalPuntaje.deltaPuntos) || 0))} SE 💶
                   </strong>
                 </p>
               </div>

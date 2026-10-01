@@ -1048,7 +1048,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                 }}
               >
                 <Coins size={15} color="#F59E0B" />
-                Apuesta en mesa: {apuestaCrupier} pts
+                Apuesta en mesa: {apuestaCrupier} SE 💶
               </span>
             )}
           </div>
@@ -1310,7 +1310,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: '#FDE68A', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Duelo 21 en Directo · Bote: {partidaActivaPvp.apuesta * 2} pts
+                  Duelo 21 en Directo · Bote: {partidaActivaPvp.apuesta * 2} SE 💶
                 </span>
                 <span
                   style={{
@@ -1338,7 +1338,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                     Mesa de Duelo Abierta
                   </h4>
                   <p style={{ margin: '6px 0 16px', fontSize: 13, color: '#D1D5DB' }}>
-                    Bote acumulado: <strong>{partidaActivaPvp.apuesta * 2} pts</strong>. Esperando a que un compañero de clase pulse &quot;Aceptar Duelo&quot;.
+                    Bote acumulado: <strong>{partidaActivaPvp.apuesta * 2} SE 💶</strong>. Esperando a que un compañero de clase pulse &quot;Aceptar Duelo&quot;.
                   </p>
                   <button
                     type="button"
@@ -1354,7 +1354,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                       cursor: 'pointer'
                     }}
                   >
-                    Cancelar Mesa y Recuperar {partidaActivaPvp.apuesta} pts
+                    Cancelar Mesa y Recuperar {partidaActivaPvp.apuesta} SE 💶
                   </button>
                 </div>
               ) : (
@@ -1503,7 +1503,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                           cursor: 'pointer'
                         }}
                       >
-                        {v} pts
+                        {v} SE
                       </button>
                     ))}
                   </div>
@@ -1619,7 +1619,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                               )}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                              Apuesta: <strong style={{ color: '#D97706' }}>{lobby.apuesta} pts</strong> · Bote: {lobby.apuesta * 2} pts
+                              Apuesta: <strong style={{ color: '#D97706' }}>{lobby.apuesta} SE 💶</strong> · Bote: {lobby.apuesta * 2} SE 💶
                             </div>
                           </div>
                         </div>
@@ -1662,7 +1662,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                                 gap: 6,
                                 transition: 'all 0.15s ease'
                               }}
-                              title={(perfil?.puntos_total || 0) < lobby.apuesta ? `Requiere ${lobby.apuesta} monedas` : `Entrar al duelo por ${lobby.apuesta} monedas`}
+                              title={(perfil?.puntos_total || 0) < lobby.apuesta ? `Requiere ${lobby.apuesta} StevenEuros` : `Entrar al duelo por ${lobby.apuesta} StevenEuros`}
                             >
                               {cargandoPvp ? (
                                 <>
@@ -1670,7 +1670,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                                   <span>Entrando...</span>
                                 </>
                               ) : (perfil?.puntos_total || 0) < lobby.apuesta ? (
-                                <span>Requiere {lobby.apuesta} 🪙</span>
+                                <span>Requiere {lobby.apuesta} SE 💶</span>
                               ) : (
                                 <span>Aceptar Duelo</span>
                               )}

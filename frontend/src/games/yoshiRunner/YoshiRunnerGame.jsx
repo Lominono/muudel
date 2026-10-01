@@ -1585,7 +1585,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     if (state.coins > 0) {
       ctx.fillStyle = '#D97706'
       ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif'
-      ctx.fillText(`+${state.coins} pts`, CANVAS_W - 16, 44)
+      ctx.fillText(`+${state.coins} SE`, CANVAS_W - 16, 44)
     }
 
     // Indicador sutil de energía / overdrive
@@ -1760,7 +1760,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             <div style={{ fontSize: 20, fontWeight: 900, color: '#FF3B30' }}>FIN DE PARTIDA</div>
             <div style={{ display: 'flex', gap: 16, fontSize: 13, fontWeight: 700 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts (Sin límite)</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} SE (Sin límite)</div>
             </div>
             <div style={{ fontSize: 11, color: DIFICULTADES_YOSHI[dificultad]?.color, fontWeight: 700 }}>
               Modo: {DIFICULTADES_YOSHI[dificultad]?.nombre} ({DIFICULTADES_YOSHI[dificultad]?.badge})
@@ -1787,7 +1787,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             <div style={{ fontSize: 28, fontWeight: 900, color: '#FFD700' }}>¡VICTORIA!</div>
             <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts (Sin límite)</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} SE (Sin límite)</div>
             </div>
             <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 6, gap: 6, backgroundColor: '#FFD700', color: '#000', fontWeight: 800, fontSize: 13, padding: '8px 20px', borderRadius: 9999 }}>
               <Star size={14} fill="#000" /><span>Siguiente ronda</span>

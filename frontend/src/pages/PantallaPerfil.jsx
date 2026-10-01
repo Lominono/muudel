@@ -973,7 +973,7 @@ export function PantallaPerfil() {
           </div>
 
           {[
-            { label: 'Puntos acumulados', valor: `${perfil.puntos_total || 0} pts`, color: 'var(--color-accent)' },
+            { label: 'StevenEuros acumulados', valor: `${perfil.puntos_total || 0} SE 💶`, color: 'var(--color-accent)' },
             { label: 'Racha actual', valor: `${perfil.racha_actual || 0} días`, color: 'var(--color-warning)' },
             { label: 'Récord personal', valor: `${perfil.mejor_racha || 0} días`, color: 'var(--color-positive)' },
             { label: 'Estado', valor: 'Activo en clase', color: 'var(--color-positive)' },

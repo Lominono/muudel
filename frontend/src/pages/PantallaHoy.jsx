@@ -121,6 +121,14 @@ export function PantallaHoy() {
       if (nuevaCfg) setConfigRec(nuevaCfg)
     })
 
+    const handleSyncStevenEuros = (e) => {
+      const { puntos, userId } = e.detail || {}
+      if (puntos != null && (!userId || userId === perfil?.id)) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: puntos } : prev)
+      }
+    }
+    window.addEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+
     return () => {
       clearInterval(timerHorario)
       supabase.removeChannel(canalFeed)
@@ -128,6 +136,7 @@ export function PantallaHoy() {
       desLike()
       desCheckin()
       desRecompensas()
+      window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
     }
   }, [perfil?.id, fechaHoy])
 
@@ -306,6 +315,8 @@ export function PantallaHoy() {
         setPerfil({ ...perfil, puntos_total: nuevoSaldo })
         localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
         await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
+        window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
+        transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
 
         // Otorgar XP de competencia técnica
         let skillKey = 'autoria_tecnica'
@@ -504,7 +515,7 @@ export function PantallaHoy() {
               }}
             >
               <ShoppingBag size={13} />
-              <span>{perfil?.puntos_total || 0} pts</span>
+              <span>{perfil?.puntos_total || 0} SE 💶</span>
             </button>
 
             {/* Avatar del usuario con acceso a su perfil */}
@@ -726,7 +737,7 @@ export function PantallaHoy() {
               <>
                 <CheckCircle2 size={16} color="var(--color-positive)" />
                 <span style={{ fontWeight: 600, color: 'var(--color-positive)' }}>
-                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} pts)
+                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} SE 💶)
                 </span>
               </>
             ) : solicitudPendiente ? (
@@ -762,7 +773,7 @@ export function PantallaHoy() {
                   cursor: 'pointer'
                 }}
               >
-                Sellar (+{calcularPuntosGanados('checkin')} pts)
+                Sellar (+{calcularPuntosGanados('checkin')} SE 💶)
               </button>
             )}
             <button
@@ -857,7 +868,7 @@ export function PantallaHoy() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
-                🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} monedas al publicar
+                🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} StevenEuros (SE 💶) al publicar
               </span>
             </div>
 

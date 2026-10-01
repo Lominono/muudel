@@ -550,7 +550,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
         const reembolso = Math.max(1, Math.floor(totalApostado * 0.5))
         localStorage.removeItem('muudel_seguro_ruleta_' + perfil?.id)
         gananciaTotal = reembolso
-        detallesGanadores.push(`🛡️ Seguro de Ruleta: +${reembolso} pts reembolsados (50%)`)
+        detallesGanadores.push(`🛡️ Seguro de Ruleta: +${reembolso} SE reembolsados (50%)`)
       }
     }
 
@@ -558,6 +558,8 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     const perfilLiquidado = { ...perfil, puntos_total: nuevoTotalFinal }
     setPerfil(perfilLiquidado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilLiquidado))
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoTotalFinal, userId: perfil.id } }))
+    transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoTotalFinal, userId: perfil.id })
 
     try {
       await supabase.from('profiles').update({ puntos_total: nuevoTotalFinal }).eq('id', perfil.id)
@@ -629,7 +631,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     <span style={{
       backgroundColor: '#FFD60A', color: '#000', borderRadius: 8,
       padding: '1px 5px', fontSize: 9, fontWeight: 900, marginTop: 1
-    }}>{amount}p</span>
+    }}>{amount} SE</span>
   ) : null
 
   // ─── NUM BUTTON ──────────────────────────────────────────
@@ -786,7 +788,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
               Saldo
             </span>
             <strong style={{ fontSize: 16, color: 'var(--color-accent)', fontWeight: 800 }}>
-              {saldoActual}
+              {saldoActual} SE 💶
             </strong>
           </div>
           <div style={{ height: 28, width: 1, backgroundColor: 'var(--color-separator)' }} />
@@ -795,7 +797,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
               Mesa
             </span>
             <strong style={{ fontSize: 16, color: totalApostado > 0 ? '#FF9500' : 'var(--color-secondary-ink)', fontWeight: 800 }}>
-              {totalApostado}<span style={{ fontSize: 10, fontWeight: 600 }}>/{apuestaMaxima}</span>
+              {totalApostado}<span style={{ fontSize: 10, fontWeight: 600 }}>/{apuestaMaxima} SE</span>
             </strong>
           </div>
         </div>
@@ -870,8 +872,8 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
                 fontSize: 12, fontWeight: 700
               }}>
                 {resultadoGanancia.ganancia > 0
-                  ? `+${resultadoGanancia.ganancia} pts (${resultadoGanancia.detalles.join(', ')})`
-                  : `Sin aciertos (-${totalApostado} pts)`}
+                  ? `+${resultadoGanancia.ganancia} SE (${resultadoGanancia.detalles.join(', ')})`
+                  : `Sin aciertos (-${totalApostado} SE)`}
               </div>
             )}
           </div>
@@ -915,7 +917,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
         }}
       >
         <RotateCcw size={16} className={girando ? 'spin-slow' : ''} />
-        <span>{girando ? 'GIRANDO...' : `GIRAR (${totalApostado} pts)`}</span>
+        <span>{girando ? 'GIRANDO...' : `GIRAR (${totalApostado} SE 💶)`}</span>
       </button>
 
       {/* Emergency bonus */}
@@ -935,7 +937,7 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
           }}
         >
           <Coins size={15} />
-          <span>{yaReclamoBonoHoy ? 'Bono agotado hoy' : 'Bono emergencia (+5 pts, 1/día)'}</span>
+          <span>{yaReclamoBonoHoy ? 'Bono agotado hoy' : 'Bono emergencia (+5 SE 💶, 1/día)'}</span>
         </button>
       )}
 

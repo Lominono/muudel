@@ -33,29 +33,44 @@ adminRouter.post('/modificar-puntaje', async (req, res) => {
     }
 
     if (puntos_total !== undefined && puntos_total !== null) {
-      updateData.puntos_total = Math.max(0, Number(puntos_total))
+      updateData.puntos_total = Math.max(0, Math.round(Number(puntos_total) || 0))
     }
 
     if (racha_actual !== undefined && racha_actual !== null) {
-      updateData.racha_actual = Math.max(0, Number(racha_actual))
+      updateData.racha_actual = Math.max(0, Math.round(Number(racha_actual) || 0))
     }
 
-    const { data, error } = await supabaseAdmin
+    // Intentar actualizar por id
+    let { data, error } = await supabaseAdmin
       .from('profiles')
       .update(updateData)
       .eq('id', userId)
       .select()
-      .single()
+
+    // Si no se encontró por ID, intentar buscar por username si no tiene formato UUID
+    if ((!data || data.length === 0) && typeof userId === 'string' && !userId.includes('-')) {
+      const respUser = await supabaseAdmin
+        .from('profiles')
+        .update(updateData)
+        .eq('username', userId)
+        .select()
+      if (respUser.data && respUser.data.length > 0) {
+        data = respUser.data
+        error = respUser.error
+      }
+    }
 
     if (error) {
-      console.error('Error al modificar puntaje en Supabase:', error)
+      console.error('Error al modificar StevenEuros en Supabase:', error)
       return res.status(500).json({ error: error.message || 'Error en base de datos' })
     }
 
+    const perfilActualizado = (data && data.length > 0) ? data[0] : { id: userId, ...updateData }
+
     return res.json({
       success: true,
-      mensaje: `Puntaje actualizado correctamente para ${data.nombre || userId}`,
-      perfil: data
+      mensaje: `StevenEuros actualizados correctamente para ${perfilActualizado.nombre || userId}`,
+      perfil: perfilActualizado
     })
   } catch (err) {
     console.error('Catch en /modificar-puntaje:', err)

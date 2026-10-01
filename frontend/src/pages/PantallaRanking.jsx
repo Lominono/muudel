@@ -141,12 +141,18 @@ export function PantallaRanking() {
 
     // Suscripciones de eventos de hub
     const desPuntos = suscribirEvento('puntos_actualizados', () => cargarRanking())
+    const desStevenEuros = suscribirEvento('steveneuros_actualizados', () => cargarRanking())
     const desAsistencia = suscribirEvento('asistencia_confirmada', () => cargarRanking())
+
+    const handleSyncWindow = () => cargarRanking()
+    window.addEventListener('steveneuros_actualizados', handleSyncWindow)
 
     return () => {
       supabase.removeChannel(canalRanking)
       desPuntos()
+      desStevenEuros()
       desAsistencia()
+      window.removeEventListener('steveneuros_actualizados', handleSyncWindow)
     }
   }, [cargarRanking])
 
@@ -281,7 +287,7 @@ export function PantallaRanking() {
               <span className="tabular-nums" style={{ fontSize: 20, fontWeight: 900, color: 'var(--color-accent)' }}>
                 {perfil.puntos_total || 0}
               </span>
-              <span className="apple-caption" style={{ fontWeight: 700 }}>pts</span>
+              <span className="apple-caption" style={{ fontWeight: 700 }}>SE 💶</span>
             </div>
 
             {puntosParaSubir > 0 && alumnoDirectamenteArriba && (
@@ -296,7 +302,7 @@ export function PantallaRanking() {
                 marginTop: 2
               }}>
                 <ArrowUp size={12} />
-                <span>+{puntosParaSubir} pts para superar a {alumnoDirectamenteArriba.nombre.split(' ')[0]}</span>
+                <span>+{puntosParaSubir} SE para superar a {alumnoDirectamenteArriba.nombre.split(' ')[0]}</span>
               </div>
             )}
           </div>
@@ -364,7 +370,7 @@ export function PantallaRanking() {
                     {top2.nombre.split(' ')[0]}
                   </div>
                   <div className="tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
-                    {top2.puntos_total || top2.puntos_semana || 0} pts
+                    {top2.puntos_total || top2.puntos_semana || 0} SE 💶
                   </div>
                 </div>
 
@@ -428,7 +434,7 @@ export function PantallaRanking() {
                     {top1.nombre.split(' ')[0]}
                   </div>
                   <div className="tabular-nums" style={{ fontSize: 15, fontWeight: 900, color: '#D97706' }}>
-                    {top1.puntos_total || top1.puntos_semana || 0} pts
+                    {top1.puntos_total || top1.puntos_semana || 0} SE 💶
                   </div>
                 </div>
 
@@ -488,7 +494,7 @@ export function PantallaRanking() {
                     {top3.nombre.split(' ')[0]}
                   </div>
                   <div className="tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
-                    {top3.puntos_total || top3.puntos_semana || 0} pts
+                    {top3.puntos_total || top3.puntos_semana || 0} SE 💶
                   </div>
                 </div>
 
@@ -670,7 +676,7 @@ export function PantallaRanking() {
                       <span className="tabular-nums" style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-accent)' }}>
                         {estudiante.puntos_total || estudiante.puntos_semana || 0}
                       </span>
-                      <span className="apple-caption" style={{ fontWeight: 600 }}>pts</span>
+                      <span className="apple-caption" style={{ fontWeight: 600 }}>SE 💶</span>
                     </div>
 
                     {filtro === 'semana' && estudiante.checkins_semana !== undefined && (
