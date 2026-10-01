@@ -24,12 +24,14 @@ import {
   Megaphone,
   Check,
   ChevronRight,
-  X
+  X,
+  Calendar
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 import { sumarXpSkill } from '../utils/skillsData'
 import { obtenerConfigRecompensas, calcularPuntosGanados } from '../utils/recompensasConfig'
+import { getEstadoHorarioCompleto } from '../utils/horarioData'
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -42,6 +44,9 @@ export function PantallaHoy() {
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
+
+  // Estado del horario oficial y clase en curso en tiempo real
+  const [estadoHorario, setEstadoHorario] = useState(() => getEstadoHorarioCompleto())
 
   // Compositor inline estilo X
   const [textoPost, setTextoPost] = useState('')
@@ -79,6 +84,11 @@ export function PantallaHoy() {
   useEffect(() => {
     cargarFeedCompleto()
 
+    // Intervalo en vivo para actualizar la clase actual y minutos restantes
+    const timerHorario = setInterval(() => {
+      setEstadoHorario(getEstadoHorarioCompleto())
+    }, 15000)
+
     // Suscripción en tiempo real a nuevos posts
     const canalFeed = supabase
       .channel('feed-posts-live')
@@ -112,6 +122,7 @@ export function PantallaHoy() {
     })
 
     return () => {
+      clearInterval(timerHorario)
       supabase.removeChannel(canalFeed)
       desNuevoPost()
       desLike()
@@ -137,7 +148,7 @@ export function PantallaHoy() {
         }
       }
 
-      // 2. Cargar posts desde la tabla feed_posts
+      // 2. Cargar posts reales desde la tabla feed_posts
       const { data: postsData, error: errPosts } = await supabase
         .from('feed_posts')
         .select(`
@@ -162,47 +173,69 @@ export function PantallaHoy() {
         }
         setLikesDados(likedSet)
 
-        const mapeados = postsData.map(p => ({
-          id: p.id,
-          tipo: 'post',
-          userId: p.profiles?.id,
-          autor: p.profiles?.nombre || 'Alumno SMR2',
-          username: p.profiles?.username || 'alumno',
-          color: p.profiles?.color_acento || '#007AFF',
-          rol: p.profiles?.rol || 'alumno',
-          avatarEmoji: p.profiles?.avatar_emoji || '🧑',
-          categoria: p.categoria || 'General',
-          titulo: p.titulo,
-          contenido: p.contenido,
-          tiempoHace: calcularTiempoRelativo(p.created_at),
-          likes: p.likes_count || 0,
-          liked: Boolean(likedSet[p.id])
-        }))
+        // Filtrar estrictamente solo usuarios reales con perfil existente (sin mocks)
+        const mapeados = postsData
+          .filter(p => p.profiles && p.profiles.nombre && p.profiles.nombre.trim() !== '')
+          .map(p => ({
+            id: p.id,
+            tipo: 'post',
+            userId: p.profiles.id,
+            autor: p.profiles.nombre,
+            username: p.profiles.username || 'alumno',
+            color: p.profiles.color_acento || '#007AFF',
+            rol: p.profiles.rol || 'alumno',
+            avatarEmoji: p.profiles.avatar_emoji || '🧑',
+            categoria: p.categoria || 'General',
+            titulo: p.titulo,
+            contenido: p.contenido,
+            tiempoHace: calcularTiempoRelativo(p.created_at),
+            likes: p.likes_count || 0,
+            liked: Boolean(likedSet[p.id])
+          }))
         setPostsFeed(mapeados)
       }
 
-      // 3. Cargar entregas y respuestas recientes de clase
+      // 3. Cargar respuestas y retos validados de alumnos reales desde Supabase
       try {
-        const entregasLocales = JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
-        const respuestasMapeadas = entregasLocales.slice(0, 15).map(e => ({
-          id: e.id,
-          tipo: 'respuesta',
-          userId: e.userId,
-          autor: e.nombre || 'Compañero',
-          username: e.username || 'smr2',
-          color: e.color || '#007AFF',
-          rol: 'alumno',
-          categoria: 'Reto',
-          retoTitulo: e.retoTitulo || 'Reto Técnico',
-          contenido: e.evidencia,
-          feedback: e.feedback,
-          estado: e.estado || 'aprobado',
-          tiempoHace: e.hora || 'Hoy',
-          likes: e.likes || 0,
-          liked: Boolean(likesDados[e.id])
-        }))
-        setRespuestasFeed(respuestasMapeadas)
-      } catch (_) {}
+        const { data: entregasData } = await supabase
+          .from('reto_completado')
+          .select(`
+            id, user_id, reto_id, evidencia, feedback_admin, created_at,
+            profiles (id, nombre, username, color_acento, rol, avatar_emoji),
+            retos (titulo)
+          `)
+          .eq('validado', true)
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (entregasData && entregasData.length > 0) {
+          const respuestasMapeadas = entregasData
+            .filter(e => e.profiles && e.profiles.nombre && e.evidencia)
+            .map(e => ({
+              id: 'rc_' + e.id,
+              tipo: 'respuesta',
+              userId: e.profiles.id,
+              autor: e.profiles.nombre,
+              username: e.profiles.username || 'alumno',
+              color: e.profiles.color_acento || '#34C759',
+              rol: e.profiles.rol || 'alumno',
+              avatarEmoji: e.profiles.avatar_emoji || '🎯',
+              categoria: 'Reto',
+              retoTitulo: e.retos?.titulo || 'Reto Técnico',
+              contenido: e.evidencia,
+              feedback: e.feedback_admin,
+              estado: 'aprobado',
+              tiempoHace: calcularTiempoRelativo(e.created_at),
+              likes: 0,
+              liked: false
+            }))
+          setRespuestasFeed(respuestasMapeadas)
+        } else {
+          setRespuestasFeed([])
+        }
+      } catch (_) {
+        setRespuestasFeed([])
+      }
     } catch (err) {
       console.warn('Error cargando feed:', err)
     } finally {
@@ -375,8 +408,8 @@ export function PantallaHoy() {
     if (tabActiva === 'respuestas') {
       return respuestasFeed
     }
-    // 'para_ti' combina posts y respuestas de clase ordenados cronológicamente
-    return [...postsFeed, ...respuestasFeed]
+    // 'para_ti': exclusivamente publicaciones auténticas de los alumnos y profesor
+    return postsFeed
   })()
 
   return (
@@ -532,6 +565,150 @@ export function PantallaHoy() {
           })}
         </div>
       </header>
+
+      {/* WIDGET EN VIVO: CLASE ACTUAL Y HORARIO DE AULA SMR2 */}
+      <section
+        onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
+        role="button"
+        tabIndex={0}
+        title="Pulsar para abrir horario semanal completo"
+        style={{
+          margin: '10px 16px 8px',
+          padding: '12px 14px',
+          borderRadius: 14,
+          backgroundColor: estadoHorario.estado === 'en_clase'
+            ? 'rgba(52, 199, 89, 0.08)'
+            : estadoHorario.estado === 'en_descanso'
+            ? 'rgba(255, 149, 0, 0.08)'
+            : 'var(--color-surface)',
+          border: estadoHorario.estado === 'en_clase'
+            ? '1px solid rgba(52, 199, 89, 0.35)'
+            : estadoHorario.estado === 'en_descanso'
+            ? '1px solid rgba(255, 149, 0, 0.35)'
+            : '1px solid var(--color-separator)',
+          boxShadow: estadoHorario.estado === 'en_clase'
+            ? '0 2px 12px rgba(52, 199, 89, 0.12)'
+            : '0 2px 8px rgba(0, 0, 0, 0.04)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          transition: 'all 0.15s ease'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          {/* Badge de Asignatura o Recreo */}
+          <div style={{
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            backgroundColor: estadoHorario.claseActual?.colorBg || 'rgba(0, 122, 255, 0.12)',
+            color: estadoHorario.claseActual?.color || 'var(--color-accent)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 900,
+            fontSize: 13,
+            letterSpacing: -0.2,
+            flexShrink: 0
+          }}>
+            {estadoHorario.claseActual?.codigo ? (
+              <span>{estadoHorario.claseActual.codigo}</span>
+            ) : estadoHorario.estado === 'en_descanso' ? (
+              <span style={{ fontSize: 18 }}>☕</span>
+            ) : (
+              <Calendar size={18} />
+            )}
+          </div>
+
+          {/* Información de la Clase en Directo */}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 7px',
+                borderRadius: 9999,
+                backgroundColor: estadoHorario.estado === 'en_clase'
+                  ? 'var(--color-positive)'
+                  : estadoHorario.estado === 'en_descanso'
+                  ? 'var(--color-warning)'
+                  : 'var(--color-accent)',
+                color: '#FFFFFF',
+                letterSpacing: 0.3
+              }}>
+                {estadoHorario.estado === 'en_clase'
+                  ? '• EN CLASE AHORA'
+                  : estadoHorario.estado === 'en_descanso'
+                  ? '☕ RECREO / DESCANSO'
+                  : estadoHorario.estado === 'antes_de_clase'
+                  ? '⏳ HOY A LAS 15:30'
+                  : 'HORARIO SMR2'}
+              </span>
+
+              {estadoHorario.claseActual?.minutosRestantes != null && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
+                  · Quedan {estadoHorario.claseActual.minutosRestantes} min
+                </span>
+              )}
+            </div>
+
+            <div style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: 'var(--color-ink)',
+              marginTop: 2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}>
+              {estadoHorario.claseActual?.nombre || estadoHorario.proximaClase?.nombre || 'Horario oficial de clase'}
+            </div>
+
+            <div style={{
+              fontSize: 12,
+              color: 'var(--color-secondary-ink)',
+              marginTop: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}>
+              {estadoHorario.claseActual?.profesor ? (
+                <span>{estadoHorario.claseActual.profesor}</span>
+              ) : estadoHorario.proximaClase?.profesor ? (
+                <span>Docente: {estadoHorario.proximaClase.profesor}</span>
+              ) : (
+                <span>{estadoHorario.mensaje}</span>
+              )}
+              <span style={{ opacity: 0.5 }}>·</span>
+              <span className="tabular-nums" style={{ fontWeight: 600 }}>
+                {estadoHorario.claseActual?.rango || estadoHorario.proximaClase?.rango || '15:30 - 21:15'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Botón táctil para abrir horario */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '6px 10px',
+          borderRadius: 8,
+          backgroundColor: 'var(--color-surface-secondary)',
+          border: '1px solid var(--color-separator)',
+          color: 'var(--color-accent)',
+          fontSize: 12,
+          fontWeight: 700,
+          flexShrink: 0
+        }}>
+          <Calendar size={13} />
+          <span className="hidden sm:inline">Ver Horario</span>
+          <ChevronRight size={14} />
+        </div>
+      </section>
 
       {/* 2. CHIP COMPACTO NO INVASIVO DE ASISTENCIA 15:30 */}
       {bannerAsistenciaVisible && (

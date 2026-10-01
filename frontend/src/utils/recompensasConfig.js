@@ -23,10 +23,23 @@ export function obtenerConfigRecompensas() {
   return { ...DEFAULT_RECOMPENSAS }
 }
 
-// Sincroniza con Supabase o el endpoint del servidor
+// Sincroniza con el endpoint del servidor o Supabase
 export async function cargarConfigRecompensasDesdeServidor() {
+  // 1. Consultar endpoint API del servidor express (garantizado sin 404)
   try {
-    // 1. Intentar leer desde Supabase tabla config_clase
+    const res = await fetch('/api/admin/config-recompensas')
+    if (res.ok) {
+      const json = await res.json()
+      if (json.config) {
+        const cfg = { ...DEFAULT_RECOMPENSAS, ...json.config }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg))
+        return cfg
+      }
+    }
+  } catch (_) {}
+
+  // 2. Si hay conexión directa a Supabase con la tabla creada
+  try {
     const { data, error } = await supabase
       .from('config_clase')
       .select('valor')
@@ -37,19 +50,6 @@ export async function cargarConfigRecompensasDesdeServidor() {
       const cfg = { ...DEFAULT_RECOMPENSAS, ...data.valor }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg))
       return cfg
-    }
-  } catch (_) {}
-
-  // 2. Fallback a endpoint del servidor express
-  try {
-    const res = await fetch('/api/admin/config-recompensas')
-    if (res.ok) {
-      const json = await res.json()
-      if (json.config) {
-        const cfg = { ...DEFAULT_RECOMPENSAS, ...json.config }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg))
-        return cfg
-      }
     }
   } catch (_) {}
 

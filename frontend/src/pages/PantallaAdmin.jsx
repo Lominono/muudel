@@ -54,7 +54,8 @@ import {
   Coins,
   TrendingUp,
   Sliders,
-  DollarSign
+  DollarSign,
+  Zap
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { conOneSignal } from '../utils/oneSignal'

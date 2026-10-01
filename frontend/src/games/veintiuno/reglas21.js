@@ -60,7 +60,10 @@ export function crearBarajaBarajada(numBarajas = 1) {
  * El As cuenta como 11, pero si la suma supera 21, se convierte en 1.
  */
 export function calcularPuntuacionMano(cartas = []) {
-  if (!cartas || cartas.length === 0) {
+  if (typeof cartas === 'string') {
+    try { cartas = JSON.parse(cartas) } catch (_) { cartas = [] }
+  }
+  if (!Array.isArray(cartas) || cartas.length === 0) {
     return { total: 0, esBlackjack: false, sePaso: false, texto: '0 pts' }
   }
 

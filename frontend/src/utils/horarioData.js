@@ -110,3 +110,138 @@ export function getClaseActual(fecha = new Date()) {
     esDescanso: false
   }
 }
+
+export function getEstadoHorarioCompleto(fecha = new Date()) {
+  const dia = fecha.getDay() // 0: Dom, 1: Lun, ... 5: Vie, 6: Sab
+  const diasNombres = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+  const diaNombre = diasNombres[dia]
+
+  if (dia === 0 || dia === 6) {
+    return {
+      estado: 'fin_de_semana',
+      diaSemana: dia,
+      diaNombre,
+      esLectivo: false,
+      mensaje: 'Fin de semana · Próxima clase el Lunes a las 15:30',
+      claseActual: null,
+      proximaClase: null,
+      tramoActualId: null
+    }
+  }
+
+  const horas = fecha.getHours()
+  const minutos = fecha.getMinutes()
+  const minutosActuales = horas * 60 + minutos
+
+  const tramos = [
+    { id: 1, inicio: 15 * 60 + 30, fin: 16 * 60 + 20, rango: '15:30 - 16:20' },
+    { id: 2, inicio: 16 * 60 + 20, fin: 17 * 60 + 15, rango: '16:20 - 17:15' },
+    { id: 3, inicio: 17 * 60 + 15, fin: 18 * 60 + 10, rango: '17:15 - 18:10' },
+    { id: 'descanso', inicio: 18 * 60 + 10, fin: 18 * 60 + 35, rango: '18:10 - 18:35', esDescanso: true },
+    { id: 4, inicio: 18 * 60 + 35, fin: 19 * 60 + 30, rango: '18:35 - 19:30' },
+    { id: 5, inicio: 19 * 60 + 30, fin: 20 * 60 + 25, rango: '19:30 - 20:25' },
+    { id: 6, inicio: 20 * 60 + 25, fin: 21 * 60 + 15, rango: '20:25 - 21:15' }
+  ]
+
+  const horarioHoy = HORARIO_SEMANAL[dia] || []
+
+  // Antes de las 15:30
+  if (minutosActuales < tramos[0].inicio) {
+    const primerItem = horarioHoy.find(h => h.horaId === 1)
+    const primeraAsig = primerItem ? ASIGNATURAS[primerItem.codigo] : null
+    const minutosParaEmpezar = tramos[0].inicio - minutosActuales
+    return {
+      estado: 'antes_de_clase',
+      diaSemana: dia,
+      diaNombre,
+      esLectivo: true,
+      mensaje: `Próxima clase hoy a las 15:30: ${primeraAsig?.codigo || 'Clase'} · ${primeraAsig?.nombre || ''}`,
+      claseActual: null,
+      proximaClase: primeraAsig ? { ...primeraAsig, rango: tramos[0].rango, minutosParaEmpezar } : null,
+      tramoActualId: null
+    }
+  }
+
+  // Después de las 21:15
+  if (minutosActuales >= tramos[tramos.length - 1].fin) {
+    const proxDia = dia === 5 ? 'Lunes' : diasNombres[dia + 1]
+    return {
+      estado: 'despues_de_clase',
+      diaSemana: dia,
+      diaNombre,
+      esLectivo: true,
+      mensaje: `Clases de hoy finalizadas · Próxima sesión el ${proxDia} a las 15:30`,
+      claseActual: null,
+      proximaClase: null,
+      tramoActualId: null
+    }
+  }
+
+  // Dentro del horario lectivo
+  const idxActual = tramos.findIndex(t => minutosActuales >= t.inicio && minutosActuales < t.fin)
+  if (idxActual !== -1) {
+    const tramo = tramos[idxActual]
+    const minutosRestantes = tramo.fin - minutosActuales
+
+    const proxTramo = tramos[idxActual + 1] || null
+    let proxAsig = null
+    if (proxTramo) {
+      if (proxTramo.esDescanso) {
+        proxAsig = { esDescanso: true, nombre: 'Descanso / Recreo', rango: proxTramo.rango }
+      } else {
+        const itemP = horarioHoy.find(h => h.horaId === proxTramo.id)
+        if (itemP && ASIGNATURAS[itemP.codigo]) {
+          proxAsig = { ...ASIGNATURAS[itemP.codigo], rango: proxTramo.rango }
+        }
+      }
+    }
+
+    if (tramo.esDescanso) {
+      return {
+        estado: 'en_descanso',
+        diaSemana: dia,
+        diaNombre,
+        esLectivo: true,
+        claseActual: {
+          codigo: 'RECREO',
+          esDescanso: true,
+          nombre: 'Recreo de Clase (Descanso)',
+          profesor: 'Tiempo libre de aula',
+          rango: tramo.rango,
+          minutosRestantes,
+          color: '#FF9500',
+          colorBg: 'rgba(255, 149, 0, 0.14)'
+        },
+        proximaClase: proxAsig,
+        tramoActualId: 'descanso'
+      }
+    }
+
+    const item = horarioHoy.find(h => h.horaId === tramo.id)
+    const asigActual = item && ASIGNATURAS[item.codigo] ? {
+      ...ASIGNATURAS[item.codigo],
+      rango: tramo.rango,
+      minutosRestantes
+    } : null
+
+    return {
+      estado: 'en_clase',
+      diaSemana: dia,
+      diaNombre,
+      esLectivo: true,
+      claseActual: asigActual,
+      proximaClase: proxAsig,
+      tramoActualId: tramo.id
+    }
+  }
+
+  return {
+    estado: 'fuera_de_horario',
+    diaSemana: dia,
+    diaNombre,
+    esLectivo: true,
+    claseActual: null,
+    proximaClase: null,
+    tramoActualId: null
+  }
+}

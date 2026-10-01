@@ -28,6 +28,21 @@ import {
 } from 'lucide-react'
 
 export function Duelo21PvP({ perfil, setPerfil }) {
+  // Función para limpiar campos ajenos a la tabla pvp_blackjack antes de enviar a Supabase
+  const sanitizarParaSupabase = (obj) => {
+    if (!obj) return {}
+    const camposValidos = [
+      'id', 'creador_id', 'creador_nombre', 'oponente_id', 'oponente_nombre',
+      'apuesta', 'estado', 'turno', 'mano_creador', 'mano_oponente',
+      'baraja_restante', 'ganador_id', 'desenlace_motivo', 'resolved_at'
+    ]
+    const limpio = {}
+    camposValidos.forEach(k => {
+      if (obj[k] !== undefined) limpio[k] = obj[k]
+    })
+    return limpio
+  }
+
   // Pestaña activa dentro de 21: 'crupier' (Mesa Solitario) o 'pvp' (Duelo con la Clase)
   const [subModo, setSubModo] = useState('crupier')
 
@@ -106,12 +121,22 @@ export function Duelo21PvP({ perfil, setPerfil }) {
         }
       }
     })
+    const des5 = suscribirEvento('pvp_21_partida_iniciada', (payload) => {
+      if (payload?.partida) {
+        if (partidaActivaPvp?.id === payload.partidaId || payload.partida.creador_id === perfil?.id || payload.partida.oponente_id === perfil?.id) {
+          setPartidaActivaPvp(payload.partida)
+          sound.playCardDeal()
+        }
+        fetchLobbiesPvp()
+      }
+    })
 
     return () => {
       des1()
       des2()
       des3()
       des4()
+      des5()
       supabase.removeChannel(canalLive)
     }
   }, [partidaActivaPvp?.id, perfil?.id])
@@ -485,14 +510,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   }
 
   const aceptarRetoPvp = async (lobby) => {
-    if (String(lobby.creador_id) === String(perfil?.id)) {
-      setAvisoPvp('No puedes desafiarte a ti mismo. Puedes cancelar la mesa para recuperar tus puntos.')
+    if (!lobby) return
+
+    if (!perfil) {
+      sound.playPop()
+      setAvisoPvp('Debes iniciar sesión para aceptar duelos de 21.')
       return
     }
 
-    if (!perfil || (perfil.puntos_total || 0) < lobby.apuesta) {
+    if (String(lobby.creador_id) === String(perfil?.id)) {
       sound.playPop()
-      setAvisoPvp(`Saldo insuficiente. Tienes ${perfil?.puntos_total || 0} pts y la mesa requiere ${lobby.apuesta} pts.`)
+      setAvisoPvp('Esta es tu propia mesa creada. Espera a que un compañero acepte o cancélala para recuperar tus monedas.')
+      return
+    }
+
+    if ((perfil.puntos_total || 0) < lobby.apuesta) {
+      sound.playPop()
+      setAvisoPvp(`Saldo insuficiente: Esta mesa requiere ${lobby.apuesta} monedas pero solo tienes ${perfil.puntos_total || 0} monedas. ¡Gana monedas en Yoshi Runner o pide un aporte al profesor!`)
       return
     }
 
@@ -500,7 +534,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     sound.playChipSound()
 
     // Deducir apuesta al oponente que entra
-    const saldoTrasEntrar = (perfil.puntos_total || 0) - lobby.apuesta
+    const saldoTrasEntrar = Math.max(0, (perfil.puntos_total || 0) - lobby.apuesta)
     const perfilActualizado = { ...perfil, puntos_total: saldoTrasEntrar }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
@@ -509,14 +543,31 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       await supabase.from('profiles').update({ puntos_total: saldoTrasEntrar }).eq('id', perfil.id)
     } catch (_) {}
 
+    // Normalizar mano del creador si vino como string
+    let manoCreador = lobby.mano_creador
+    if (typeof manoCreador === 'string') {
+      try { manoCreador = JSON.parse(manoCreador) } catch (_) { manoCreador = [] }
+    }
+    if (!Array.isArray(manoCreador) || manoCreador.length === 0) {
+      const bTemp = crearBarajaBarajada(2)
+      manoCreador = [bTemp.pop(), bTemp.pop()]
+    }
+
     // Tomar 2 cartas de la baraja existente para el oponente
-    let baraja = [...(lobby.baraja_restante || crearBarajaBarajada(2))]
+    let baraja = lobby.baraja_restante
+    if (typeof baraja === 'string') {
+      try { baraja = JSON.parse(baraja) } catch (_) { baraja = [] }
+    }
+    if (!Array.isArray(baraja) || baraja.length < 4) {
+      baraja = crearBarajaBarajada(2)
+    }
     const o1 = baraja.pop()
     const o2 = baraja.pop()
     const manoOponente = [o1, o2]
 
     const partidaActualizada = {
       ...lobby,
+      mano_creador: manoCreador,
       oponente_id: perfil.id,
       oponente_nombre: perfil.nombre || 'Contrincante',
       estado: 'jugando',
@@ -527,12 +578,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
 
     setPartidaActivaPvp(partidaActualizada)
 
+    // Actualizar en localStorage
     try {
-      await supabase.from('pvp_blackjack').update(partidaActualizada).eq('id', lobby.id)
+      const prev = JSON.parse(localStorage.getItem('muudel_pvp_21_lobbies') || '[]')
+      const actualizados = prev.map(l => l.id === lobby.id ? partidaActualizada : l)
+      localStorage.setItem('muudel_pvp_21_lobbies', JSON.stringify(actualizados))
+    } catch (_) {}
+
+    // Sanitizar objeto para Supabase pvp_blackjack sin propiedades extrañas
+    const datosLimpios = sanitizarParaSupabase(partidaActualizada)
+    try {
+      await supabase.from('pvp_blackjack').update(datosLimpios).eq('id', lobby.id)
       await supabase.from('pvp_partidas').update({ oponente_id: perfil.id, estado: 'jugando' }).eq('id', lobby.id)
     } catch (_) {}
 
     transmitirEvento('pvp_21_jugada', { partidaId: lobby.id, partida: partidaActualizada })
+    transmitirEvento('pvp_21_partida_iniciada', { partidaId: lobby.id, partida: partidaActualizada })
+    sound.playCardDeal()
     setCargandoPvp(false)
   }
 
@@ -540,7 +602,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   const pedirCartaPvp = async () => {
     if (!partidaActivaPvp || partidaActivaPvp.estado !== 'jugando') return
 
-    const esCreador = perfil?.id === partidaActivaPvp.creador_id
+    const esCreador = String(perfil?.id) === String(partidaActivaPvp.creador_id)
     const esMiTurno = (esCreador && partidaActivaPvp.turno === 'creador') || (!esCreador && partidaActivaPvp.turno === 'oponente')
 
     if (!esMiTurno) {
@@ -584,7 +646,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
 
     setPartidaActivaPvp(partidaActualizada)
     try {
-      await supabase.from('pvp_blackjack').update(partidaActualizada).eq('id', partidaActivaPvp.id)
+      await supabase.from('pvp_blackjack').update(sanitizarParaSupabase(partidaActualizada)).eq('id', partidaActivaPvp.id)
     } catch (_) {}
 
     transmitirEvento('pvp_21_jugada', { partidaId: partidaActivaPvp.id, partida: partidaActualizada })
@@ -593,7 +655,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   const plantarsePvp = async () => {
     if (!partidaActivaPvp || partidaActivaPvp.estado !== 'jugando') return
 
-    const esCreador = perfil?.id === partidaActivaPvp.creador_id
+    const esCreador = String(perfil?.id) === String(partidaActivaPvp.creador_id)
     const esMiTurno = (esCreador && partidaActivaPvp.turno === 'creador') || (!esCreador && partidaActivaPvp.turno === 'oponente')
 
     if (!esMiTurno) return
@@ -607,7 +669,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       }
       setPartidaActivaPvp(partidaActualizada)
       try {
-        await supabase.from('pvp_blackjack').update(partidaActualizada).eq('id', partidaActivaPvp.id)
+        await supabase.from('pvp_blackjack').update(sanitizarParaSupabase(partidaActualizada)).eq('id', partidaActivaPvp.id)
       } catch (_) {}
       transmitirEvento('pvp_21_jugada', { partidaId: partidaActivaPvp.id, partida: partidaActualizada })
     } else {
@@ -682,7 +744,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     setPartidaActivaPvp(partidaFinal)
 
     try {
-      await supabase.from('pvp_blackjack').update(partidaFinal).eq('id', partidaId)
+      await supabase.from('pvp_blackjack').update(sanitizarParaSupabase(partidaFinal)).eq('id', partidaId)
     } catch (_) {}
 
     transmitirEvento('pvp_21_resuelto', {
@@ -1257,108 +1319,143 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                     padding: '3px 8px',
                     borderRadius: 6,
                     backgroundColor: 'rgba(0,0,0,0.5)',
-                    color: '#9CA3AF'
+                    color: partidaActivaPvp.estado === 'esperando' ? '#FDE68A' : '#9CA3AF'
                   }}
                 >
-                  {partidaActivaPvp.estado === 'jugando' ? `Turno: ${partidaActivaPvp.turno}` : 'Finalizado'}
+                  {partidaActivaPvp.estado === 'esperando'
+                    ? 'Esperando Rival ⏳'
+                    : partidaActivaPvp.estado === 'jugando'
+                    ? `Turno: ${partidaActivaPvp.turno === 'creador' ? (partidaActivaPvp.creador_nombre || 'Creador') : (partidaActivaPvp.oponente_nombre || 'Oponente')}`
+                    : 'Finalizado'}
                 </span>
               </div>
 
-              {/* RIVAL */}
-              <div style={{ marginBottom: 20, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#D1D5DB', marginBottom: 6 }}>
-                  {perfil?.id === partidaActivaPvp.creador_id
-                    ? partidaActivaPvp.oponente_nombre || 'Esperando oponente...'
-                    : partidaActivaPvp.creador_nombre}
+              {/* CONTENIDO SEGÚN ESTADO DE LA PARTIDA */}
+              {partidaActivaPvp.estado === 'esperando' ? (
+                <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                  <Loader2 size={36} color="#FDE68A" className="spin" style={{ margin: '0 auto 12px' }} />
+                  <h4 style={{ margin: 0, fontSize: 16, color: '#FDE68A', fontWeight: 800 }}>
+                    Mesa de Duelo Abierta
+                  </h4>
+                  <p style={{ margin: '6px 0 16px', fontSize: 13, color: '#D1D5DB' }}>
+                    Bote acumulado: <strong>{partidaActivaPvp.apuesta * 2} pts</strong>. Esperando a que un compañero de clase pulse &quot;Aceptar Duelo&quot;.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => cancelarRetoPvp(partidaActivaPvp.id, partidaActivaPvp.apuesta)}
+                    style={{
+                      padding: '8px 18px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(239, 68, 68, 0.5)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      color: '#EF4444',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar Mesa y Recuperar {partidaActivaPvp.apuesta} pts
+                  </button>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {(perfil?.id === partidaActivaPvp.creador_id ? partidaActivaPvp.mano_oponente : partidaActivaPvp.mano_creador)?.map((c, i) => (
-                    <CartaPoker key={c.id || i} carta={c} tamano="sm" />
-                  ))}
-                </div>
-              </div>
-
-              {/* TU MANO */}
-              <div style={{ marginTop: 20, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#93C5FD', marginBottom: 6 }}>
-                  Tu Mano ({perfil?.nombre || 'Tú'}) ·{' '}
-                  {perfil?.id === partidaActivaPvp.creador_id ? scoreCreadorPvp?.texto : scoreOponentePvp?.texto}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {(perfil?.id === partidaActivaPvp.creador_id ? partidaActivaPvp.mano_creador : partidaActivaPvp.mano_oponente)?.map((c, i) => (
-                    <CartaPoker key={c.id || i} carta={c} tamano="md" />
-                  ))}
-                </div>
-              </div>
-
-              {/* CONTROLES SI ES MI TURNO */}
-              <div style={{ marginTop: 24, textAlign: 'center' }}>
-                {partidaActivaPvp.estado === 'jugando' ? (
-                  ((perfil?.id === partidaActivaPvp.creador_id && partidaActivaPvp.turno === 'creador') ||
-                   (perfil?.id === partidaActivaPvp.oponente_id && partidaActivaPvp.turno === 'oponente')) ? (
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={pedirCartaPvp}
-                        style={{
-                          padding: '8px 18px',
-                          borderRadius: 8,
-                          backgroundColor: '#2563EB',
-                          color: '#FFF',
-                          border: 'none',
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Pedir Carta (+1)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={plantarsePvp}
-                        style={{
-                          padding: '8px 18px',
-                          borderRadius: 8,
-                          backgroundColor: '#16A34A',
-                          color: '#FFF',
-                          border: 'none',
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Plantarse (Stand)
-                      </button>
+              ) : (
+                <>
+                  {/* RIVAL */}
+                  <div style={{ marginBottom: 20, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#D1D5DB', marginBottom: 6 }}>
+                      {String(perfil?.id) === String(partidaActivaPvp.creador_id)
+                        ? partidaActivaPvp.oponente_nombre || 'Rival'
+                        : partidaActivaPvp.creador_nombre}
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: '#FDE68A', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      <Loader2 size={14} className="spin" />
-                      <span>Esperando que el rival complete su jugada...</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {(String(perfil?.id) === String(partidaActivaPvp.creador_id) ? partidaActivaPvp.mano_oponente : partidaActivaPvp.mano_creador)?.map((c, i) => (
+                        <CartaPoker key={c?.id || i} carta={c} tamano="sm" />
+                      ))}
                     </div>
-                  )
-                ) : (
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 10 }}>
-                      {partidaActivaPvp.desenlace_motivo || 'Partida completada.'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPartidaActivaPvp(null)}
-                      style={{
-                        padding: '6px 16px',
-                        borderRadius: 8,
-                        backgroundColor: '#374151',
-                        color: '#FFF',
-                        border: 'none',
-                        fontSize: 12,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Volver a la Sala
-                    </button>
                   </div>
-                )}
-              </div>
+
+                  {/* TU MANO */}
+                  <div style={{ marginTop: 20, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#93C5FD', marginBottom: 6 }}>
+                      Tu Mano ({perfil?.nombre || 'Tú'}) ·{' '}
+                      {String(perfil?.id) === String(partidaActivaPvp.creador_id) ? scoreCreadorPvp?.texto : scoreOponentePvp?.texto}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {(String(perfil?.id) === String(partidaActivaPvp.creador_id) ? partidaActivaPvp.mano_creador : partidaActivaPvp.mano_oponente)?.map((c, i) => (
+                        <CartaPoker key={c?.id || i} carta={c} tamano="md" />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* CONTROLES */}
+                  <div style={{ marginTop: 24, textAlign: 'center' }}>
+                    {partidaActivaPvp.estado === 'jugando' ? (
+                      ((String(perfil?.id) === String(partidaActivaPvp.creador_id) && partidaActivaPvp.turno === 'creador') ||
+                       (String(perfil?.id) === String(partidaActivaPvp.oponente_id) && partidaActivaPvp.turno === 'oponente')) ? (
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={pedirCartaPvp}
+                            style={{
+                              padding: '8px 18px',
+                              borderRadius: 8,
+                              backgroundColor: '#2563EB',
+                              color: '#FFF',
+                              border: 'none',
+                              fontWeight: 700,
+                              fontSize: 13,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Pedir Carta (+1)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={plantarsePvp}
+                            style={{
+                              padding: '8px 18px',
+                              borderRadius: 8,
+                              backgroundColor: '#16A34A',
+                              color: '#FFF',
+                              border: 'none',
+                              fontWeight: 700,
+                              fontSize: 13,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Plantarse (Stand)
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 13, color: '#FDE68A', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <Loader2 size={14} className="spin" />
+                          <span>Esperando que el rival complete su jugada...</span>
+                        </div>
+                      )
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 10 }}>
+                          {partidaActivaPvp.desenlace_motivo || 'Partida completada.'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPartidaActivaPvp(null)}
+                          style={{
+                            padding: '6px 16px',
+                            borderRadius: 8,
+                            backgroundColor: '#374151',
+                            color: '#FFF',
+                            border: 'none',
+                            fontSize: 12,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Volver a la Sala
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -1550,19 +1647,33 @@ export function Duelo21PvP({ perfil, setPerfil }) {
                             <button
                               type="button"
                               onClick={() => aceptarRetoPvp(lobby)}
-                              disabled={cargandoPvp || (perfil?.puntos_total || 0) < lobby.apuesta}
+                              disabled={cargandoPvp}
                               style={{
-                                padding: '6px 14px',
-                                borderRadius: 6,
+                                padding: '7px 16px',
+                                borderRadius: 8,
                                 border: 'none',
-                                backgroundColor: '#2F9E44',
-                                color: '#FFF',
+                                backgroundColor: (perfil?.puntos_total || 0) < lobby.apuesta ? 'rgba(217, 119, 6, 0.15)' : '#2F9E44',
+                                color: (perfil?.puntos_total || 0) < lobby.apuesta ? '#D97706' : '#FFF',
                                 fontSize: 12,
                                 fontWeight: 700,
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                transition: 'all 0.15s ease'
                               }}
+                              title={(perfil?.puntos_total || 0) < lobby.apuesta ? `Requiere ${lobby.apuesta} monedas` : `Entrar al duelo por ${lobby.apuesta} monedas`}
                             >
-                              Aceptar Duelo
+                              {cargandoPvp ? (
+                                <>
+                                  <Loader2 size={13} className="spin" />
+                                  <span>Entrando...</span>
+                                </>
+                              ) : (perfil?.puntos_total || 0) < lobby.apuesta ? (
+                                <span>Requiere {lobby.apuesta} 🪙</span>
+                              ) : (
+                                <span>Aceptar Duelo</span>
+                              )}
                             </button>
                           )}
                         </div>
