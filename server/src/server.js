@@ -14,6 +14,7 @@ app.use(express.json())
 app.use('/api/apuntes', apuntesRouter)
 app.use('/api/ruleta', ruletaRouter)
 app.use('/api/admin', adminRouter)
+app.use('/admin', adminRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ estado: 'ok' })

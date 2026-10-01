@@ -865,7 +865,12 @@ export function PantallaAdmin() {
             await supabase.from('reto_completado').delete().eq('user_id', alumno.id)
             await supabase.from('achievements').delete().eq('user_id', alumno.id)
             await supabase.from('apuntes').delete().eq('user_id', alumno.id)
-            await supabase.from('profiles').delete().eq('id', alumno.id)
+            try { await supabase.from('pvp_partidas').delete().or(`creador_id.eq.${alumno.id},oponente_id.eq.${alumno.id}`) } catch (_) {}
+            try { await supabase.from('pvp_blackjack').delete().or(`creador_id.eq.${alumno.id},oponente_id.eq.${alumno.id}`) } catch (_) {}
+            try { await supabase.from('arcade_scores').delete().eq('user_id', alumno.id) } catch (_) {}
+            try { await supabase.from('juegos_puntuaciones').delete().eq('user_id', alumno.id) } catch (_) {}
+            const { error: delErr } = await supabase.from('profiles').delete().eq('id', alumno.id)
+            if (!delErr) borradoExitoso = true
           } catch (e) {
             console.warn('Fallback delete profiles:', e)
           }
@@ -1302,10 +1307,20 @@ export function PantallaAdmin() {
 
       // 3. Fallback directo con el cliente Supabase
       if (!actualizadoBd) {
-        await supabase
-          .from('profiles')
-          .update(payloadUpdate)
-          .eq('id', alumnoId)
+        try {
+          const { data: upData, error: upErr } = await supabase
+            .from('profiles')
+            .update(payloadUpdate)
+            .eq('id', alumnoId)
+            .select()
+          if (!upErr && upData && upData.length > 0) {
+            actualizadoBd = true
+          }
+        } catch (_) {}
+      }
+
+      if (!actualizadoBd) {
+        console.warn('Aviso: el ajuste de puntos se aplicó en local pero no pudo confirmarse en Supabase.')
       }
 
       // Actualizar en el estado local de todos los alumnos

@@ -1,80 +1,61 @@
-// frontend/src/pages/PantallaHoy.jsx (Feed Principal del Aula)
+// frontend/src/pages/PantallaHoy.jsx (Feed de Clase estilo X / Twitter)
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { CheckinCard } from '../components/CheckinCard'
-import { RachaBar } from '../components/RachaBar'
-import { RetoDelDia } from '../components/RetoDelDia'
-import { TopRanking } from '../components/TopRanking'
 import { AvatarUsuario } from '../components/AvatarUsuario'
-import { ContadorCierreLista } from '../components/ContadorCierreLista'
-import { MetaAsistenciaAula } from '../components/MetaAsistenciaAula'
-import { PreguntaFlashDia } from '../components/PreguntaFlashDia'
 import { TiendaRecompensas } from '../components/TiendaRecompensas'
 import { ModalHorario } from '../components/ModalHorario'
-import { getClaseActual } from '../utils/horarioData'
-import { supabase, NIVELES } from '../utils/supabase'
+import { supabase } from '../utils/supabase'
 import { sound, triggerConfetti } from '../utils/haptics'
 import {
-  Award,
-  TrendingUp,
-  Megaphone,
-  ShoppingBag,
-  Flame,
-  Zap,
-  Calendar,
-  Hourglass,
-  Clock,
-  Shield,
-  Gamepad2,
   Heart,
   MessageSquare,
-  Sparkles,
+  Repeat2,
   Share2,
-  Plus,
-  X,
   Send,
+  Sparkles,
+  ShoppingBag,
+  Flame,
   CheckCircle2,
+  Clock,
+  Code2,
+  Terminal,
+  HelpCircle,
+  Megaphone,
   Check,
-  FileCode,
-  Layers,
-  Crown
+  ChevronRight,
+  X
 } from 'lucide-react'
-import { animarEscalonado } from '../utils/animations'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
-import { formatearTiempoRestante } from '../components/TiendaRecompensas'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 import { sumarXpSkill } from '../utils/skillsData'
-
-// Sin datos semilla ficticios — todo viene de Supabase
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
   const navigate = useNavigate()
-  const [ranking, setRanking] = useState([])
+
+  // Tabs estilo X: 'para_ti' | 'tips' | 'respuestas'
+  const [tabActiva, setTabActiva] = useState('para_ti')
+
+  // Modales
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
-  const [relojTick, setRelojTick] = useState(0)
 
-  // Filtro del feed: 'todos' | 'respuestas' | 'posts'
-  const [filtroFeed, setFiltroFeed] = useState('todos')
-
-  // Respuestas de alumnos a retos (solo las guardadas localmente por tiempo real)
-  const [respuestasFeed, setRespuestasFeed] = useState([])
+  // Compositor inline estilo X
+  const [textoPost, setTextoPost] = useState('')
+  const [categoriaPost, setCategoriaPost] = useState('Truco') // 'Truco' | 'Linux' | 'Redes' | 'Duda' | 'General'
+  const [publicando, setPublicando] = useState(false)
+  const composerRef = useRef(null)
 
   // Posts del feed — cargados desde Supabase tabla feed_posts
   const [postsFeed, setPostsFeed] = useState([])
   const [cargandoPosts, setCargandoPosts] = useState(true)
 
-  // Modal para crear nuevo post
-  const [mostrarModalCrearPost, setMostrarModalCrearPost] = useState(false)
-  const [nuevoPostTitulo, setNuevoPostTitulo] = useState('')
-  const [nuevoPostContenido, setNuevoPostContenido] = useState('')
-  const [nuevoPostCategoria, setNuevoPostCategoria] = useState('Truco')
-  const [publicandoPost, setPublicandoPost] = useState(false)
+  // Respuestas a retos de alumnos
+  const [respuestasFeed, setRespuestasFeed] = useState([])
 
-  // Likes dados localmente por el usuario
+  // Likes interactivos
   const [likesDados, setLikesDados] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`muudel_feed_likes_${perfil?.id}`) || '{}')
@@ -83,150 +64,57 @@ export function PantallaHoy() {
     }
   })
 
-  // Estado de asistencia 15:30
-  const [solicitudPendiente, setSolicitudPendiente] = useState(null)
+  // Estado compacto de asistencia 15:30
   const [asistenciaConfirmada, setAsistenciaConfirmada] = useState(null)
-  const [totalAlumnosClase, setTotalAlumnosClase] = useState(20)
-  const [asistenciasHoyCount, setAsistenciasHoyCount] = useState(0)
+  const [solicitudPendiente, setSolicitudPendiente] = useState(null)
+  const [bannerAsistenciaVisible, setBannerAsistenciaVisible] = useState(true)
 
-  const contentRef = useRef(null)
   const fechaHoy = new Date().toISOString().split('T')[0]
-  const claseActual = getClaseActual()
 
-  // 1. Tick cada segundo
+  // Carga inicial y suscripciones en tiempo real
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRelojTick(prev => prev + 1)
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
+    cargarFeedCompleto()
 
-  // 2. Cargar datos iniciales y suscripciones en tiempo real
-  useEffect(() => {
-    // Cargar aviso diario
-    const avisoGuardado = localStorage.getItem('racha_aviso_hoy') || ''
-    setAvisoHoy(avisoGuardado)
+    // Suscripción en tiempo real a nuevos posts
+    const canalFeed = supabase
+      .channel('feed-posts-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_posts' }, () => {
+        cargarFeedCompleto()
+      })
+      .subscribe()
 
-    // Solicitud pendiente de hoy
-    try {
-      const solicitudes = JSON.parse(localStorage.getItem('muudel_solicitudes_' + fechaHoy) || '[]')
-      const miSol = solicitudes.find(s => s.userId === perfil?.id)
-      if (miSol) setSolicitudPendiente(miSol)
-    } catch (e) {}
-
-    // Asistencia confirmada
-    try {
-      const localCheckins = JSON.parse(localStorage.getItem('racha_checkins_' + fechaHoy) || '{}')
-      if (localCheckins[perfil?.id]) {
-        setAsistenciaConfirmada(localCheckins[perfil?.id])
-      }
-    } catch (e) {}
-
-    cargarDatosClase()
-
-    // Suscripción a nuevas entregas de retos en tiempo real
-    const desuscribirEntregas = suscribirEvento('nueva_entrega_reto', (entrega) => {
-      if (entrega) {
-        setRespuestasFeed(prev => {
-          const filtradas = prev.filter(r => r.id !== entrega.id)
-          return [entrega, ...filtradas]
-        })
-      }
+    // Suscripciones de eventos Broadcast de clase
+    const desNuevoPost = suscribirEvento('nuevo_feed_post', (nuevoPost) => {
+      setPostsFeed(prev => {
+        if (prev.some(p => p.id === nuevoPost.id)) return prev
+        return [nuevoPost, ...prev]
+      })
     })
 
-    // Suscripción a nuevos posts de clase en tiempo real
-    const desuscribirPosts = suscribirEvento('nuevo_feed_post', (post) => {
-      if (post) {
-        setPostsFeed(prev => {
-          const filtrados = prev.filter(p => p.id !== post.id)
-          return [post, ...filtrados]
-        })
-      }
-    })
-
-    // Suscripción a likes de posts en tiempo real
-    const desuscribirLikesPost = suscribirEvento('like_feed_item', ({ itemId, nuevoCount }) => {
+    const desLike = suscribirEvento('like_feed_item', ({ itemId, nuevoCount }) => {
       setPostsFeed(prev => prev.map(p => p.id === itemId ? { ...p, likes: nuevoCount } : p))
       setRespuestasFeed(prev => prev.map(r => r.id === itemId ? { ...r, likes: nuevoCount } : r))
     })
 
-    const desuscribirConfirmacion = suscribirEvento('asistencia_confirmada', (payload) => {
-      if (!payload) return
-      if (payload.userId === perfil?.id) {
+    const desCheckin = suscribirEvento('checkin_confirmado', (datos) => {
+      if (datos.userId === perfil?.id) {
+        setAsistenciaConfirmada(datos)
         setSolicitudPendiente(null)
-        setAsistenciaConfirmada(payload)
-        sound.playStamp()
-        triggerConfetti()
       }
-      setAsistenciasHoyCount(prev => prev + 1)
-    })
-
-    const desuscribirMasiva = suscribirEvento('asistencia_masiva', () => {
-      setSolicitudPendiente(null)
-      setAsistenciaConfirmada({
-        fecha: fechaHoy,
-        hora: '15:30',
-        es_tarde: false,
-        puntos_ganados: 10
-      })
-      setAsistenciasHoyCount(prev => Math.max(prev, totalAlumnosClase))
-      sound.playStamp()
-      triggerConfetti()
-    })
-
-    const desuscribirAviso = suscribirEvento('aviso_admin', ({ texto }) => {
-      setAvisoHoy(texto || '')
-      try { localStorage.setItem('racha_aviso_hoy', texto || '') } catch (e) {}
-    })
-
-    const desuscribirPuntos = suscribirEvento('puntos_actualizados', () => {
-      cargarDatosClase()
     })
 
     return () => {
-      desuscribirEntregas()
-      desuscribirPosts()
-      desuscribirLikesPost()
-      desuscribirConfirmacion()
-      desuscribirMasiva()
-      desuscribirAviso()
-      desuscribirPuntos()
+      supabase.removeChannel(canalFeed)
+      desNuevoPost()
+      desLike()
+      desCheckin()
     }
-  }, [perfil?.id, fechaHoy, totalAlumnosClase])
+  }, [perfil?.id, fechaHoy])
 
-  useEffect(() => {
-    if (contentRef.current) {
-      animarEscalonado(contentRef.current.children, { stagger: 0.05, duration: 0.35 })
-    }
-  }, [])
-
-  const cargarDatosClase = async () => {
+  const cargarFeedCompleto = async () => {
+    setCargandoPosts(true)
     try {
-      // Cargar alumnos y ranking
-      const { data: alumnosData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('rol', 'alumno')
-        .order('puntos_total', { ascending: false })
-
-      if (alumnosData && alumnosData.length > 0) {
-        setTotalAlumnosClase(alumnosData.length)
-        setRanking(alumnosData.slice(0, 5))
-      } else if (perfil && perfil.rol === 'alumno') {
-        setRanking([perfil])
-      }
-
-      // Cargar checkins de hoy
-      const { data: chkData } = await supabase
-        .from('checkins')
-        .select('user_id')
-        .eq('fecha', fechaHoy)
-
-      const confirmadosRemotos = chkData ? chkData.length : 0
-      const localCheckins = JSON.parse(localStorage.getItem('racha_checkins_' + fechaHoy) || '{}')
-      const totalHoy = Math.max(confirmadosRemotos, Object.keys(localCheckins).length)
-      setAsistenciasHoyCount(totalHoy)
-
+      // 1. Cargar estado de check-in del usuario de hoy
       if (perfil) {
         const { data: miChk } = await supabase
           .from('checkins')
@@ -237,25 +125,11 @@ export function PantallaHoy() {
 
         if (miChk) {
           setAsistenciaConfirmada(miChk)
-          setSolicitudPendiente(null)
         }
       }
 
-      // Cargar aviso oficial desde sesiones_clase si existe
-      try {
-        const { data: sesionData } = await supabase
-          .from('sesiones_clase')
-          .select('aviso')
-          .eq('fecha', fechaHoy)
-          .maybeSingle()
-        if (sesionData?.aviso) {
-          setAvisoHoy(sesionData.aviso)
-        }
-      } catch (e) {}
-
-      // Cargar posts del feed desde Supabase (tabla feed_posts)
-      setCargandoPosts(true)
-      const { data: postsData } = await supabase
+      // 2. Cargar posts desde la tabla feed_posts
+      const { data: postsData, error: errPosts } = await supabase
         .from('feed_posts')
         .select(`
           id, categoria, titulo, contenido, likes_count, created_at,
@@ -263,10 +137,10 @@ export function PantallaHoy() {
         `)
         .eq('soft_deleted', false)
         .order('created_at', { ascending: false })
-        .limit(40)
+        .limit(50)
 
-      if (postsData) {
-        // Si el usuario está logueado, cargar sus likes
+      if (!errPosts && postsData) {
+        // Cargar mis likes
         let likedSet = {}
         if (perfil) {
           const { data: misLikes } = await supabase
@@ -279,141 +153,77 @@ export function PantallaHoy() {
         }
         setLikesDados(likedSet)
 
-        const postsMapeados = postsData.map(p => ({
+        const mapeados = postsData.map(p => ({
           id: p.id,
+          tipo: 'post',
           userId: p.profiles?.id,
-          autor: p.profiles?.nombre || 'Desconocido',
-          username: p.profiles?.username || '',
+          autor: p.profiles?.nombre || 'Alumno SMR2',
+          username: p.profiles?.username || 'alumno',
           color: p.profiles?.color_acento || '#007AFF',
           rol: p.profiles?.rol || 'alumno',
           avatarEmoji: p.profiles?.avatar_emoji || '🧑',
-          categoria: p.categoria,
+          categoria: p.categoria || 'General',
           titulo: p.titulo,
           contenido: p.contenido,
-          fecha: new Date(p.created_at).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
+          tiempoHace: calcularTiempoRelativo(p.created_at),
           likes: p.likes_count || 0,
           liked: Boolean(likedSet[p.id])
         }))
-        setPostsFeed(postsMapeados)
+        setPostsFeed(mapeados)
       }
-    } catch (e) {
-      console.error('Error cargando datos:', e)
+
+      // 3. Cargar entregas y respuestas recientes de clase
+      try {
+        const entregasLocales = JSON.parse(localStorage.getItem('muudel_entregas_retos') || '[]')
+        const respuestasMapeadas = entregasLocales.slice(0, 15).map(e => ({
+          id: e.id,
+          tipo: 'respuesta',
+          userId: e.userId,
+          autor: e.nombre || 'Compañero',
+          username: e.username || 'smr2',
+          color: e.color || '#007AFF',
+          rol: 'alumno',
+          categoria: 'Reto',
+          retoTitulo: e.retoTitulo || 'Reto Técnico',
+          contenido: e.evidencia,
+          feedback: e.feedback,
+          estado: e.estado || 'aprobado',
+          tiempoHace: e.hora || 'Hoy',
+          likes: e.likes || 0,
+          liked: Boolean(likesDados[e.id])
+        }))
+        setRespuestasFeed(respuestasMapeadas)
+      } catch (_) {}
+    } catch (err) {
+      console.warn('Error cargando feed:', err)
     } finally {
       setCargandoPosts(false)
     }
   }
 
-  // Enviar solicitud de asistencia a las 15:30
-  const handleMandarSolicitud = async (esTarde) => {
-    if (!perfil) return
-    const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    let puntosBase = esTarde ? 5 : 10
+  // Enviar post desde el compositor inline estilo X
+  const handlePublicarPost = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    const contenidoLimpio = textoPost.trim()
+    if (!contenidoLimpio || !perfil || publicando) return
 
-    // Comprobar multiplicador x2 de Racha activo
-    try {
-      const multRaw = localStorage.getItem('muudel_multiplicador_racha_' + perfil.id)
-      if (multRaw) {
-        const parsed = JSON.parse(multRaw)
-        if (parsed.expiraEn > Date.now()) {
-          puntosBase = puntosBase * (parsed.mult || 2)
-        }
-      }
-    } catch (_) {}
-
-    const nuevaSolicitud = {
-      userId: perfil.id,
-      nombre: perfil.nombre,
-      digito_id: perfil.digito_id || null,
-      username: perfil.username || null,
-      email: perfil.email || null,
-      hora: horaActual,
-      fecha: fechaHoy,
-      esTarde,
-      puntos: puntosBase
-    }
-
-    try {
-      const guardadas = JSON.parse(localStorage.getItem('muudel_solicitudes_' + fechaHoy) || '[]')
-      const filtradas = guardadas.filter(s => s.userId !== perfil.id)
-      const actualizadas = [nuevaSolicitud, ...filtradas]
-      localStorage.setItem('muudel_solicitudes_' + fechaHoy, JSON.stringify(actualizadas))
-      setSolicitudPendiente(nuevaSolicitud)
-    } catch (e) {}
-
-    transmitirEvento('solicitud_asistencia', nuevaSolicitud)
-    triggerConfetti()
+    setPublicando(true)
     sound.playStamp()
-  }
 
-  const sumarPuntos = (puntosGanados) => {
-    if (!perfil) return
-    const nuevosPuntos = (perfil.puntos_total || 0) + puntosGanados
-    const updated = { ...perfil, puntos_total: nuevosPuntos }
-    setPerfil(updated)
-    localStorage.setItem('racha_local_user', JSON.stringify(updated))
-    transmitirEvento('puntos_actualizados', { userId: perfil.id, nuevosPuntos })
+    // Extraer título natural (primera frase o hasta 60 caracteres)
+    let tituloAuto = contenidoLimpio.split('\n')[0].substring(0, 65).trim()
+    if (tituloAuto.length < 3) tituloAuto = `${categoriaPost} técnico de ${perfil.nombre}`
+
+    const analisisAntiIA = analizarTextoAntiIA(contenidoLimpio)
 
     try {
-      supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-    } catch (e) {}
-  }
-
-  // Dar like a un post del feed (via Supabase RPC)
-  const handleToggleLike = async (id, esPost = false) => {
-    if (!perfil) return
-    sound.playPop()
-    const yaLeDi = Boolean(likesDados[id])
-
-    // Actualizar UI optimistamente
-    const nuevosLikesDados = { ...likesDados }
-    if (!yaLeDi) {
-      nuevosLikesDados[id] = true
-    } else {
-      delete nuevosLikesDados[id]
-    }
-    setLikesDados(nuevosLikesDados)
-
-    if (esPost) {
-      // Usar RPC de Supabase para toggle atómico
-      try {
-        const { data: nuevoCount } = await supabase
-          .rpc('toggle_feed_like', { p_post_id: id, p_user_id: perfil.id })
-        setPostsFeed(prev => prev.map(p => p.id === id ? { ...p, likes: nuevoCount ?? p.likes, liked: !yaLeDi } : p))
-        transmitirEvento('like_feed_item', { itemId: id, nuevoCount })
-      } catch (e) {
-        // Revertir si falla
-        setLikesDados(likesDados)
-      }
-    } else {
-      // Para respuestas de retos (locales)
-      setRespuestasFeed(prev => prev.map(r => {
-        if (r.id === id) {
-          const nuevoCount = Math.max(0, (r.likes || 0) + (!yaLeDi ? 1 : -1))
-          transmitirEvento('like_feed_item', { itemId: id, nuevoCount })
-          return { ...r, likes: nuevoCount, liked: !yaLeDi }
-        }
-        return r
-      }))
-    }
-  }
-
-  // Crear nuevo post para el feed (guardado en Supabase)
-  const handleCrearNuevoPost = async (e) => {
-    e.preventDefault()
-    if (!nuevoPostTitulo.trim() || !nuevoPostContenido.trim() || !perfil) return
-
-    setPublicandoPost(true)
-    try {
-      const textoCompleto = `${nuevoPostTitulo} ${nuevoPostContenido}`
-      const analisisAntiIA = analizarTextoAntiIA(textoCompleto)
-
       const { data: postCreado, error } = await supabase
         .from('feed_posts')
         .insert({
           user_id: perfil.id,
-          categoria: nuevoPostCategoria,
-          titulo: nuevoPostTitulo.trim(),
-          contenido: nuevoPostContenido.trim()
+          categoria: categoriaPost,
+          titulo: tituloAuto,
+          contenido: contenidoLimpio
         })
         .select(`
           id, categoria, titulo, contenido, likes_count, created_at,
@@ -422,794 +232,732 @@ export function PantallaHoy() {
         .single()
 
       if (!error && postCreado) {
-        // Otorgar XP de competencia técnica
-        let skillKey = 'autoria_tecnica'
-        if (nuevoPostCategoria === 'Truco') skillKey = 'linux_bash'
-        else if (nuevoPostCategoria === 'Aviso') skillKey = 'servicios_servidores'
-        else if (nuevoPostCategoria === 'Pregunta') skillKey = 'redes_vlans'
-
-        if (analisisAntiIA.esGenuino) {
-          sumarXpSkill(perfil.id, skillKey, 15)
-        }
-
-        const nuevoPost = {
+        const nuevo = {
           id: postCreado.id,
+          tipo: 'post',
           userId: perfil.id,
           autor: perfil.nombre,
-          username: perfil.username || '',
+          username: perfil.username || 'tu_usuario',
           color: perfil.color_acento || '#007AFF',
           rol: perfil.rol || 'alumno',
           avatarEmoji: perfil.avatar_emoji || '🧑',
           categoria: postCreado.categoria,
           titulo: postCreado.titulo,
           contenido: postCreado.contenido,
-          fecha: 'Ahora',
+          tiempoHace: 'ahora mismo',
           likes: 0,
           liked: false,
           antiAi: analisisAntiIA
         }
-        setPostsFeed(prev => [nuevoPost, ...prev])
-        transmitirEvento('nuevo_feed_post', nuevoPost)
-        sound.playStamp()
+
+        setPostsFeed(prev => [nuevo, ...prev])
+        transmitirEvento('nuevo_feed_post', nuevo)
+        setTextoPost('')
         triggerConfetti()
 
-        // Puntos: +10 si es 100% autoría humana y +5 estándar
+        // Premiar puntos (+10 si es genuino humano, +5 base)
         const ptsExtra = analisisAntiIA.esGenuino ? 10 : 5
-        sumarPuntos(ptsExtra)
+        const nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
+        setPerfil({ ...perfil, puntos_total: nuevoSaldo })
+        localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
+        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
+
+        // Otorgar XP de competencia técnica
+        let skillKey = 'autoria_tecnica'
+        if (categoriaPost === 'Truco' || categoriaPost === 'Linux') skillKey = 'linux_bash'
+        else if (categoriaPost === 'Redes') skillKey = 'redes_vlans'
+        sumarXpSkill(perfil.id, skillKey, 15)
       }
     } catch (err) {
-      console.error('Error al publicar:', err)
+      console.warn('Error al publicar post:', err)
     } finally {
-      setNuevoPostTitulo('')
-      setNuevoPostContenido('')
-      setPublicandoPost(false)
-      setMostrarModalCrearPost(false)
+      setPublicando(false)
     }
   }
 
-  if (!perfil) return null
+  // Like reactivo estilo X
+  const handleToggleLike = async (itemId, esPostReal = true) => {
+    sound.playPop()
+    const yaLeDi = Boolean(likesDados[itemId])
 
-  const fechaHoyTexto = new Date().toLocaleDateString('es-ES', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  })
+    // Optimistic UI update
+    setLikesDados(prev => {
+      const copia = { ...prev }
+      if (yaLeDi) delete copia[itemId]
+      else copia[itemId] = true
+      localStorage.setItem(`muudel_feed_likes_${perfil?.id}`, JSON.stringify(copia))
+      return copia
+    })
 
-  // Items unificados para vista "Todos"
-  const feedUnificado = [
-    ...respuestasFeed.map(r => ({ ...r, tipoFeed: 'respuesta' })),
-    ...postsFeed.map(p => ({ ...p, tipoFeed: 'post' }))
-  ].sort((a, b) => (b.id > a.id ? 1 : -1))
+    if (esPostReal) {
+      setPostsFeed(prev => prev.map(p => {
+        if (p.id === itemId) {
+          const nuevoCount = Math.max(0, (p.likes || 0) + (yaLeDi ? -1 : 1))
+          return { ...p, likes: nuevoCount, liked: !yaLeDi }
+        }
+        return p
+      }))
 
-  const itemsMostrados = filtroFeed === 'todos'
-    ? feedUnificado
-    : filtroFeed === 'respuestas'
-    ? respuestasFeed.map(r => ({ ...r, tipoFeed: 'respuesta' }))
-    : postsFeed.map(p => ({ ...p, tipoFeed: 'post' }))
+      try {
+        if (!yaLeDi) {
+          await supabase.from('feed_post_likes').insert({ post_id: itemId, user_id: perfil.id })
+          await supabase.rpc('increment_likes_count', { post_id: itemId })
+        } else {
+          await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil.id })
+        }
+      } catch (_) {}
+    } else {
+      setRespuestasFeed(prev => prev.map(r => {
+        if (r.id === itemId) {
+          const nuevoCount = Math.max(0, (r.likes || 0) + (yaLeDi ? -1 : 1))
+          return { ...r, likes: nuevoCount, liked: !yaLeDi }
+        }
+        return r
+      }))
+    }
+  }
+
+  // Check-in rápido
+  const handleCheckinRapido = async () => {
+    if (!perfil) return
+    sound.playStamp()
+    const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    const solicitud = {
+      userId: perfil.id,
+      nombre: perfil.nombre,
+      hora: horaActual,
+      fecha: fechaHoy,
+      esTarde: false,
+      puntos: 10
+    }
+
+    try {
+      const { data } = await supabase.from('checkins').insert([{
+        user_id: perfil.id,
+        fecha: fechaHoy,
+        hora: horaActual,
+        puntos_ganados: 10
+      }]).select().single()
+
+      if (data) {
+        setAsistenciaConfirmada(data)
+        const nuevoSaldo = (perfil.puntos_total || 0) + 10
+        const nuevaRacha = (perfil.racha_actual || 0) + 1
+        setPerfil(p => ({ ...p, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
+        localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
+        triggerConfetti()
+      }
+    } catch (_) {
+      setSolicitudPendiente(solicitud)
+      transmitirEvento('solicitud_asistencia', solicitud)
+    }
+  }
+
+  // Filtrado de items
+  const itemsTimeline = (() => {
+    if (tabActiva === 'tips') {
+      return postsFeed.filter(p => p.categoria === 'Truco' || p.categoria === 'Linux' || p.categoria === 'Redes')
+    }
+    if (tabActiva === 'respuestas') {
+      return respuestasFeed
+    }
+    // 'para_ti' combina posts y respuestas de clase ordenados cronológicamente
+    return [...postsFeed, ...respuestasFeed]
+  })()
 
   return (
-    <main className="app-container" style={{ maxWidth: 680, margin: '0 auto', paddingBottom: 90 }}>
-      {/* Cabecera del Feed Principal */}
-      <header style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <p className="apple-caption" style={{ textTransform: 'capitalize', fontWeight: 600, letterSpacing: 0.2 }}>
-              {fechaHoyTexto}
-            </p>
-            <h1 className="apple-large-title" style={{ marginTop: 1, fontSize: 30, letterSpacing: -0.5 }}>
-              Feed Principal
-            </h1>
+    <div style={{
+      maxWidth: 640,
+      margin: '0 auto',
+      minHeight: '100vh',
+      backgroundColor: 'var(--color-bg)',
+      borderLeft: '1px solid var(--color-separator)',
+      borderRight: '1px solid var(--color-separator)',
+      paddingBottom: 90
+    }}>
+      {/* 1. TOP HEADER ESTILO X (STICKY & MINIMALISTA) */}
+      <header style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--color-separator)'
+      }}>
+        {/* Barra superior: Título, Puntos y Perfil */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          height: 52
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.5, color: 'var(--color-ink)' }}>
+              Feed SMR2
+            </span>
+            {avisoHoy && (
+              <span
+                title={avisoHoy}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                  color: '#D97706',
+                  padding: '2px 8px',
+                  borderRadius: 9999
+                }}
+              >
+                <Megaphone size={11} />
+                <span>Aviso</span>
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Botón de acceso a la Tienda con saldo de puntos */}
+            {/* Chip de Racha */}
+            <div
+              title={`Racha actual: ${perfil?.racha_actual || 0} días`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 10px',
+                borderRadius: 9999,
+                backgroundColor: 'rgba(255, 59, 48, 0.1)',
+                color: '#FF3B30',
+                fontSize: 12,
+                fontWeight: 800
+              }}
+            >
+              <Flame size={14} />
+              <span>{perfil?.racha_actual || 0}d</span>
+            </div>
+
+            {/* Chip de Puntos (Abre tienda) */}
             <button
               type="button"
               onClick={() => { sound.playPop(); setMostrarTienda(true) }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 6,
-                padding: '7px 13px',
+                gap: 5,
+                padding: '4px 11px',
                 borderRadius: 9999,
                 backgroundColor: 'rgba(255, 149, 0, 0.12)',
                 color: '#D97706',
-                border: '1px solid rgba(255, 149, 0, 0.3)',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
+                border: '1px solid rgba(255, 149, 0, 0.25)',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer'
               }}
             >
-              <ShoppingBag size={15} />
-              <span className="tabular-nums">{perfil.puntos_total || 0} pts</span>
+              <ShoppingBag size={13} />
+              <span>{perfil?.puntos_total || 0} pts</span>
             </button>
 
-            <AvatarUsuario
-              nombre={perfil.nombre}
-              color={perfil.color_acento}
-              rol={perfil.rol}
-              size={36}
-              marco={perfil.marco_avatar}
-              showRoleBadge={true}
-            />
+            {/* Avatar del usuario con acceso a su perfil */}
+            <div onClick={() => navigate('/perfil')} style={{ cursor: 'pointer' }}>
+              <AvatarUsuario
+                nombre={perfil?.nombre || 'Usuario'}
+                color={perfil?.color_acento || '#007AFF'}
+                rol={perfil?.rol || 'alumno'}
+                size={34}
+                marco={perfil?.marco_avatar}
+                showRoleBadge={false}
+              />
+            </div>
           </div>
         </div>
 
-        <p className="apple-caption" style={{ marginTop: 2, fontSize: 13 }}>
-          Respuestas de clase, tienda escolar y posts técnicos de SMR2.
-        </p>
-      </header>
-
-      <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* BANNER DESTACADO: ACCESO DIRECTO A LA TIENDA DE RECOMPENSAS VIRTUALES */}
-        <section
-          className="card"
-          onClick={() => { sound.playPop(); setMostrarTienda(true) }}
-          style={{
-            padding: '14px 16px',
-            backgroundColor: 'var(--color-surface)',
-            border: '1.5px solid rgba(255, 149, 0, 0.3)',
-            boxShadow: '0 4px 20px rgba(255, 149, 0, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            cursor: 'pointer',
-            transition: 'transform 0.15s ease'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: 'rgba(255, 149, 0, 0.15)',
-                color: '#D97706',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}
-            >
-              <ShoppingBag size={24} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#D97706', letterSpacing: 0.5 }}>
-                  Tienda Escolar Virtual
-                </span>
-                <span className="apple-badge apple-badge-warning" style={{ fontSize: 10, fontWeight: 800 }}>
-                  🔥 Plazas Limitadas
-                </span>
-              </div>
-              <h3 className="apple-headline" style={{ fontSize: 15, margin: '2px 0 0' }}>
-                Canjea auras, títulos VIP y efectos en vivo
-              </h3>
-              <p className="apple-caption" style={{ fontSize: 12, margin: 0 }}>
-                Todo se activa desde tu mochila cuando tú decidas y es visible para toda la clase.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={(e) => { e.stopPropagation(); sound.playPop(); setMostrarTienda(true) }}
-            style={{
-              flexShrink: 0,
-              backgroundColor: '#FF9500',
-              fontWeight: 700,
-              fontSize: 12,
-              padding: '6px 14px',
-              borderRadius: 9999,
-              minHeight: 34
-            }}
-          >
-            Abrir Tienda
-          </button>
-        </section>
-
-        {/* Tablón de avisos de lominoño si está publicado */}
-        {avisoHoy && (
-          <div className="card" style={{
-            backgroundColor: 'rgba(255, 149, 0, 0.08)',
-            border: '1px solid rgba(255, 149, 0, 0.3)',
-            padding: '12px 16px',
-            display: 'flex',
-            gap: 12,
-            alignItems: 'flex-start'
-          }}>
-            <Megaphone size={19} color="var(--color-warning)" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <span className="apple-caption" style={{ fontWeight: 800, color: 'var(--color-warning)', letterSpacing: 0.5, textTransform: 'uppercase', fontSize: 11 }}>
-                Aviso oficial de lominoño
-              </span>
-              <p style={{ fontSize: 13, color: 'var(--color-ink)', marginTop: 2, fontWeight: 500, margin: 0 }}>
-                {avisoHoy}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* WIDGET COMPACTO DE ASISTENCIA 15:30 Y RACHA */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
-          <ContadorCierreLista
-            userId={perfil.id}
-            nombreUsuario={perfil.nombre}
-            asistenciaConfirmada={asistenciaConfirmada}
-            solicitudPendiente={solicitudPendiente}
-            onMandarSolicitud={handleMandarSolicitud}
-          />
-
-          <RachaBar
-            racha={perfil.racha_actual || 0}
-            mejorRacha={perfil.mejor_racha || 0}
-            congelada={perfil.racha_congelada}
-          />
-        </div>
-
-        {/* Sello Físico si la asistencia ya fue sellada */}
-        {asistenciaConfirmada && (
-          <CheckinCard
-            userId={perfil.id}
-            rol={perfil.rol}
-            onAbrirPanelAdmin={() => navigate('/admin')}
-          />
-        )}
-
-        {/* SECCIÓN DEL FEED: FILTROS Y ACCIÓN DE PUBLICAR POST */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 10,
-          marginTop: 6,
-          flexWrap: 'wrap'
-        }}>
-          {/* Segmented Control de Filtro */}
-          <div className="segmented-control" style={{ maxWidth: 360, margin: 0 }}>
-            <button
-              type="button"
-              className={`segmented-control-item ${filtroFeed === 'todos' ? 'active' : ''}`}
-              onClick={() => setFiltroFeed('todos')}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              className={`segmented-control-item ${filtroFeed === 'respuestas' ? 'active' : ''}`}
-              onClick={() => setFiltroFeed('respuestas')}
-            >
-              Respuestas ({respuestasFeed.length})
-            </button>
-            <button
-              type="button"
-              className={`segmented-control-item ${filtroFeed === 'posts' ? 'active' : ''}`}
-              onClick={() => setFiltroFeed('posts')}
-            >
-              Posts & Tips ({postsFeed.length})
-            </button>
-          </div>
-
-          {/* Botón para compartir un Post / Tip */}
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => { sound.playPop(); setMostrarModalCrearPost(true) }}
-            style={{
-              padding: '6px 12px',
-              fontSize: 12,
-              fontWeight: 700,
-              gap: 5,
-              borderRadius: 9999,
-              minHeight: 32,
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-separator)'
-            }}
-          >
-            <Plus size={14} color="var(--color-accent)" />
-            <span>Compartir Post (+5 pts)</span>
-          </button>
-        </div>
-
-        {/* LISTADO DE ACTIVIDAD DEL FEED */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Estado de carga */}
-          {cargandoPosts && itemsMostrados.length === 0 && (
-            <div className="card" style={{ padding: '24px 16px', textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: 'var(--color-secondary-ink)', opacity: 0.7 }}>
-                Cargando publicaciones…
-              </div>
-            </div>
-          )}
-          {/* Estado vacío — sin datos ficticios */}
-          {!cargandoPosts && itemsMostrados.length === 0 && (
-            <div className="card" style={{ padding: '32px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <Sparkles size={28} color="var(--color-accent)" style={{ opacity: 0.5 }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-ink)' }}>El feed está vacío</div>
-              <div style={{ fontSize: 13, color: 'var(--color-secondary-ink)' }}>
-                Sé el primero en compartir un post o truco técnico con la clase.
-              </div>
-            </div>
-          )}
-          {itemsMostrados.map((item) => {
-            const esRespuesta = item.tipoFeed === 'respuesta'
-            const yaLeDiLike = Boolean(likesDados[item.id])
-
-            if (esRespuesta) {
-              return (
-                <article
-                  key={item.id}
-                  className="card"
-                  style={{
-                    padding: '14px 16px',
-                    backgroundColor: 'var(--color-surface)',
-                    border: '1px solid var(--color-separator)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10
-                  }}
-                >
-                  {/* Encabezado del alumno */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <AvatarUsuario
-                        nombre={item.nombre}
-                        color={item.color || '#007AFF'}
-                        size={32}
-                        fontSize={12}
-                      />
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
-                            {item.nombre}
-                          </span>
-                          {item.username && (
-                            <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>
-                              @{item.username}
-                            </span>
-                          )}
-                        </div>
-                        <span className="apple-caption" style={{ fontSize: 11 }}>
-                          Respondió al reto {item.hora ? `a las ${item.hora}` : ''}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Badge de estado del reto */}
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        padding: '3px 8px',
-                        borderRadius: 6,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        backgroundColor: item.estado === 'aprobado' ? 'rgba(52, 199, 89, 0.12)' : 'rgba(255, 149, 0, 0.12)',
-                        color: item.estado === 'aprobado' ? 'var(--color-positive)' : 'var(--color-warning)'
-                      }}
-                    >
-                      {item.estado === 'aprobado' ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                      <span>{item.estado === 'aprobado' ? 'Verificado' : 'En revisión'}</span>
-                    </span>
-                  </div>
-
-                  {/* Título del reto asociado */}
-                  <div style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: 'var(--color-accent)',
-                    backgroundColor: 'rgba(0, 122, 255, 0.06)',
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    display: 'inline-block'
-                  }}>
-                    🎯 {item.retoTitulo || 'Reto Técnico de Clase'}
-                  </div>
-
-                  {/* Contenido / Solución del alumno */}
-                  <div style={{
-                    backgroundColor: 'var(--color-surface-secondary)',
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid var(--color-separator)'
-                  }}>
-                    {item.evidencia && item.evidencia.includes('\n') ? (
-                      <pre style={{
-                        margin: 0,
-                        fontFamily: 'SF Mono, Menlo, monospace',
-                        fontSize: 12,
-                        lineHeight: 1.4,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        color: 'var(--color-ink)'
-                      }}>
-                        {item.evidencia}
-                      </pre>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: 13, color: 'var(--color-ink)', lineHeight: 1.4 }}>
-                        {item.evidencia}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Feedback del moderador si existe */}
-                  {item.feedback && (
-                    <div style={{
-                      fontSize: 12,
-                      color: 'var(--color-positive)',
-                      backgroundColor: 'rgba(52, 199, 89, 0.08)',
-                      padding: '6px 10px',
-                      borderRadius: 8,
-                      border: '1px solid rgba(52, 199, 89, 0.2)'
-                    }}>
-                      💬 <strong>lominoño:</strong> {item.feedback}
-                    </div>
-                  )}
-
-                  {/* Fila de Interacción */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleLike(item.id, false)}
-                      style={{
-                        background: yaLeDiLike ? 'rgba(255, 59, 48, 0.1)' : 'transparent',
-                        border: yaLeDiLike ? '1px solid rgba(255, 59, 48, 0.3)' : '1px solid transparent',
-                        borderRadius: 8,
-                        padding: '3px 8px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: yaLeDiLike ? '#FF3B30' : 'var(--color-secondary-ink)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <Heart size={14} fill={yaLeDiLike ? '#FF3B30' : 'none'} />
-                      <span>{item.likes || 0}</span>
-                    </button>
-
-                    <span className="apple-caption" style={{ fontSize: 11 }}>
-                      Respuesta oficial SMR2
-                    </span>
-                  </div>
-                </article>
-              )
-            }
-
-            // CASO POST TÉCNICO / COMUNIDAD
+        {/* Pestañas de navegación de Timeline estilo X */}
+        <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+          {[
+            { id: 'para_ti', label: 'Para ti' },
+            { id: 'tips', label: 'Chuletas & Tips' },
+            { id: 'respuestas', label: `Soluciones (${respuestasFeed.length})` }
+          ].map((tab) => {
+            const activa = tabActiva === tab.id
             return (
-              <article
-                key={item.id}
-                className="card"
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => { sound.playPop(); setTabActiva(tab.id) }}
                 style={{
-                  padding: '14px 16px',
-                  backgroundColor: 'var(--color-surface)',
-                  border: '1px solid var(--color-separator)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10
+                  flex: 1,
+                  padding: '12px 0',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  fontSize: 14,
+                  fontWeight: activa ? 800 : 500,
+                  color: activa ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                  transition: 'color 0.15s ease'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <AvatarUsuario
-                      nombre={item.autor}
-                      color={item.color || '#007AFF'}
-                      rol={item.rol || 'alumno'}
-                      size={32}
-                      fontSize={12}
-                    />
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-ink)' }}>
-                          {item.autor}
-                        </span>
-                        {item.username && (
-                          <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>
-                            @{item.username}
-                          </span>
-                        )}
-                        {item.rol === 'moderador' && (
-                          <span className="apple-badge apple-badge-accent" style={{ fontSize: 9 }}>
-                            Profesor
-                          </span>
-                        )}
-                      </div>
-                      <span className="apple-caption" style={{ fontSize: 11 }}>
-                        {item.fecha}
-                      </span>
-                    </div>
-                  </div>
-
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      backgroundColor: 'rgba(120, 120, 128, 0.1)',
-                      color: 'var(--color-secondary-ink)'
-                    }}
-                  >
-                    #{item.categoria || 'Tip'}
-                  </span>
-                </div>
-
-                <div>
-                  <h4 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 6px', color: 'var(--color-ink)' }}>
-                    {item.titulo}
-                  </h4>
-                  <p style={{ fontSize: 13, color: 'var(--color-secondary-ink)', margin: 0, lineHeight: 1.45, whiteSpace: 'pre-line' }}>
-                    {item.contenido}
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleLike(item.id, true)}
-                    style={{
-                      background: yaLeDiLike ? 'rgba(255, 59, 48, 0.1)' : 'transparent',
-                      border: yaLeDiLike ? '1px solid rgba(255, 59, 48, 0.3)' : '1px solid transparent',
-                      borderRadius: 8,
-                      padding: '3px 8px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: yaLeDiLike ? '#FF3B30' : 'var(--color-secondary-ink)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Heart size={14} fill={yaLeDiLike ? '#FF3B30' : 'none'} />
-                    <span>{item.likes || 0}</span>
-                  </button>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {item.antiAi?.esGenuino ? (
-                      <span className="apple-badge apple-badge-success" style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                        <Check size={10} /> 100% Humano
-                      </span>
-                    ) : (
-                      <span className="apple-caption" style={{ fontSize: 11 }}>
-                        Post de la clase
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </article>
+                <span>{tab.label}</span>
+                {activa && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 48,
+                    height: 3,
+                    borderRadius: 9999,
+                    backgroundColor: 'var(--color-accent)'
+                  }} />
+                )}
+              </button>
             )
           })}
         </div>
+      </header>
 
-        {/* Reto diario interactivo */}
-        <RetoDelDia perfil={perfil} onCompletado={sumarPuntos} />
-
-        {/* Pregunta Flash */}
-        <PreguntaFlashDia userId={perfil.id} onSumarPuntos={sumarPuntos} />
-
-        {/* Banner Recreo Arcade */}
-        <section
-          className="card"
-          style={{
-            padding: '14px 16px',
-            backgroundColor: 'rgba(48, 209, 88, 0.08)',
-            border: '1px solid rgba(48, 209, 88, 0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-            cursor: 'pointer'
-          }}
-          onClick={() => navigate('/juegos')}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                backgroundColor: '#30D158',
-                color: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(48, 209, 88, 0.3)'
-              }}
-            >
-              <Gamepad2 size={22} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#248A3D', letterSpacing: 0.5 }}>
-                  Recreo Arcade SMR2
-                </span>
-                <span className="apple-badge apple-badge-neutral" style={{ fontSize: 10, backgroundColor: 'rgba(48, 209, 88, 0.15)', color: '#248A3D' }}>
-                  +60 pts diarios
-                </span>
-              </div>
-              <h4 className="apple-headline" style={{ fontSize: 15, margin: 0 }}>
-                Yoshi Runner
-              </h4>
-              <p className="apple-caption" style={{ fontSize: 12, margin: 0 }}>
-                Invencibilidad aleatoria táctica (1.5s - 6s) y radar de alertas.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={(e) => { e.stopPropagation(); navigate('/juegos') }}
-            style={{
-              backgroundColor: '#30D158',
-              color: '#FFFFFF',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 14px',
-              minHeight: 34,
-              borderRadius: 9999
-            }}
-          >
-            Jugar
-          </button>
-        </section>
-
-        {/* Podio real de clase */}
-        {ranking.length > 0 && <TopRanking lista={ranking} />}
-      </div>
-
-      {/* MODAL CREAR POST O TIP */}
-      {mostrarModalCrearPost && (
+      {/* 2. CHIP COMPACTO NO INVASIVO DE ASISTENCIA 15:30 */}
+      {bannerAsistenciaVisible && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(8px)',
-          zIndex: 2500,
+          padding: '8px 16px',
+          borderBottom: '1px solid var(--color-separator)',
+          backgroundColor: asistenciaConfirmada ? 'rgba(52, 199, 89, 0.06)' : 'rgba(0, 122, 255, 0.06)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: 16
+          justifyContent: 'space-between',
+          gap: 10
         }}>
-          <div className="card" style={{
-            maxWidth: 480,
-            width: '100%',
-            padding: 20,
-            backgroundColor: 'var(--color-bg)',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.2)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 className="apple-headline" style={{ fontSize: 16, margin: 0 }}>
-                Compartir Post o Tip con la Clase
-              </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            {asistenciaConfirmada ? (
+              <>
+                <CheckCircle2 size={16} color="#34C759" />
+                <span style={{ fontWeight: 600, color: '#248A3D' }}>
+                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+10 pts)
+                </span>
+              </>
+            ) : solicitudPendiente ? (
+              <>
+                <Clock size={16} color="#D97706" />
+                <span style={{ fontWeight: 600, color: '#D97706' }}>
+                  Solicitud enviada a lominoño. Esperando confirmación...
+                </span>
+              </>
+            ) : (
+              <>
+                <Clock size={16} color="var(--color-accent)" />
+                <span style={{ fontWeight: 600, color: 'var(--color-ink)' }}>
+                  Clase de las 15:30: Sella tu presencia en el aula
+                </span>
+              </>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {!asistenciaConfirmada && !solicitudPendiente && (
               <button
                 type="button"
-                onClick={() => setMostrarModalCrearPost(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-secondary-ink)' }}
+                onClick={handleCheckinRapido}
+                style={{
+                  backgroundColor: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 9999,
+                  padding: '5px 12px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
               >
-                <X size={18} />
+                Sellar (+10 pts)
               </button>
-            </div>
-
-            <form onSubmit={handleCrearNuevoPost} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4 }}>
-                  Categoría
-                </label>
-                <select
-                  value={nuevoPostCategoria}
-                  onChange={(e) => setNuevoPostCategoria(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid var(--color-separator)',
-                    backgroundColor: 'var(--color-surface)',
-                    fontSize: 13,
-                    color: 'var(--color-ink)'
-                  }}
-                >
-                  <option value="Truco">Truco / Chuleta</option>
-                  <option value="Cisco">Cisco / Redes</option>
-                  <option value="Linux">Linux / Shell</option>
-                  <option value="Duda">Duda Técnica</option>
-                  <option value="Aviso">Aviso Compañeros</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4 }}>
-                  Título
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Chuleta de comandos para el examen..."
-                  value={nuevoPostTitulo}
-                  onChange={(e) => setNuevoPostTitulo(e.target.value)}
-                  maxLength={90}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid var(--color-separator)',
-                    backgroundColor: 'var(--color-surface)',
-                    fontSize: 13,
-                    color: 'var(--color-ink)'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="apple-caption" style={{ display: 'block', marginBottom: 4 }}>
-                  Contenido
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="Escribe la explicación o pega los comandos clave..."
-                  value={nuevoPostContenido}
-                  onChange={(e) => setNuevoPostContenido(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid var(--color-separator)',
-                    backgroundColor: 'var(--color-surface)',
-                    fontSize: 13,
-                    color: 'var(--color-ink)',
-                    resize: 'none'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setMostrarModalCrearPost(false)}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={publicandoPost}
-                  style={{ gap: 6 }}
-                >
-                  <Send size={14} />
-                  <span>Publicar en Feed (+5 pts)</span>
-                </button>
-              </div>
-            </form>
+            )}
+            <button
+              type="button"
+              onClick={() => setBannerAsistenciaVisible(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-secondary-ink)',
+                padding: 4
+              }}
+            >
+              <X size={14} />
+            </button>
           </div>
         </div>
       )}
 
-      {/* MODAL DE LA TIENDA DE RECOMPENSAS VIRTUALES */}
+      {/* 3. COMPOSITOR INLINE ESTILO X ("¿QUÉ ESTÁ PASANDO EN CLASE?") */}
+      <section style={{
+        padding: '14px 16px',
+        borderBottom: '1px solid var(--color-separator)',
+        display: 'flex',
+        gap: 12,
+        backgroundColor: 'var(--color-surface)'
+      }}>
+        {/* Avatar del autor */}
+        <AvatarUsuario
+          nombre={perfil?.nombre || 'Yo'}
+          color={perfil?.color_acento || '#007AFF'}
+          rol={perfil?.rol || 'alumno'}
+          size={40}
+        />
+
+        {/* Input box */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea
+            ref={composerRef}
+            rows={textoPost.includes('\n') ? 3 : 2}
+            value={textoPost}
+            onChange={(e) => setTextoPost(e.target.value)}
+            placeholder="¿Qué está pasando en clase? Comparte un comando, duda o truco..."
+            style={{
+              width: '100%',
+              border: 'none',
+              outline: 'none',
+              backgroundColor: 'transparent',
+              fontSize: 15,
+              lineHeight: 1.45,
+              resize: 'none',
+              fontFamily: 'inherit',
+              color: 'var(--color-ink)'
+            }}
+          />
+
+          {/* Categorías pill selector */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {['Truco', 'Linux', 'Redes', 'Duda', 'General'].map(cat => {
+              const sel = categoriaPost === cat
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategoriaPost(cat)}
+                  style={{
+                    padding: '3px 9px',
+                    borderRadius: 9999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border: sel ? '1px solid var(--color-accent)' : '1px solid rgba(0,0,0,0.08)',
+                    backgroundColor: sel ? 'rgba(0, 122, 255, 0.1)' : 'var(--color-surface-secondary)',
+                    color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  #{cat}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Barra inferior del compositor: Contador, Recompensa y Botón Postear */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderTop: '1px solid rgba(0,0,0,0.04)',
+            paddingTop: 8,
+            marginTop: 4
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
+                🎁 +5 a +10 pts al publicar
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePublicarPost}
+              disabled={!textoPost.trim() || publicando}
+              style={{
+                backgroundColor: textoPost.trim() ? 'var(--color-accent)' : 'rgba(0, 122, 255, 0.4)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 9999,
+                padding: '7px 18px',
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: textoPost.trim() ? 'pointer' : 'default',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: textoPost.trim() ? '0 2px 8px rgba(0, 122, 255, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Send size={13} />
+              <span>{publicando ? 'Publicando...' : 'Postear'}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. STREAM DEL FEED ESTILO X (TIMELINE CONTINUO) */}
+      <main style={{ display: 'flex', flexDirection: 'column' }}>
+        {cargandoPosts && itemsTimeline.length === 0 && (
+          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)' }}>
+            <Sparkles size={24} style={{ opacity: 0.5, margin: '0 auto 8px', display: 'block' }} />
+            <span style={{ fontSize: 13 }}>Cargando actividad de clase...</span>
+          </div>
+        )}
+
+        {!cargandoPosts && itemsTimeline.length === 0 && (
+          <div style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <Sparkles size={32} color="var(--color-accent)" style={{ opacity: 0.4 }} />
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>El feed está en calma</h3>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--color-secondary-ink)', maxWidth: 320 }}>
+              Sé el primero de la clase en compartir un apunte, tip de examen o duda técnica.
+            </p>
+          </div>
+        )}
+
+        {itemsTimeline.map((item) => {
+          const yaLeDiLike = Boolean(likesDados[item.id])
+          const esRespuesta = item.tipo === 'respuesta'
+
+          return (
+            <article
+              key={item.id}
+              style={{
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--color-separator)',
+                display: 'flex',
+                gap: 12,
+                backgroundColor: 'transparent',
+                transition: 'background-color 0.1s ease'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.015)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+            >
+              {/* Columna izquierda: Avatar */}
+              <div style={{ flexShrink: 0 }}>
+                <AvatarUsuario
+                  nombre={item.autor}
+                  color={item.color || '#007AFF'}
+                  rol={item.rol || 'alumno'}
+                  size={40}
+                  fontSize={13}
+                />
+              </div>
+
+              {/* Columna derecha: Cabecera, Contenido y Acciones estilo X */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {/* Cabecera del tweet */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-ink)' }}>
+                      {item.autor}
+                    </span>
+                    {item.rol === 'moderador' && (
+                      <span className="apple-badge apple-badge-accent" style={{ fontSize: 9 }}>
+                        Profesor
+                      </span>
+                    )}
+                    <span style={{ fontSize: 13, color: 'var(--color-secondary-ink)', opacity: 0.8 }}>
+                      @{item.username || 'alumno'}
+                    </span>
+                    <span style={{ color: 'var(--color-secondary-ink)', opacity: 0.5 }}>·</span>
+                    <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                      {item.tiempoHace}
+                    </span>
+                  </div>
+
+                  {/* Badge de categoría */}
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 7px',
+                    borderRadius: 9999,
+                    backgroundColor: esRespuesta ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0, 122, 255, 0.08)',
+                    color: esRespuesta ? 'var(--color-positive)' : 'var(--color-accent)',
+                    flexShrink: 0
+                  }}>
+                    #{item.categoria || (esRespuesta ? 'Reto' : 'Tip')}
+                  </span>
+                </div>
+
+                {/* Si es respuesta a un reto específico */}
+                {esRespuesta && (
+                  <div style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--color-positive)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}>
+                    <CheckCircle2 size={13} />
+                    <span>Resolvió: {item.retoTitulo}</span>
+                  </div>
+                )}
+
+                {/* Título opcional si tiene */}
+                {item.titulo && !esRespuesta && item.titulo !== item.contenido && (
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
+                    {item.titulo}
+                  </h4>
+                )}
+
+                {/* Cuerpo del tweet */}
+                <div style={{
+                  fontSize: 14,
+                  lineHeight: 1.48,
+                  color: 'var(--color-ink)',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-line'
+                }}>
+                  {item.contenido}
+                </div>
+
+                {/* Feedback del moderador si existe */}
+                {item.feedback && (
+                  <div style={{
+                    fontSize: 12,
+                    color: 'var(--color-positive)',
+                    backgroundColor: 'rgba(52, 199, 89, 0.08)',
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(52, 199, 89, 0.2)',
+                    marginTop: 2
+                  }}>
+                    💬 <strong>lominoño:</strong> {item.feedback}
+                  </div>
+                )}
+
+                {/* Fila de Interacciones estilo X (Acciones limpias) */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  maxWidth: 380,
+                  marginTop: 6,
+                  color: 'var(--color-secondary-ink)'
+                }}>
+                  {/* Comentarios */}
+                  <button
+                    type="button"
+                    title="Responder en Chat"
+                    onClick={() => navigate('/chat')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      color: 'inherit',
+                      fontSize: 12,
+                      padding: 4
+                    }}
+                  >
+                    <MessageSquare size={15} />
+                    <span>0</span>
+                  </button>
+
+                  {/* Repost / Retweet */}
+                  <button
+                    type="button"
+                    title="Impulsar en el aula"
+                    onClick={() => { sound.playStamp(); triggerConfetti() }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      color: 'inherit',
+                      fontSize: 12,
+                      padding: 4
+                    }}
+                  >
+                    <Repeat2 size={16} />
+                    <span>0</span>
+                  </button>
+
+                  {/* Corazón Like */}
+                  <button
+                    type="button"
+                    title="Me gusta"
+                    onClick={() => handleToggleLike(item.id, !esRespuesta)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      color: yaLeDiLike ? '#FF3B30' : 'inherit',
+                      fontSize: 12,
+                      padding: 4,
+                      transition: 'color 0.12s ease'
+                    }}
+                  >
+                    <Heart size={15} fill={yaLeDiLike ? '#FF3B30' : 'none'} color={yaLeDiLike ? '#FF3B30' : 'currentColor'} />
+                    <span>{item.likes || 0}</span>
+                  </button>
+
+                  {/* Compartir */}
+                  <button
+                    type="button"
+                    title="Compartir o copiar"
+                    onClick={() => {
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(item.contenido)
+                        sound.playPop()
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      color: 'inherit',
+                      fontSize: 12,
+                      padding: 4
+                    }}
+                  >
+                    <Share2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </main>
+
+      {/* MODAL TIENDA DE RECOMPENSAS VIRTUALES */}
       {mostrarTienda && (
         <TiendaRecompensas onClose={() => setMostrarTienda(false)} />
       )}
 
-      {/* MODAL DEL HORARIO */}
+      {/* MODAL HORARIO */}
       <ModalHorario
         abierto={mostrarModalHorario}
         onCerrar={() => setMostrarModalHorario(false)}
       />
-    </main>
+    </div>
   )
 }
 
-// Exportar también como PantallaFeed por claridad
+function calcularTiempoRelativo(fechaIso) {
+  if (!fechaIso) return 'ahora'
+  const diffSegundos = Math.floor((Date.now() - new Date(fechaIso).getTime()) / 1000)
+  if (diffSegundos < 60) return `${Math.max(1, diffSegundos)}s`
+  const diffMin = Math.floor(diffSegundos / 60)
+  if (diffMin < 60) return `${diffMin}m`
+  const diffHoras = Math.floor(diffMin / 60)
+  if (diffHoras < 24) return `${diffHoras}h`
+  const diffDias = Math.floor(diffHoras / 24)
+  return `${diffDias}d`
+}
+
 export { PantallaHoy as PantallaFeed }

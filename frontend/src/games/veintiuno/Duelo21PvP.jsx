@@ -69,6 +69,21 @@ export function Duelo21PvP({ perfil, setPerfil }) {
   useEffect(() => {
     fetchLobbiesPvp()
 
+    // 1. Canal Realtime nativo de Supabase en Postgres
+    const canalLive = supabase
+      .channel('pvp-blackjack-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pvp_blackjack' }, (payload) => {
+        fetchLobbiesPvp()
+        if (payload?.new && partidaActivaPvp && payload.new.id === partidaActivaPvp.id) {
+          setPartidaActivaPvp(payload.new)
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pvp_partidas' }, () => {
+        fetchLobbiesPvp()
+      })
+      .subscribe()
+
+    // 2. Hub de eventos de clase (Broadcast)
     const des1 = suscribirEvento('pvp_21_nuevo_reto', () => fetchLobbiesPvp())
     const des2 = suscribirEvento('pvp_21_reto_cancelado', () => fetchLobbiesPvp())
     const des3 = suscribirEvento('pvp_21_jugada', (payload) => {
@@ -97,6 +112,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       des2()
       des3()
       des4()
+      supabase.removeChannel(canalLive)
     }
   }, [partidaActivaPvp?.id, perfil?.id])
 
@@ -313,6 +329,13 @@ export function Duelo21PvP({ perfil, setPerfil }) {
 
     try {
       await supabase.from('profiles').update({ puntos_total: saldoFinal }).eq('id', perfil.id)
+      if (gananciaNeta > 0) {
+        await supabase.from('juegos_puntuaciones').insert([{
+          user_id: perfil.id,
+          juego: 'blackjack_21',
+          puntuacion: gananciaNeta
+        }])
+      }
     } catch (_) {}
   }
 
@@ -399,10 +422,28 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       if (!error && data) {
         setPartidaActivaPvp({ ...data, creador: perfil })
       } else {
-        // Fallback local
-        const prev = JSON.parse(localStorage.getItem('muudel_pvp_21_lobbies') || '[]')
-        localStorage.setItem('muudel_pvp_21_lobbies', JSON.stringify([nuevoLobby, ...prev]))
-        setPartidaActivaPvp({ ...nuevoLobby, creador: perfil })
+        // Fallback a pvp_partidas en Supabase (siempre disponible)
+        try {
+          const { data: pData } = await supabase.from('pvp_partidas').insert([{
+            creador_id: perfil.id,
+            apuesta: apuestaPvp,
+            estado: 'esperando',
+            dado1_creador: 21,
+            resultado_creador: calcularPuntuacionMano(manoCreador).total
+          }]).select().single()
+
+          if (pData) {
+            setPartidaActivaPvp({ ...nuevoLobby, id: pData.id, creador: perfil })
+          } else {
+            const prev = JSON.parse(localStorage.getItem('muudel_pvp_21_lobbies') || '[]')
+            localStorage.setItem('muudel_pvp_21_lobbies', JSON.stringify([nuevoLobby, ...prev]))
+            setPartidaActivaPvp({ ...nuevoLobby, creador: perfil })
+          }
+        } catch (_) {
+          const prev = JSON.parse(localStorage.getItem('muudel_pvp_21_lobbies') || '[]')
+          localStorage.setItem('muudel_pvp_21_lobbies', JSON.stringify([nuevoLobby, ...prev]))
+          setPartidaActivaPvp({ ...nuevoLobby, creador: perfil })
+        }
       }
     } catch (_) {
       const prev = JSON.parse(localStorage.getItem('muudel_pvp_21_lobbies') || '[]')
@@ -427,6 +468,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     try {
       await supabase.from('profiles').update({ puntos_total: saldoDevuelto }).eq('id', perfil.id)
       await supabase.from('pvp_blackjack').update({ estado: 'cancelado' }).eq('id', partidaId)
+      await supabase.from('pvp_partidas').update({ estado: 'cancelado' }).eq('id', partidaId)
     } catch (_) {}
 
     // Remover de local storage
@@ -487,6 +529,7 @@ export function Duelo21PvP({ perfil, setPerfil }) {
 
     try {
       await supabase.from('pvp_blackjack').update(partidaActualizada).eq('id', lobby.id)
+      await supabase.from('pvp_partidas').update({ oponente_id: perfil.id, estado: 'jugando' }).eq('id', lobby.id)
     } catch (_) {}
 
     transmitirEvento('pvp_21_jugada', { partidaId: lobby.id, partida: partidaActualizada })
@@ -586,23 +629,43 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       ganadorId = 'empate'
     }
 
-    // Actualizar puntos de ganador / empate
+    // Actualizar puntos de ganador / empate en Supabase de forma garantizada
+    try {
+      if (ganadorId && ganadorId !== 'empate') {
+        const { data: profGanador } = await supabase.from('profiles').select('puntos_total').eq('id', ganadorId).single()
+        const saldoG = (profGanador?.puntos_total || 0) + boteTotal
+        await supabase.from('profiles').update({ puntos_total: saldoG }).eq('id', ganadorId)
+        
+        await supabase.from('juegos_puntuaciones').insert([{
+          user_id: ganadorId,
+          juego: 'blackjack_21',
+          puntuacion: boteTotal
+        }])
+      } else if (ganadorId === 'empate') {
+        if (partidaActivaPvp.creador_id) {
+          const { data: pC } = await supabase.from('profiles').select('puntos_total').eq('id', partidaActivaPvp.creador_id).single()
+          await supabase.from('profiles').update({ puntos_total: (pC?.puntos_total || 0) + partidaActivaPvp.apuesta }).eq('id', partidaActivaPvp.creador_id)
+        }
+        if (partidaActivaPvp.oponente_id) {
+          const { data: pO } = await supabase.from('profiles').select('puntos_total').eq('id', partidaActivaPvp.oponente_id).single()
+          await supabase.from('profiles').update({ puntos_total: (pO?.puntos_total || 0) + partidaActivaPvp.apuesta }).eq('id', partidaActivaPvp.oponente_id)
+        }
+      }
+    } catch (errPuntos) {
+      console.warn('Aviso al liquidar puntos en BD 21:', errPuntos)
+    }
+
+    // Efectos y estado local para el usuario activo
     if (ganadorId === perfil?.id) {
       const nuevoSaldo = (perfil.puntos_total || 0) + boteTotal
       setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
       localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-      try {
-        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
-      } catch (_) {}
       sound.playWin()
       triggerConfetti()
     } else if (ganadorId === 'empate') {
       const nuevoSaldo = (perfil?.puntos_total || 0) + partidaActivaPvp.apuesta
       setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
       localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-      try {
-        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
-      } catch (_) {}
       sound.playPop()
     } else {
       sound.playLose()
