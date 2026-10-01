@@ -225,6 +225,52 @@ class RetroAudio {
 
 const retroAudio = new RetroAudio()
 
+// ─── Modos de dificultad Yoshi Runner ───────────────────────────────────────
+export const DIFICULTADES_YOSHI = {
+  normal: {
+    id: 'normal',
+    nombre: 'Normal',
+    speedInitial: 6.0,
+    speedMax: 18.0,
+    accelRate: 0.0032,
+    bulletSpeed: 1.75,
+    lowBillSpeed: 2.0,
+    spawnMult: 1.0,
+    coinMultiplier: 1.0,
+    color: '#34C759',
+    badge: 'Normal 1x',
+    descripcion: 'Velocidad equilibrada y ritmo fluido'
+  },
+  dificil: {
+    id: 'dificil',
+    nombre: 'Difícil',
+    speedInitial: 8.0,
+    speedMax: 22.0,
+    accelRate: 0.005,
+    bulletSpeed: 2.15,
+    lowBillSpeed: 2.45,
+    spawnMult: 1.45,
+    coinMultiplier: 1.5,
+    color: '#FF9500',
+    badge: 'Difícil 1.5x',
+    descripcion: 'Más misiles, velocidad acelerada y +50% monedas'
+  },
+  extremo: {
+    id: 'extremo',
+    nombre: 'Pesadilla Extrema',
+    speedInitial: 10.2,
+    speedMax: 28.0,
+    accelRate: 0.0075,
+    bulletSpeed: 2.85,
+    lowBillSpeed: 3.15,
+    spawnMult: 2.15,
+    coinMultiplier: 2.5,
+    color: '#FF3B30',
+    badge: '💀 Pesadilla 2.5x',
+    descripcion: 'Velocidad supersónica, oleadas agresivas y x2.5 monedas sin límite'
+  }
+}
+
 // ─── Constantes ──────────────────────────────────────────────────────────────
 const CANVAS_W = 760
 const CANVAS_H = 230
@@ -269,15 +315,18 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   })
   const [sonidoActivo, setSonidoActivo] = useState(true)
   const [retoSuperadoEnPartida, setRetoSuperadoEnPartida] = useState(false)
+  const [dificultad, setDificultad] = useState(() => localStorage.getItem('muudel_yoshi_dificultad') || 'normal')
 
   // Mutable refs usadas dentro del game loop (evitar closures stale)
   const retoSuperadoRef = useRef(false)
   const juegoEstadoRef = useRef('inicio')
   const onRetoCompletadoRef = useRef(onRetoCompletado)
   const perfilRef = useRef(perfil)
+  const dificultadRef = useRef(dificultad)
   const finalizarLlamadoRef = useRef(false)
   useEffect(() => { onRetoCompletadoRef.current = onRetoCompletado }, [onRetoCompletado])
   useEffect(() => { perfilRef.current = perfil }, [perfil])
+  useEffect(() => { dificultadRef.current = dificultad }, [dificultad])
 
   // Sprites
   const spritesRef = useRef({})
@@ -286,7 +335,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   // Estado mutable del juego (fuera de React state para evitar re-renders)
   const gameStateRef = useRef(null)
 
-  function crearEstadoInicial(winsCount) {
+  function crearEstadoInicial(winsCount, difKey = 'normal') {
+    const diff = DIFICULTADES_YOSHI[difKey] || DIFICULTADES_YOSHI.normal
     // La duración aumenta 90s por cada victoria (máx 900s = 15 min)
     const duracion = Math.min(BASE_DURATION_S + winsCount * 90, 900)
 
@@ -310,7 +360,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
     return {
       score: 0,
-      speed: SPEED_INITIAL,
+      speed: diff.speedInitial,
+      dificultad: diff.id,
       distance: 0,
       coins: 0,
       combo: 1,
@@ -397,14 +448,15 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       triggerConfetti()
     }
 
-    const fecha = new Date().toISOString().split('T')[0]
-    const hoyActuales = Number(localStorage.getItem(`muudel_arcade_monedas_${fecha}_${p?.id}`) || 0)
-    const LIMITE = 20 // Nerf económico: máximo 20 puntos diarios de recreo
-    const margen = Math.max(0, LIMITE - hoyActuales)
-    const bonus = esVictoria ? 5 : 0
-    const monedasAcreditar = Math.min(Math.floor(coinsFinales / 3) + bonus, margen)
+    const diff = DIFICULTADES_YOSHI[dificultadRef.current || 'normal'] || DIFICULTADES_YOSHI.normal
+    // Sin límite diario de monedas: todo lo que consigas se acredita con el multiplicador de dificultad
+    const basePuntos = Math.max(0, Math.floor(coinsFinales * diff.coinMultiplier))
+    const bonusVictoria = esVictoria ? Math.round(25 * diff.coinMultiplier) : 0
+    const monedasAcreditar = basePuntos + bonusVictoria
 
     if (monedasAcreditar > 0 && p) {
+      const fecha = new Date().toISOString().split('T')[0]
+      const hoyActuales = Number(localStorage.getItem(`muudel_arcade_monedas_${fecha}_${p?.id}`) || 0)
       const nuevoHoy = hoyActuales + monedasAcreditar
       localStorage.setItem(`muudel_arcade_monedas_${fecha}_${p.id}`, String(nuevoHoy))
       setMonedasHoyGanadas(nuevoHoy)
@@ -437,7 +489,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     setComboActual(1)
 
     const winsActuales = getWins()
-    const estado = crearEstadoInicial(winsActuales)
+    const estado = crearEstadoInicial(winsActuales, dificultadRef.current)
     estado.isRunning = true
     gameStateRef.current = estado
 
@@ -548,6 +600,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
         // ── Física de score y velocidad frenética ─────────────────────────────────
         const enOverdrive = state.overdriveTime > 0
+        const diffConfig = DIFICULTADES_YOSHI[state.dificultad || 'normal'] || DIFICULTADES_YOSHI.normal
         const speedFactor = (state.feverTime > 0 ? 1.25 : 1.0) * (enOverdrive ? 1.45 : 1.0)
 
         if (state.fase === 'normal') {
@@ -555,23 +608,23 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           state.score = Math.floor(state.distance)
           setPuntos(state.score)
 
-          // Aceleración continua más dinámica y desafiante
-          if (state.speed < SPEED_MAX) {
-            state.speed += 0.0032
+          // Aceleración continua según dificultad seleccionada
+          if (state.speed < diffConfig.speedMax) {
+            state.speed += diffConfig.accelRate
           }
 
           // Aceleración por tramos de 50 metros con anuncio visual
           const tierActual = Math.floor(state.score / 50)
           if (tierActual > state.lastSpeedTier) {
             state.lastSpeedTier = tierActual
-            state.screenShake = 6
+            state.screenShake = state.dificultad === 'extremo' ? 8 : 6
             retroAudio.playWarning()
             state.floatingTexts.push({
               text: `¡ACELERACIÓN! ${(state.speed * speedFactor).toFixed(1)}x`,
               x: CANVAS_W / 2,
               y: 55,
               vy: -1.2,
-              color: '#FBBF24',
+              color: diffConfig.color,
               opacity: 1.3
             })
           }
@@ -866,23 +919,23 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               if (alert.tipo === 'bomb') {
                 state.obstacles.push({
                   tipo: 'bomb', x: CANVAS_W, y: GROUND_Y - 38,
-                  w: 36, h: 38, sprite: 'bobOmb', speedMod: 1.15
+                  w: 36, h: 38, sprite: 'bobOmb', speedMod: state.dificultad === 'extremo' ? 1.45 : 1.15
                 })
               } else if (alert.tipo === 'bulletBill') {
                 state.obstacles.push({
                   tipo: 'bulletBill', x: CANVAS_W, y: alert.y,
-                  w: 48, h: 28, sprite: 'bulletBill', speedMod: 1.75
+                  w: 48, h: 28, sprite: 'bulletBill', speedMod: diffConfig.bulletSpeed
                 })
               } else if (alert.tipo === 'paratroopa') {
                 state.obstacles.push({
                   tipo: 'paratroopa', x: CANVAS_W, y: GROUND_Y - 54,
-                  w: 38, h: 32, sprite: 'paratroopa', speedMod: 1.05
+                  w: 38, h: 32, sprite: 'paratroopa', speedMod: state.dificultad === 'extremo' ? 1.35 : 1.05
                 })
               } else if (alert.tipo === 'lowBill') {
                 // Bullet Bill rasante → OBLIGATORIO agacharse
                 state.obstacles.push({
                   tipo: 'lowBill', x: CANVAS_W, y: GROUND_Y - 30,
-                  w: 52, h: 20, sprite: 'bulletBill', speedMod: 2.0
+                  w: 52, h: 20, sprite: 'bulletBill', speedMod: diffConfig.lowBillSpeed
                 })
               }
               state.alerts.splice(a, 1)
@@ -892,34 +945,41 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           // Spawn de nuevas alertas
           const hayAlerta = state.alerts.length > 0
           const ultimo = state.obstacles[state.obstacles.length - 1]
-          const espacio = !ultimo || (CANVAS_W - ultimo.x > 220)
+          const minObstacleGap = state.dificultad === 'extremo' ? 140 : 200
+          const espacio = !ultimo || (CANVAS_W - ultimo.x > minObstacleGap)
 
           if (!hayAlerta && espacio) {
             const r = Math.random()
-            const spawnMult = 1 + (state.speed - SPEED_INITIAL) / (SPEED_MAX - SPEED_INITIAL) * 0.5
+            const spawnMult = diffConfig.spawnMult * (1 + (state.speed - diffConfig.speedInitial) / (diffConfig.speedMax - diffConfig.speedInitial) * 0.5)
 
-            if (state.score > 20 && r < 0.014 * spawnMult) {
-              state.alerts.push({ tipo: 'bomb', timer: 38, maxTimer: 38, label: '¡BOMBA!', icon: '!', color: '#FF3B30', y: GROUND_Y - 38 })
+            const scoreBomb = state.dificultad === 'extremo' ? 10 : 20
+            const scoreBill = state.dificultad === 'extremo' ? 25 : 55
+            const scorePara = state.dificultad === 'extremo' ? 18 : 35
+            const scoreLow = state.dificultad === 'extremo' ? 35 : 80
+
+            if (state.score > scoreBomb && r < 0.016 * spawnMult) {
+              state.alerts.push({ tipo: 'bomb', timer: state.dificultad === 'extremo' ? 28 : 38, maxTimer: 38, label: '¡BOMBA!', icon: '!', color: '#FF3B30', y: GROUND_Y - 38 })
               retroAudio.playWarning()
-            } else if (state.score > 55 && r < 0.026 * spawnMult) {
+            } else if (state.score > scoreBill && r < 0.030 * spawnMult) {
               const billY = Math.random() > 0.5 ? GROUND_Y - 48 : GROUND_Y - 72
-              state.alerts.push({ tipo: 'bulletBill', timer: 42, maxTimer: 42, label: '¡MISIL!', icon: '!', color: '#EF4444', y: billY })
+              state.alerts.push({ tipo: 'bulletBill', timer: state.dificultad === 'extremo' ? 30 : 42, maxTimer: 42, label: '¡MISIL!', icon: '!', color: '#EF4444', y: billY })
               retroAudio.playWarning()
-            } else if (state.score > 35 && r < 0.036 * spawnMult) {
-              state.alerts.push({ tipo: 'paratroopa', timer: 36, maxTimer: 36, label: '¡VOLADOR!', icon: '!', color: '#F59E0B', y: GROUND_Y - 54 })
+            } else if (state.score > scorePara && r < 0.040 * spawnMult) {
+              state.alerts.push({ tipo: 'paratroopa', timer: state.dificultad === 'extremo' ? 26 : 36, maxTimer: 36, label: '¡VOLADOR!', icon: '!', color: '#F59E0B', y: GROUND_Y - 54 })
               retroAudio.playWarning()
-            } else if (state.score > 80 && r < 0.018 * spawnMult) {
+            } else if (state.score > scoreLow && r < 0.022 * spawnMult) {
               // Obstáculo bajo donde obligatoriamente hay que agacharse
-              state.alerts.push({ tipo: 'lowBill', timer: 44, maxTimer: 44, label: '¡AGÁCHATE!', icon: '!', color: '#8B5CF6', y: GROUND_Y - 30 })
+              state.alerts.push({ tipo: 'lowBill', timer: state.dificultad === 'extremo' ? 32 : 44, maxTimer: 44, label: '¡AGÁCHATE!', icon: '!', color: '#8B5CF6', y: GROUND_Y - 30 })
               retroAudio.playWarning()
             }
           }
 
           // Obstáculos base (tuberías / caparazones / paredes bajas)
-          const minGap = 190 + Math.random() * 90 + state.speed * 6
+          const baseGap = state.dificultad === 'extremo' ? 130 : 190
+          const minGap = baseGap + Math.random() * 80 + state.speed * 5
           const canSpawn = !hayAlerta && (!ultimo || (CANVAS_W - ultimo.x > minGap))
 
-          if (canSpawn && Math.random() < 0.04) {
+          if (canSpawn && Math.random() < (state.dificultad === 'extremo' ? 0.06 : 0.04)) {
             const rObs = Math.random()
             if (rObs < 0.33) {
               state.obstacles.push({ tipo: 'pipe', x: CANVAS_W, y: GROUND_Y - 48, w: 38, h: 48, sprite: 'piranhaPipe', speedMod: 1.0 })
@@ -943,17 +1003,19 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               const distY = Math.abs((yoshi.y + yoshi.h) - obs.y)
               if (distY < 24) {
                 retroAudio.playNearMiss()
-                state.screenShake = 4
-                state.score += 15
-                state.coins += 2
+                state.screenShake = state.dificultad === 'extremo' ? 6 : 4
+                const bonusScore = state.dificultad === 'extremo' ? 35 : 15
+                const bonusCoins = state.dificultad === 'extremo' ? 4 : 2
+                state.score += bonusScore
+                state.coins += bonusCoins
                 setMonedasPartida(state.coins)
-                state.adrenalina = Math.min(100, state.adrenalina + 25)
+                state.adrenalina = Math.min(100, state.adrenalina + (state.dificultad === 'extremo' ? 35 : 25))
                 state.floatingTexts.push({
-                  text: '¡ROCE ÉPICO! +15',
+                  text: state.dificultad === 'extremo' ? `¡ROCE EXTREMO! +${bonusScore}` : `¡ROCE ÉPICO! +${bonusScore}`,
                   x: yoshi.x + 20,
                   y: yoshi.y - 16,
                   vy: -1.3,
-                  color: '#FBBF24',
+                  color: diffConfig.color,
                   opacity: 1
                 })
                 for (let p = 0; p < 8; p++) {
@@ -1579,9 +1641,24 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             <Gamepad2 size={16} />
           </div>
           <div>
-            <h3 className="apple-headline" style={{ fontSize: 15, margin: 0, lineHeight: 1.2 }}>Yoshi Runner</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <h3 className="apple-headline" style={{ fontSize: 15, margin: 0, lineHeight: 1.2 }}>Yoshi Runner</h3>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: 9999,
+                  backgroundColor: `${DIFICULTADES_YOSHI[dificultad]?.color}22`,
+                  color: DIFICULTADES_YOSHI[dificultad]?.color,
+                  border: `1px solid ${DIFICULTADES_YOSHI[dificultad]?.color}44`
+                }}
+              >
+                {DIFICULTADES_YOSHI[dificultad]?.badge}
+              </span>
+            </div>
             <span className="apple-caption" style={{ fontSize: 11 }}>
-              Récord: {mejorPuntuacion}m · Ronda #{wins + 1}
+              Récord: {mejorPuntuacion}m · Sin límite de monedas
             </span>
           </div>
         </div>
@@ -1626,36 +1703,81 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
         {/* Pantalla de inicio */}
         {juegoEstado === 'inicio' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(3px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#FFF' }}>
-            <img src={SPRITES_DATA_URI.yoshiRun1} alt="Yoshi" style={{ width: 52, height: 52 }} />
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.68)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#FFF', padding: 12 }}>
+            <img src={SPRITES_DATA_URI.yoshiRun1} alt="Yoshi" style={{ width: 46, height: 46 }} />
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>Yoshi Runner</div>
-              <div style={{ fontSize: 12, opacity: 0.8, maxWidth: 260, lineHeight: 1.4, marginTop: 4 }}>
-                Espacio / ↑ Saltar · Mantener: Aletear · ↓ Agacharse
+              <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.3 }}>Yoshi Runner Arcade</div>
+              <div style={{ fontSize: 11, color: '#FBBF24', fontWeight: 700, marginTop: 2 }}>
+                ⭐ ¡Sin límite de monedas diarias! Elige dificultad:
               </div>
             </div>
-            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 8, backgroundColor: '#30D158', fontWeight: 700, fontSize: 14, padding: '10px 20px', borderRadius: 9999 }}>
-              <Play size={16} fill="#FFF" /><span>Jugar</span>
+
+            {/* Selector interactivo de dificultad */}
+            <div style={{ display: 'flex', gap: 6, backgroundColor: 'rgba(255,255,255,0.12)', padding: 3, borderRadius: 12 }}>
+              {Object.values(DIFICULTADES_YOSHI).map((d) => {
+                const act = dificultad === d.id
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      sound.playPop()
+                      setDificultad(d.id)
+                      localStorage.setItem('muudel_yoshi_dificultad', d.id)
+                    }}
+                    style={{
+                      border: 'none',
+                      backgroundColor: act ? d.color : 'transparent',
+                      color: act ? '#FFF' : 'rgba(255,255,255,0.7)',
+                      padding: '5px 12px',
+                      borderRadius: 9,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {d.badge}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ fontSize: 11, color: DIFICULTADES_YOSHI[dificultad]?.color, fontWeight: 700, textAlign: 'center', maxWidth: 360 }}>
+              {DIFICULTADES_YOSHI[dificultad]?.descripcion}
+            </div>
+
+            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 8, backgroundColor: DIFICULTADES_YOSHI[dificultad]?.color || '#30D158', fontWeight: 800, fontSize: 14, padding: '10px 24px', borderRadius: 9999, boxShadow: '0 4px 14px rgba(0,0,0,0.3)', cursor: 'pointer' }}>
+              <Play size={16} fill="#FFF" /><span>Jugar en {DIFICULTADES_YOSHI[dificultad]?.nombre}</span>
             </button>
           </div>
         )}
 
         {/* Game Over */}
         {juegoEstado === 'muerto' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#FFF' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#FFF' }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: '#FF3B30' }}>FIN DE PARTIDA</div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13, fontWeight: 700 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts (Sin límite)</div>
+            </div>
+            <div style={{ fontSize: 11, color: DIFICULTADES_YOSHI[dificultad]?.color, fontWeight: 700 }}>
+              Modo: {DIFICULTADES_YOSHI[dificultad]?.nombre} ({DIFICULTADES_YOSHI[dificultad]?.badge})
             </div>
             {retoSuperadoEnPartida && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: 'rgba(52,199,89,0.2)', border: '1px solid #34C759', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 700, color: '#86EFAC' }}>
                 <CheckCircle2 size={13} /><span>Reto completado</span>
               </div>
             )}
-            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 4, gap: 6, backgroundColor: '#0A84FF', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9999 }}>
-              <RotateCcw size={14} /><span>Reintentar</span>
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button type="button" onClick={() => setJuegoEstado('inicio')} style={{ gap: 6, fontSize: 12, padding: '7px 14px', borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.18)', color: '#FFF', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                Cambiar dificultad
+              </button>
+              <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 6, backgroundColor: '#0A84FF', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9999 }}>
+                <RotateCcw size={14} /><span>Reintentar</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1665,7 +1787,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             <div style={{ fontSize: 28, fontWeight: 900, color: '#FFD700' }}>¡VICTORIA!</div>
             <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+30 bonus</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} pts (Sin límite)</div>
             </div>
             <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 6, gap: 6, backgroundColor: '#FFD700', color: '#000', fontWeight: 800, fontSize: 13, padding: '8px 20px', borderRadius: 9999 }}>
               <Star size={14} fill="#000" /><span>Siguiente ronda</span>

@@ -128,3 +128,121 @@ adminRouter.post('/eliminar-usuario', async (req, res) => {
     return res.status(500).json({ error: err.message || 'Error interno del servidor' })
   }
 })
+
+// 3. Ajuste masivo de puntos/monedas a todos los alumnos
+adminRouter.post('/ajuste-masivo', async (req, res) => {
+  try {
+    const { delta, motivo } = req.body
+    const deltaNum = Number(delta)
+    if (isNaN(deltaNum) || deltaNum === 0) {
+      return res.status(400).json({ error: 'delta numérico válido es requerido' })
+    }
+
+    const supabaseAdmin = getSupabaseAdmin()
+
+    const { data: alumnos, error: errFetch } = await supabaseAdmin
+      .from('profiles')
+      .select('id, puntos_total, nombre')
+      .neq('rol', 'moderador')
+
+    if (errFetch) {
+      return res.status(500).json({ error: errFetch.message })
+    }
+
+    const updates = (alumnos || []).map(async (a) => {
+      const nuevoTotal = Math.max(0, (a.puntos_total || 0) + deltaNum)
+      return supabaseAdmin
+        .from('profiles')
+        .update({ puntos_total: nuevoTotal, updated_at: new Date().toISOString() })
+        .eq('id', a.id)
+    })
+
+    await Promise.all(updates)
+
+    return res.json({
+      success: true,
+      mensaje: `Ajuste masivo de ${deltaNum > 0 ? '+' : ''}${deltaNum} pts aplicado a ${alumnos?.length || 0} alumnos.`,
+      afectados: alumnos?.length || 0,
+      delta: deltaNum,
+      motivo: motivo || 'Ajuste general de clase'
+    })
+  } catch (err) {
+    console.error('Catch en /ajuste-masivo:', err)
+    return res.status(500).json({ error: err.message || 'Error interno del servidor' })
+  }
+})
+
+// 4. Obtener configuración de ganancias y recompensas de clase
+adminRouter.get('/config-recompensas', async (_req, res) => {
+  try {
+    const supabaseAdmin = getSupabaseAdmin()
+    const { data, error } = await supabaseAdmin
+      .from('config_clase')
+      .select('valor')
+      .eq('clave', 'recompensas_economia')
+      .maybeSingle()
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Aviso al leer config_clase:', error.message)
+    }
+
+    const configDefault = {
+      puntosCheckin: 10,
+      puntosReto: 25,
+      puntosPostFeed: 10,
+      multiplicadorGlobal: 1.0,
+      bonoRacha: 10
+    }
+
+    return res.json({
+      success: true,
+      config: data?.valor || configDefault
+    })
+  } catch (err) {
+    return res.json({
+      success: true,
+      config: {
+        puntosCheckin: 10,
+        puntosReto: 25,
+        puntosPostFeed: 10,
+        multiplicadorGlobal: 1.0,
+        bonoRacha: 10
+      }
+    })
+  }
+})
+
+// 5. Guardar configuración de ganancias y recompensas de clase
+adminRouter.post('/config-recompensas', async (req, res) => {
+  try {
+    const { config: nuevaConfig } = req.body
+    if (!nuevaConfig) {
+      return res.status(400).json({ error: 'config es requerida' })
+    }
+
+    const supabaseAdmin = getSupabaseAdmin()
+    const { data, error } = await supabaseAdmin
+      .from('config_clase')
+      .upsert({
+        clave: 'recompensas_economia',
+        valor: nuevaConfig,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'clave' })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error al guardar config_clase:', error)
+      return res.status(500).json({ error: error.message })
+    }
+
+    return res.json({
+      success: true,
+      mensaje: 'Configuración de recompensas actualizada correctamente',
+      config: data.valor
+    })
+  } catch (err) {
+    console.error('Catch en /config-recompensas:', err)
+    return res.status(500).json({ error: err.message || 'Error interno del servidor' })
+  }
+})

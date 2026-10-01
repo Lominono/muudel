@@ -50,11 +50,20 @@ import {
   Pin,
   FileCode,
   Copy,
-  Paperclip
+  Paperclip,
+  Coins,
+  TrendingUp,
+  Sliders,
+  DollarSign
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { conOneSignal } from '../utils/oneSignal'
 import { formatearTiempoRestante } from '../components/TiendaRecompensas'
+import {
+  obtenerConfigRecompensas,
+  guardarConfigRecompensas,
+  cargarConfigRecompensasDesdeServidor
+} from '../utils/recompensasConfig'
 
 export const obtenerPinAdmin = () => {
   return localStorage.getItem('muudel_admin_pin_custom') || '2026'
@@ -303,6 +312,15 @@ export function PantallaAdmin() {
   })
   const [filtroEntregasRetos, setFiltroEntregasRetos] = useState('pendientes') // 'pendientes' | 'aprobados' | 'rechazados' | 'todos'
   const [modalRechazoReto, setModalRechazoReto] = useState(null) // { entrega, feedback: '' }
+
+  // Configuración de Economía y Ganancias de la Clase
+  const [configRecompensas, setConfigRecompensas] = useState(() => obtenerConfigRecompensas())
+  const [guardandoRecompensas, setGuardandoRecompensas] = useState(false)
+  const [ajusteMasivoCantidad, setAjusteMasivoCantidad] = useState(25)
+  const [ajusteMasivoMotivo, setAjusteMasivoMotivo] = useState('Recompensa de clase')
+  const [enviandoAjusteMasivo, setEnviandoAjusteMasivo] = useState(false)
+  const [busquedaEconomia, setBusquedaEconomia] = useState('')
+  const [saldoCustomInputs, setSaldoCustomInputs] = useState({})
 
   const fechaHoy = new Date().toISOString().split('T')[0]
   const timerInactividadRef = useRef(null)
@@ -662,6 +680,12 @@ export function PantallaAdmin() {
       }
 
       setArchivosClase(listaArchivos)
+
+      // 10. Sincronizar Configuración de Economía de Clase
+      try {
+        const cfgSrv = await cargarConfigRecompensasDesdeServidor()
+        if (cfgSrv) setConfigRecompensas(cfgSrv)
+      } catch (_) {}
     } catch (err) {
       console.warn('Error al cargar datos administrativos:', err)
     } finally {
@@ -1516,6 +1540,130 @@ export function PantallaAdmin() {
     }
   }
 
+  // ECONOMÍA: Guardar reglas de ganancia de la clase (Check-in, Reto, Feed, Multiplicador)
+  const handleGuardarConfigRecompensas = async (e) => {
+    if (e?.preventDefault) e.preventDefault()
+    setGuardandoRecompensas(true)
+    try {
+      await guardarConfigRecompensas(configRecompensas)
+      sound.playStamp()
+      triggerConfetti()
+      avisar('Reglas de ganancia y economía guardadas y difundidas a toda la clase.')
+      registrarAuditoria(
+        'Economía de Clase',
+        `Recompensas actualizadas: Checkin ${configRecompensas.puntosCheckin}pts, Retos ${configRecompensas.puntosReto}pts, Feed ${configRecompensas.puntosPostFeed}pts, Multiplicador x${configRecompensas.multiplicadorGlobal}`
+      )
+    } catch (err) {
+      avisar('Error al guardar configuración: ' + (err.message || err), 'error')
+    } finally {
+      setGuardandoRecompensas(false)
+    }
+  }
+
+  // ECONOMÍA: Reparto masivo de monedas a todos los alumnos
+  const handleAjusteMasivoMonedas = async (cantidad = ajusteMasivoCantidad, motivo = ajusteMasivoMotivo) => {
+    const cant = Number(cantidad)
+    if (!cant || isNaN(cant)) return
+    const motivoTexto = (motivo || 'Recompensa general de clase').trim()
+
+    setModalConfirmacion({
+      titulo: `¿Otorgar ${cant > 0 ? '+' : ''}${cant} monedas a TODOS los alumnos?`,
+      mensaje: `Esta acción modificará el saldo de monedas de los ${todosAlumnos.length} estudiantes registrados en la clase. Motivo: "${motivoTexto}".`,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setEnviandoAjusteMasivo(true)
+        try {
+          // 1. Intentar llamar al endpoint de ajuste masivo del backend
+          let apiExitosa = false
+          try {
+            const resp = await fetch('/api/admin/ajuste-masivo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cantidad: cant, motivo: motivoTexto })
+            })
+            if (resp.ok) apiExitosa = true
+          } catch (_) {}
+
+          // 2. Si no respondió la API, actualizar directamente en Supabase
+          if (!apiExitosa) {
+            for (const al of todosAlumnos) {
+              const nuevoSaldo = Math.max(0, (al.puntos_total || 0) + cant)
+              try {
+                await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', al.id)
+              } catch (_) {}
+            }
+          }
+
+          // 3. Actualizar en el estado local de todosAlumnos
+          setTodosAlumnos(prev => prev.map(a => ({
+            ...a,
+            puntos_total: Math.max(0, (a.puntos_total || 0) + cant)
+          })))
+
+          // 4. Si el alumno activo es el del navegador
+          if (perfil) {
+            const nuevoPuntajeLocal = Math.max(0, (perfil.puntos_total || 0) + cant)
+            const localUser = localStorage.getItem('racha_local_user')
+            if (localUser) {
+              try {
+                const parsed = JSON.parse(localUser)
+                localStorage.setItem('racha_local_user', JSON.stringify({ ...parsed, puntos_total: nuevoPuntajeLocal }))
+              } catch (_) {}
+            }
+          }
+
+          // 5. Transmitir evento en tiempo real a todos los clientes conectados
+          transmitirEvento('ajuste_masivo_puntos', { cantidad: cant, motivo: motivoTexto })
+          transmitirEvento('puntos_actualizados_masivo', { delta: cant })
+
+          sound.playStamp()
+          triggerConfetti()
+          avisar(`¡${cant > 0 ? '+' : ''}${cant} monedas entregadas con éxito a toda la clase!`)
+          registrarAuditoria('Reparto Masivo', `${cant > 0 ? '+' : ''}${cant} monedas a todos los alumnos (${motivoTexto})`)
+        } catch (err) {
+          avisar('Error en reparto masivo: ' + (err.message || err), 'error')
+        } finally {
+          setEnviandoAjusteMasivo(false)
+        }
+      }
+    })
+  }
+
+  // ECONOMÍA: Fijar saldo exacto de monedas a un alumno
+  const handleFijarMonedasDirecto = async (alumno, nuevoSaldo, motivo = 'Saldo fijado por moderador') => {
+    const alumnoId = alumno.id
+    const puntajeFinal = Math.max(0, Number(nuevoSaldo) || 0)
+    setAccionEnCurso(alumnoId)
+    try {
+      let actualizado = false
+      try {
+        const resp = await fetch('/api/admin/modificar-puntaje', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: alumnoId, puntos_total: puntajeFinal, motivo })
+        })
+        if (resp.ok) actualizado = true
+      } catch (_) {}
+
+      if (!actualizado) {
+        try {
+          await supabase.from('profiles').update({ puntos_total: puntajeFinal }).eq('id', alumnoId)
+          actualizado = true
+        } catch (_) {}
+      }
+
+      setTodosAlumnos(prev => prev.map(a => a.id === alumnoId ? { ...a, puntos_total: puntajeFinal } : a))
+      transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: puntajeFinal, userId: alumnoId })
+      sound.playStamp()
+      avisar(`Monedas de ${alumno.nombre} establecidas en ${puntajeFinal} 🪙.`)
+      registrarAuditoria('Fijar Monedas', `${alumno.nombre} tiene ahora ${puntajeFinal} monedas (${motivo})`)
+    } catch (err) {
+      avisar('Error al fijar monedas.', 'error')
+    } finally {
+      setAccionEnCurso(null)
+    }
+  }
+
   // Cambiar rol con confirmación de seguridad
   const solicitarCambioRol = (alumno, nuevoRol) => {
     setModalConfirmacion({
@@ -2055,6 +2203,7 @@ export function PantallaAdmin() {
             { id: 'archivos', label: archivosClase.length > 0 ? `Archivos (${archivosClase.length})` : 'Archivos', icon: Folder },
             { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
+            { id: 'economia', label: 'Monedas & Ganancias', icon: Coins },
             { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
             { id: 'retos', label: entregasRetos.filter(e => e.estado === 'pendiente').length > 0 ? `Retos (${entregasRetos.filter(e => e.estado === 'pendiente').length} pend.)` : `Retos (${retosActivos.length})`, icon: Target },
             { id: 'seguridad', label: 'Auditoría', icon: ShieldAlert }
@@ -3337,6 +3486,36 @@ export function PantallaAdmin() {
                     <button
                       type="button"
                       className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id || alumno.baneado}
+                      onClick={() => handleModificarPuntos(alumno.id, 25, 'Premio de monedas')}
+                      style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
+                      title="Entregar 25 monedas"
+                    >
+                      +25 🪙
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id || alumno.baneado}
+                      onClick={() => handleModificarPuntos(alumno.id, 50, 'Reto de monedas')}
+                      style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
+                      title="Entregar 50 monedas"
+                    >
+                      +50 🪙
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={accionEnCurso === alumno.id || alumno.baneado}
+                      onClick={() => handleModificarPuntos(alumno.id, 100, 'Beca de clase')}
+                      style={{ minHeight: 30, padding: '3px 9px', fontSize: 12, fontWeight: 700, color: 'var(--color-warning)' }}
+                      title="Entregar 100 monedas"
+                    >
+                      +100 🪙
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
                       disabled={accionEnCurso === alumno.id}
                       onClick={() => handleModificarPuntos(alumno.id, -10, 'Penalización')}
                       style={{ minHeight: 30, padding: '3px 10px', fontSize: 12, color: 'var(--color-negative)' }}
@@ -3420,6 +3599,448 @@ export function PantallaAdmin() {
                 </div>
               ))
             )}
+          </section>
+        </div>
+      )}
+
+      {/* PESTAÑA ECONOMÍA: MODIFICAR MONEDAS Y REGLAS DE GANANCIA */}
+      {tab === 'economia' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* 1. MÉTRICAS GENERALES DE ECONOMÍA */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12
+          }}>
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
+                <Coins size={16} color="var(--color-warning)" />
+                <span>Monedas en Circulación</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-ink)' }}>
+                {todosAlumnos.reduce((acc, a) => acc + (a.puntos_total || 0), 0).toLocaleString()} 🪙
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                Entre los {todosAlumnos.length} estudiantes del aula
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
+                <TrendingUp size={16} color="var(--color-accent)" />
+                <span>Multiplicador Activo</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-accent)' }}>
+                {configRecompensas.multiplicadorGlobal || 1.0}x
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                {Number(configRecompensas.multiplicadorGlobal) > 1.0 ? '⚡ Evento de puntos activado' : 'Ritmo estándar de clase'}
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
+                <Users size={16} color="var(--color-positive)" />
+                <span>Promedio por Alumno</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-ink)' }}>
+                {todosAlumnos.length > 0 ? Math.round(todosAlumnos.reduce((acc, a) => acc + (a.puntos_total || 0), 0) / todosAlumnos.length) : 0} 🪙
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                Saldo medio disponible en tienda
+              </div>
+            </div>
+          </div>
+
+          {/* 2. CONFIGURACIÓN DE LO QUE GANAN (REGLAS DE GANANCIA) */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Sliders size={18} color="var(--color-accent)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Reglas de Ganancia de Clase (Lo que ganan)
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 16 }}>
+              Ajusta la cantidad base de monedas y puntos que los alumnos reciben por cada acción en la plataforma.
+            </p>
+
+            <form onSubmit={handleGuardarConfigRecompensas} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 12
+              }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    🪙 Check-in puntual (15:30)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    className="apple-input"
+                    value={configRecompensas.puntosCheckin || 10}
+                    onChange={(e) => setConfigRecompensas(prev => ({ ...prev, puntosCheckin: Number(e.target.value) || 0 }))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Puntos por sellar asistencia a tiempo</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    🎯 Completar un Reto de Clase
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    className="apple-input"
+                    value={configRecompensas.puntosReto || 25}
+                    onChange={(e) => setConfigRecompensas(prev => ({ ...prev, puntosReto: Number(e.target.value) || 0 }))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Base por reto verificado y aprobado</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    📝 Publicar Apunte/Tip en Feed
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    className="apple-input"
+                    value={configRecompensas.puntosPostFeed || 10}
+                    onChange={(e) => setConfigRecompensas(prev => ({ ...prev, puntosPostFeed: Number(e.target.value) || 0 }))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Puntos por compartir contenido en el feed</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                    🔥 Bono por Racha Continua
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="500"
+                    className="apple-input"
+                    value={configRecompensas.bonoRacha || 10}
+                    onChange={(e) => setConfigRecompensas(prev => ({ ...prev, bonoRacha: Number(e.target.value) || 0 }))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>Puntos extra otorgados por mantener racha</span>
+                </div>
+              </div>
+
+              {/* Selector de Multiplicador Global */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                  ⚡ Multiplicador Global de Recompensas de Clase
+                </label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { mult: 1.0, label: 'x1.0 Estándar' },
+                    { mult: 1.5, label: 'x1.5 Impulso (+50%)' },
+                    { mult: 2.0, label: 'x2.0 Doble Puntos (Examen/Reto)' },
+                    { mult: 3.0, label: 'x3.0 Súper Viernes' }
+                  ].map(m => {
+                    const sel = Number(configRecompensas.multiplicadorGlobal) === m.mult
+                    return (
+                      <button
+                        key={m.mult}
+                        type="button"
+                        onClick={() => setConfigRecompensas(prev => ({ ...prev, multiplicadorGlobal: m.mult }))}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: 9999,
+                          border: sel ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                          backgroundColor: sel ? 'rgba(0, 122, 255, 0.12)' : 'var(--color-fill-secondary)',
+                          color: sel ? 'var(--color-accent)' : 'var(--color-ink)',
+                          fontWeight: sel ? 800 : 600,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {m.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                <button
+                  type="submit"
+                  disabled={guardandoRecompensas}
+                  className="btn-primary"
+                  style={{ minHeight: 38, padding: '6px 20px', fontSize: 13, fontWeight: 700 }}
+                >
+                  <Check size={15} />
+                  <span>{guardandoRecompensas ? 'Guardando...' : 'Guardar Reglas de Ganancia'}</span>
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {/* 3. REPARTO MASIVO DE MONEDAS A TODA LA CLASE */}
+          <section className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Zap size={18} color="var(--color-warning)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Reparto Masivo de Monedas a Toda la Clase
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginBottom: 14 }}>
+              Premia a todos los estudiantes registrados al mismo tiempo tras una dinámica grupal o actividad destacada.
+            </p>
+
+            {/* Accesos rápidos de reparto */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              {[10, 25, 50, 100].map(cant => (
+                <button
+                  key={cant}
+                  type="button"
+                  disabled={enviandoAjusteMasivo}
+                  onClick={() => handleAjusteMasivoMonedas(cant, `Premio de +${cant} monedas para toda la clase`)}
+                  className="btn-secondary"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--color-warning)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span>+{cant} 🪙 a todos</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Formulario de reparto masivo personalizado */}
+            <div style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-end',
+              flexWrap: 'wrap',
+              padding: 12,
+              borderRadius: 12,
+              backgroundColor: 'var(--color-surface-secondary)',
+              border: '1px solid var(--color-separator)'
+            }}>
+              <div style={{ width: 120 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Cantidad 🪙
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  className="apple-input"
+                  value={ajusteMasivoCantidad}
+                  onChange={(e) => setAjusteMasivoCantidad(Number(e.target.value) || 0)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Concepto / Motivo
+                </label>
+                <input
+                  type="text"
+                  className="apple-input"
+                  placeholder="Ej: Kahoot de Redes, práctica completada al 100%..."
+                  value={ajusteMasivoMotivo}
+                  onChange={(e) => setAjusteMasivoMotivo(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={enviandoAjusteMasivo || !ajusteMasivoCantidad}
+                onClick={() => handleAjusteMasivoMonedas()}
+                className="btn-primary"
+                style={{
+                  minHeight: 38,
+                  padding: '6px 18px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  backgroundColor: 'var(--color-warning)',
+                  color: '#000000'
+                }}
+              >
+                <Coins size={14} />
+                <span>{enviandoAjusteMasivo ? 'Repartiendo...' : `Repartir +${ajusteMasivoCantidad} a Todos`}</span>
+              </button>
+            </div>
+          </section>
+
+          {/* 4. GESTOR INDIVIDUAL DE MONEDAS DE JUGADORES */}
+          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{
+              padding: '14px 16px',
+              borderBottom: '1px solid var(--color-separator)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 10
+            }}>
+              <div>
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Modificar Monedas de Jugadores
+                </h3>
+                <p className="apple-caption" style={{ marginTop: 2 }}>
+                  Suma, resta o establece el saldo exacto de monedas de cada estudiante.
+                </p>
+              </div>
+
+              {/* Buscador de alumnos */}
+              <div style={{ position: 'relative', width: 220 }}>
+                <input
+                  type="text"
+                  className="apple-input"
+                  placeholder="Buscar jugador..."
+                  value={busquedaEconomia}
+                  onChange={(e) => setBusquedaEconomia(e.target.value)}
+                  style={{ width: '100%', paddingLeft: 30, fontSize: 12, height: 32 }}
+                />
+                <Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--color-secondary-ink)' }} />
+              </div>
+            </div>
+
+            {/* Listado de jugadores con controles directos */}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {todosAlumnos
+                .filter(a => {
+                  if (!busquedaEconomia.trim()) return true
+                  const q = busquedaEconomia.toLowerCase()
+                  return (a.nombre || '').toLowerCase().includes(q) || (a.username || '').toLowerCase().includes(q)
+                })
+                .map((alumno, idx, arr) => {
+                  const saldoInput = saldoCustomInputs[alumno.id] ?? alumno.puntos_total ?? 0
+                  return (
+                    <div
+                      key={alumno.id}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: idx < arr.length - 1 ? '1px solid var(--color-separator)' : 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 10,
+                        backgroundColor: 'transparent'
+                      }}
+                    >
+                      {/* Información del alumno */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
+                        <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento || '#0A84FF'} size={34} />
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</span>
+                            {alumno.digito_id && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(0,122,255,0.1)', color: 'var(--color-accent)' }}>
+                                {alumno.digito_id}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                            <strong style={{ color: 'var(--color-warning)' }}>{alumno.puntos_total || 0} 🪙</strong> · {alumno.racha_actual || 0}d racha
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción rápida de monedas */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={accionEnCurso === alumno.id}
+                          onClick={() => handleModificarPuntos(alumno.id, -50, 'Ajuste monedas (-50)')}
+                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
+                          title="Restar 50 monedas"
+                        >
+                          -50 🪙
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={accionEnCurso === alumno.id}
+                          onClick={() => handleModificarPuntos(alumno.id, -20, 'Ajuste monedas (-20)')}
+                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
+                          title="Restar 20 monedas"
+                        >
+                          -20 🪙
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={accionEnCurso === alumno.id}
+                          onClick={() => handleModificarPuntos(alumno.id, 20, 'Premio monedas (+20)')}
+                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
+                          title="Sumar 20 monedas"
+                        >
+                          +20 🪙
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={accionEnCurso === alumno.id}
+                          onClick={() => handleModificarPuntos(alumno.id, 50, 'Premio monedas (+50)')}
+                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
+                          title="Sumar 50 monedas"
+                        >
+                          +50 🪙
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={accionEnCurso === alumno.id}
+                          onClick={() => handleModificarPuntos(alumno.id, 100, 'Premio monedas (+100)')}
+                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
+                          title="Sumar 100 monedas"
+                        >
+                          +100 🪙
+                        </button>
+
+                        {/* Input para fijar saldo exacto */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            className="apple-input"
+                            value={saldoInput}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setSaldoCustomInputs(prev => ({ ...prev, [alumno.id]: val }))
+                            }}
+                            style={{ width: 68, height: 28, fontSize: 12, padding: '2px 6px', textAlign: 'center' }}
+                            title="Saldo exacto de monedas"
+                          />
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            disabled={accionEnCurso === alumno.id}
+                            onClick={() => handleFijarMonedasDirecto(alumno, saldoInput)}
+                            style={{ minHeight: 28, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}
+                            title="Fijar este saldo exacto en base de datos"
+                          >
+                            Fijar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
           </section>
         </div>
       )}

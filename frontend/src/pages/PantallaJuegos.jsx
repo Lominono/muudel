@@ -41,9 +41,9 @@ export function PantallaJuegos() {
   const pageRef = useRef(null)
 
   const fechaHoy = new Date().toISOString().split('T')[0]
-  const OBJETIVO_RETO = 250 // Nerf: requiere llegar a 250m
-  const RECOMPENSA_RETO = 10 // Nerf: recompensa moderada de 10 pts
-  const LIMITE_BOLSA = 20 // Nerf: máximo 20 pts diarios en juegos
+  const OBJETIVO_RETO = 250 // Requiere llegar a 250m
+  const RECOMPENSA_RETO = 15 // Recompensa reto
+  const LIMITE_BOLSA = 9999 // Sin límite diario de monedas en juegos
 
   useEffect(() => {
     if (pageRef.current) {
@@ -613,16 +613,16 @@ export function PantallaJuegos() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <Coins size={18} color="#D97706" />
               <h3 className="apple-headline" style={{ fontSize: 15 }}>
-                Bolsa de Monedas Diarias
+                Monedas Acumuladas en Recreos
               </h3>
             </div>
             <p className="apple-caption" style={{ marginBottom: 12 }}>
-              Hasta {LIMITE_BOLSA} puntos diarios en recreos para canjear en la tienda o subir en el ranking.
+              ¡Sin límite de monedas diarias! Juega en cualquier dificultad y acumula todas las monedas que consigas para canjear en la tienda o subir en el ranking.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span className="apple-caption">Ganados hoy:</span>
-              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} / {LIMITE_BOLSA} pts</strong>
+              <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} pts (Ilimitado)</strong>
             </div>
 
             <div
@@ -636,7 +636,7 @@ export function PantallaJuegos() {
               <div
                 style={{
                   height: '100%',
-                  width: `${Math.min(100, (monedasHoy / LIMITE_BOLSA) * 100)}%`,
+                  width: `${Math.min(100, Math.max(10, monedasHoy * 2))}%`,
                   backgroundColor: '#F59E0B',
                   borderRadius: 9999,
                   transition: 'width 0.3s ease'
@@ -645,7 +645,7 @@ export function PantallaJuegos() {
             </div>
 
             <div style={{ marginTop: 14, fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.4 }}>
-              Frutas y huevos Yoshi: <strong>+1 a +3 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Límite de recreo: <strong>{LIMITE_BOLSA} pts/día</strong>.
+              Frutas y huevos Yoshi: <strong>+1 a +3 pts</strong> · Monedas doradas: <strong>+1 pt</strong> · Modo Pesadilla: <strong>x2.5 multiplicador</strong> · <strong>Sin tope diario</strong>.
             </div>
           </section>
 

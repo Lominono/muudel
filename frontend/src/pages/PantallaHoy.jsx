@@ -29,6 +29,7 @@ import {
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 import { sumarXpSkill } from '../utils/skillsData'
+import { obtenerConfigRecompensas, calcularPuntosGanados } from '../utils/recompensasConfig'
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -69,6 +70,9 @@ export function PantallaHoy() {
   const [solicitudPendiente, setSolicitudPendiente] = useState(null)
   const [bannerAsistenciaVisible, setBannerAsistenciaVisible] = useState(true)
 
+  // Configuración de economía / ganancias de la clase
+  const [configRec, setConfigRec] = useState(() => obtenerConfigRecompensas())
+
   const fechaHoy = new Date().toISOString().split('T')[0]
 
   // Carga inicial y suscripciones en tiempo real
@@ -103,11 +107,16 @@ export function PantallaHoy() {
       }
     })
 
+    const desRecompensas = suscribirEvento('recompensas_config_actualizada', (nuevaCfg) => {
+      if (nuevaCfg) setConfigRec(nuevaCfg)
+    })
+
     return () => {
       supabase.removeChannel(canalFeed)
       desNuevoPost()
       desLike()
       desCheckin()
+      desRecompensas()
     }
   }, [perfil?.id, fechaHoy])
 
@@ -255,8 +264,11 @@ export function PantallaHoy() {
         setTextoPost('')
         triggerConfetti()
 
-        // Premiar puntos (+10 si es genuino humano, +5 base)
-        const ptsExtra = analisisAntiIA.esGenuino ? 10 : 5
+        // Premiar puntos según configuración activa del aula
+        const mult = Number(configRec?.multiplicadorGlobal) || 1.0
+        const baseFeed = Number(configRec?.puntosPostFeed) || 10
+        const ratio = analisisAntiIA.esGenuino ? 1.0 : 0.5
+        const ptsExtra = Math.max(1, Math.round(baseFeed * ratio * mult))
         const nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
         setPerfil({ ...perfil, puntos_total: nuevoSaldo })
         localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
@@ -322,6 +334,7 @@ export function PantallaHoy() {
     if (!perfil) return
     sound.playStamp()
     const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const ptsCheckin = calcularPuntosGanados('checkin')
 
     const solicitud = {
       userId: perfil.id,
@@ -329,7 +342,7 @@ export function PantallaHoy() {
       hora: horaActual,
       fecha: fechaHoy,
       esTarde: false,
-      puntos: 10
+      puntos: ptsCheckin
     }
 
     try {
@@ -337,12 +350,12 @@ export function PantallaHoy() {
         user_id: perfil.id,
         fecha: fechaHoy,
         hora: horaActual,
-        puntos_ganados: 10
+        puntos_ganados: ptsCheckin
       }]).select().single()
 
       if (data) {
         setAsistenciaConfirmada(data)
-        const nuevoSaldo = (perfil.puntos_total || 0) + 10
+        const nuevoSaldo = (perfil.puntos_total || 0) + ptsCheckin
         const nuevaRacha = (perfil.racha_actual || 0) + 1
         setPerfil(p => ({ ...p, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
         localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
@@ -371,7 +384,7 @@ export function PantallaHoy() {
       maxWidth: 640,
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: 'var(--color-bg)',
+      backgroundColor: 'var(--color-surface)',
       borderLeft: '1px solid var(--color-separator)',
       borderRight: '1px solid var(--color-separator)',
       paddingBottom: 90
@@ -381,9 +394,9 @@ export function PantallaHoy() {
         position: 'sticky',
         top: 0,
         zIndex: 100,
-        backgroundColor: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        backgroundColor: 'var(--tab-bar-bg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--color-separator)'
       }}>
         {/* Barra superior: Título, Puntos y Perfil */}
@@ -476,7 +489,7 @@ export function PantallaHoy() {
         </div>
 
         {/* Pestañas de navegación de Timeline estilo X */}
-        <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'flex', borderTop: '1px solid var(--color-separator)' }}>
           {[
             { id: 'para_ti', label: 'Para ti' },
             { id: 'tips', label: 'Chuletas & Tips' },
@@ -534,15 +547,15 @@ export function PantallaHoy() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
             {asistenciaConfirmada ? (
               <>
-                <CheckCircle2 size={16} color="#34C759" />
-                <span style={{ fontWeight: 600, color: '#248A3D' }}>
-                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+10 pts)
+                <CheckCircle2 size={16} color="var(--color-positive)" />
+                <span style={{ fontWeight: 600, color: 'var(--color-positive)' }}>
+                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} pts)
                 </span>
               </>
             ) : solicitudPendiente ? (
               <>
-                <Clock size={16} color="#D97706" />
-                <span style={{ fontWeight: 600, color: '#D97706' }}>
+                <Clock size={16} color="var(--color-warning)" />
+                <span style={{ fontWeight: 600, color: 'var(--color-warning)' }}>
                   Solicitud enviada a lominoño. Esperando confirmación...
                 </span>
               </>
@@ -572,7 +585,7 @@ export function PantallaHoy() {
                   cursor: 'pointer'
                 }}
               >
-                Sellar (+10 pts)
+                Sellar (+{calcularPuntosGanados('checkin')} pts)
               </button>
             )}
             <button
@@ -643,8 +656,8 @@ export function PantallaHoy() {
                     borderRadius: 9999,
                     fontSize: 11,
                     fontWeight: 700,
-                    border: sel ? '1px solid var(--color-accent)' : '1px solid rgba(0,0,0,0.08)',
-                    backgroundColor: sel ? 'rgba(0, 122, 255, 0.1)' : 'var(--color-surface-secondary)',
+                    border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                    backgroundColor: sel ? 'rgba(0, 122, 255, 0.15)' : 'var(--color-fill-secondary)',
                     color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
@@ -661,13 +674,13 @@ export function PantallaHoy() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderTop: '1px solid rgba(0,0,0,0.04)',
+            borderTop: '1px solid var(--color-separator)',
             paddingTop: 8,
             marginTop: 4
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
-                🎁 +5 a +10 pts al publicar
+                🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} monedas al publicar
               </span>
             </div>
 
@@ -732,7 +745,7 @@ export function PantallaHoy() {
                 backgroundColor: 'transparent',
                 transition: 'background-color 0.1s ease'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.015)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-fill-tertiary)' }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
             >
               {/* Columna izquierda: Avatar */}
