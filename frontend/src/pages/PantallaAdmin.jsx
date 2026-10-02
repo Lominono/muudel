@@ -55,7 +55,8 @@ import {
   TrendingUp,
   Sliders,
   DollarSign,
-  Zap
+  Zap,
+  Newspaper
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { conOneSignal } from '../utils/oneSignal'
@@ -253,6 +254,14 @@ export function PantallaAdmin() {
   const [canjesPedidos, setCanjesPedidos] = useState([])
   const [filtroCanjes, setFiltroCanjes] = useState('pendientes') // 'todos' | 'pendientes' | 'entregados' | 'rechazados'
 
+  // Gestión del Feed de Clase y Posts de Administración
+  const [postsFeedAdmin, setPostsFeedAdmin] = useState([])
+  const [cargandoFeedAdmin, setCargandoFeedAdmin] = useState(false)
+  const [nuevoPostTexto, setNuevoPostTexto] = useState('')
+  const [nuevoPostCategoria, setNuevoPostCategoria] = useState('Aviso')
+  const [nuevoPostFijar, setNuevoPostFijar] = useState(false)
+  const [publicandoFeedAdmin, setPublicandoFeedAdmin] = useState(false)
+
   // Auditoría
   const [logsAuditoria, setLogsAuditoria] = useState([])
 
@@ -409,12 +418,64 @@ export function PantallaAdmin() {
       avisar(`🎟️ Nuevo canje de ${nuevoTicket.nombre}: "${nuevoTicket.titulo}"`)
     })
 
-    // 3. Escuchar actualizaciones de puntos o checkins
-    const desuscribirPuntos = suscribirEvento('puntos_actualizados', () => {
-      cargarDatos()
+    // 3. Escuchar actualizaciones de StevenEuros y puntos
+    const desuscribirPuntos = suscribirEvento('puntos_actualizados', (datos) => {
+      const { alumnoId, userId, nuevosPuntos } = datos || {}
+      const targetId = alumnoId || userId
+      if (targetId && nuevosPuntos != null) {
+        setTodosAlumnos(prev => prev.map(a => a.id === targetId ? { ...a, puntos_total: nuevosPuntos } : a))
+      } else {
+        cargarDatos()
+      }
     })
 
-    // 4. Escuchar nuevas entregas de retos para comprobación
+    const desuscribirStevenEuros = suscribirEvento('steveneuros_actualizados', (datos) => {
+      const { alumnoId, userId, nuevosPuntos } = datos || {}
+      const targetId = alumnoId || userId
+      if (targetId && nuevosPuntos != null) {
+        setTodosAlumnos(prev => prev.map(a => a.id === targetId ? { ...a, puntos_total: nuevosPuntos } : a))
+      } else {
+        cargarDatos()
+      }
+    })
+
+    const handleSyncAdminWindow = (e) => {
+      const { alumnoId, userId, puntos, nuevosPuntos } = e.detail || {}
+      const targetId = alumnoId || userId
+      const pts = nuevosPuntos ?? puntos
+      if (targetId && pts != null) {
+        setTodosAlumnos(prev => prev.map(a => a.id === targetId ? { ...a, puntos_total: pts } : a))
+      } else {
+        cargarDatos()
+      }
+    }
+    window.addEventListener('steveneuros_actualizados', handleSyncAdminWindow)
+
+    const handleAdminRtProfiles = (e) => {
+      const payload = e.detail
+      if (payload?.new) {
+        setTodosAlumnos(prev => prev.map(a => a.id === payload.new.id ? { ...a, puntos_total: payload.new.puntos_total, racha_actual: payload.new.racha_actual ?? a.racha_actual } : a))
+      }
+    }
+    window.addEventListener('muudel-rt-postgres-profiles', handleAdminRtProfiles)
+
+    // 4. Escuchar eventos del Feed de Clase
+    const desNuevoPost = suscribirEvento('nuevo_feed_post', (nuevoPost) => {
+      if (nuevoPost) {
+        setPostsFeedAdmin(prev => {
+          if (prev.some(p => p.id === nuevoPost.id)) return prev
+          return [nuevoPost, ...prev]
+        })
+      }
+    })
+
+    const desEliminarPost = suscribirEvento('eliminar_feed_post', ({ postId }) => {
+      if (postId) {
+        setPostsFeedAdmin(prev => prev.filter(p => p.id !== postId))
+      }
+    })
+
+    // 5. Escuchar nuevas entregas de retos para comprobación
     const desuscribirEntregas = suscribirEvento('nueva_entrega_reto', (entrega) => {
       if (!entrega) return
       sound.playStamp()
@@ -429,7 +490,7 @@ export function PantallaAdmin() {
       avisar(`📝 ${entrega.nombre} ha entregado el reto: "${entrega.retoTitulo}"`)
     })
 
-    // 5. Escuchar cambios de avisos
+    // 6. Escuchar cambios de avisos
     const desuscribirAvisos = suscribirEvento('aviso_admin', ({ texto }) => {
       setAvisoDiarioActual(texto || '')
     })
@@ -438,7 +499,7 @@ export function PantallaAdmin() {
       setMegafonoActual(data || null)
     })
 
-    // 6. Escuchar nuevos apuntes / archivos subidos
+    // 7. Escuchar nuevos apuntes / archivos subidos
     const desuscribirApuntes = suscribirEvento('nuevo_apunte', (nuevoApunte) => {
       if (!nuevoApunte) return
       sound.playStamp()
@@ -458,6 +519,11 @@ export function PantallaAdmin() {
       desuscribirSol()
       desuscribirCanjes()
       desuscribirPuntos()
+      desuscribirStevenEuros()
+      desNuevoPost()
+      desEliminarPost()
+      window.removeEventListener('steveneuros_actualizados', handleSyncAdminWindow)
+      window.removeEventListener('muudel-rt-postgres-profiles', handleAdminRtProfiles)
       desuscribirEntregas()
       desuscribirAvisos()
       desuscribirMega()
@@ -469,6 +535,7 @@ export function PantallaAdmin() {
   useEffect(() => {
     if (desbloqueado) {
       cargarDatos()
+      cargarFeedAdmin()
     }
   }, [tab, desbloqueado])
 
@@ -922,6 +989,123 @@ export function PantallaAdmin() {
         avisar(`Usuario ${alumno.nombre} eliminado definitivamente del aula y de la base de datos.`, 'error')
         registrarAuditoria('Eliminación Permanente', `${alumno.nombre} (${alumno.email || 'id:' + alumno.id}) eliminado de la base de datos`)
         setAccionEnCurso(null)
+      }
+    })
+  }
+
+  // FEED: Cargar posts del feed para el panel de administración
+  const cargarFeedAdmin = async () => {
+    setCargandoFeedAdmin(true)
+    try {
+      const { data: posts, error } = await supabase
+        .from('feed_posts')
+        .select(`
+          id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .eq('soft_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(60)
+
+      if (!error && posts) {
+        setPostsFeedAdmin(posts)
+      } else {
+        const resp = await fetch('/api/feed/posts')
+        const json = await resp.json()
+        if (json.posts) setPostsFeedAdmin(json.posts)
+      }
+    } catch (_) {
+    } finally {
+      setCargandoFeedAdmin(false)
+    }
+  }
+
+  // FEED: Publicar post oficial de administración
+  const handlePublicarPostAdmin = async (e) => {
+    if (e?.preventDefault) e.preventDefault()
+    const contenidoLimpio = nuevoPostTexto.trim()
+    if (!contenidoLimpio || publicandoFeedAdmin) return
+
+    setPublicandoFeedAdmin(true)
+    sound.playStamp()
+
+    const tituloAuto = contenidoLimpio.split('\n')[0].substring(0, 65).trim() || 'Aviso de Administración'
+
+    try {
+      let creado = null
+      try {
+        const { data, error } = await supabase
+          .from('feed_posts')
+          .insert({
+            user_id: perfil?.id,
+            categoria: nuevoPostCategoria,
+            titulo: tituloAuto,
+            contenido: contenidoLimpio,
+            es_admin: true,
+            fijado: nuevoPostFijar
+          })
+          .select(`
+            id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
+            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+          `)
+          .single()
+        if (!error && data) creado = data
+      } catch (_) {}
+
+      if (!creado) {
+        const resp = await fetch('/api/feed/publicar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: perfil?.id,
+            categoria: nuevoPostCategoria,
+            titulo: tituloAuto,
+            contenido: contenidoLimpio,
+            es_admin: true
+          })
+        })
+        const json = await resp.json()
+        if (json.post) creado = json.post
+      }
+
+      if (creado) {
+        setPostsFeedAdmin(prev => [creado, ...prev])
+        setNuevoPostTexto('')
+        setNuevoPostFijar(false)
+        transmitirEvento('nuevo_feed_post', creado)
+        triggerConfetti()
+        sound.playStamp()
+        avisar('Post de administración publicado con éxito en el Feed.')
+        registrarAuditoria('Publicación Feed', `Post oficial creado (#${nuevoPostCategoria}): "${tituloAuto}"`)
+      }
+    } catch (err) {
+      avisar('Error al publicar post en el feed.', 'error')
+    } finally {
+      setPublicandoFeedAdmin(false)
+    }
+  }
+
+  // FEED: Eliminar post con confirmación de moderador
+  const handleEliminarPostAdmin = async (post) => {
+    setModalConfirmacion({
+      titulo: '¿Eliminar este post del Feed?',
+      mensaje: `Se borrará la publicación de ${post.profiles?.nombre || 'Administración'}: "${(post.contenido || '').substring(0, 50)}..."`,
+      peligroso: true,
+      accion: async () => {
+        setModalConfirmacion(null)
+        setPostsFeedAdmin(prev => prev.filter(p => p.id !== post.id))
+        sound.playPop()
+        try {
+          await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', post.id)
+          await fetch('/api/feed/eliminar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId: post.id, userId: perfil?.id })
+          })
+        } catch (_) {}
+        transmitirEvento('eliminar_feed_post', { postId: post.id })
+        avisar('Post eliminado del Feed.')
+        registrarAuditoria('Eliminación Post Feed', `Post #${post.id} eliminado del feed`)
       }
     })
   }
@@ -2279,6 +2463,7 @@ export function PantallaAdmin() {
         }}>
           {[
             { id: 'asistencia', label: `Asistencia (${solicitudesHoy.length})`, icon: Calendar },
+            { id: 'feed', label: postsFeedAdmin.length > 0 ? `Feed (${postsFeedAdmin.length})` : 'Feed Oficial', icon: Newspaper },
             { id: 'archivos', label: archivosClase.length > 0 ? `Archivos (${archivosClase.length})` : 'Archivos', icon: Folder },
             { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
             { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
@@ -2497,6 +2682,232 @@ export function PantallaAdmin() {
                   </span>
                 </div>
               ))
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* PESTAÑA FEED: GESTIÓN DEL FEED DE CLASE Y POSTS DE ADMINISTRACIÓN */}
+      {tab === 'feed' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Cabecera y Estado del Feed */}
+          <section className="card" style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Newspaper size={22} color="var(--color-accent)" />
+                  <h3 className="apple-headline" style={{ fontSize: 18 }}>
+                    Control y Moderación del Feed
+                  </h3>
+                </div>
+                <p className="apple-subheadline" style={{ fontSize: 13, marginTop: 2 }}>
+                  Publica comunicados oficiales verificados como <strong>(Post de administración)</strong> y modera las publicaciones del aula.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={cargarFeedAdmin}
+                  disabled={cargandoFeedAdmin}
+                  className="btn-secondary"
+                  style={{ minHeight: 34, padding: '0 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <RotateCcw size={13} />
+                  <span>{cargandoFeedAdmin ? 'Actualizando...' : 'Refrescar Feed'}</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Formulario para publicar como Post de Administración */}
+          <section className="card" style={{ padding: '16px 20px', border: '1.5px solid var(--color-accent)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={18} color="var(--color-accent)" />
+                <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--color-ink)' }}>
+                  Nuevo Post Oficial de Administración
+                </h4>
+              </div>
+              <span className="apple-badge apple-badge-accent" style={{ fontSize: 11, fontWeight: 700 }}>
+                Publicando como: {perfil?.nombre || 'lominoño'} (Post de administración)
+              </span>
+            </div>
+
+            <form onSubmit={handlePublicarPostAdmin} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Selector de categoría */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-secondary-ink)', marginRight: 4 }}>Categoría:</span>
+                {['Aviso', 'Truco', 'Linux', 'Redes', 'Duda', 'General'].map(cat => {
+                  const sel = nuevoPostCategoria === cat
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setNuevoPostCategoria(cat)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 9999,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                        backgroundColor: sel ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                        color: sel ? '#FFFFFF' : 'var(--color-ink)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      #{cat}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Textarea del post */}
+              <textarea
+                rows={3}
+                className="apple-input"
+                value={nuevoPostTexto}
+                onChange={(e) => setNuevoPostTexto(e.target.value)}
+                placeholder="Escribe el comunicado o tip técnico oficial para la clase..."
+                style={{
+                  width: '100%',
+                  fontSize: 14,
+                  lineHeight: 1.45,
+                  padding: 10,
+                  resize: 'vertical'
+                }}
+              />
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, paddingTop: 4 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={nuevoPostFijar}
+                    onChange={(e) => setNuevoPostFijar(e.target.checked)}
+                    style={{ accentColor: 'var(--color-accent)' }}
+                  />
+                  <span>Fijar como anuncio destacado en la cabecera del Feed</span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={!nuevoPostTexto.trim() || publicandoFeedAdmin}
+                  className="btn-primary"
+                  style={{
+                    minHeight: 36,
+                    padding: '6px 18px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Send size={13} />
+                  <span>{publicandoFeedAdmin ? 'Publicando...' : 'Publicar (Post de administración)'}</span>
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {/* Listado de Posts del Aula */}
+          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--color-separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                  Publicaciones en el Feed ({postsFeedAdmin.length})
+                </h3>
+              </div>
+              <span className="apple-caption" style={{ fontSize: 12 }}>
+                Moderación directa con eliminación inmediata
+              </span>
+            </div>
+
+            {postsFeedAdmin.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-secondary-ink)' }}>
+                <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                  No hay publicaciones registradas en el feed en este momento.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {postsFeedAdmin.map((post, idx) => {
+                  const prof = post.profiles
+                  const esAdmin = post.es_admin || prof?.rol === 'moderador' || !prof || post.categoria === 'Aviso'
+                  const autorNombre = esAdmin
+                    ? `${prof?.nombre || 'lominoño'} (Post de administración)`
+                    : (prof?.nombre || 'Alumno')
+
+                  return (
+                    <div
+                      key={post.id || idx}
+                      style={{
+                        padding: '14px 16px',
+                        borderBottom: idx < postsFeedAdmin.length - 1 ? '1px solid var(--color-separator)' : 'none',
+                        display: 'flex',
+                        gap: 12,
+                        alignItems: 'flex-start',
+                        backgroundColor: esAdmin ? 'rgba(0, 122, 255, 0.03)' : 'transparent'
+                      }}
+                    >
+                      <InsigniaIniciales
+                        nombre={prof?.nombre || 'lominoño'}
+                        color={prof?.color_acento || '#0A84FF'}
+                        size={36}
+                      />
+
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-ink)' }}>
+                              {autorNombre}
+                            </span>
+                            {esAdmin && (
+                              <span className="apple-badge apple-badge-accent" style={{ fontSize: 10 }}>
+                                Moderación
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                              #{post.categoria || 'General'}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)', opacity: 0.7 }}>
+                              · {new Date(post.created_at).toLocaleDateString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarPostAdmin(post)}
+                            className="btn-secondary"
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: 11,
+                              color: 'var(--color-negative)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Eliminar publicación del feed"
+                          >
+                            <Trash2 size={12} />
+                            <span>Eliminar</span>
+                          </button>
+                        </div>
+
+                        <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--color-ink)', whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
+                          {post.contenido}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+                          <span>❤️ {post.likes_count || 0} me gusta</span>
+                          {post.fijado && <span style={{ color: 'var(--color-warning)', fontWeight: 700 }}>📌 Anuncio fijado</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </section>
         </div>

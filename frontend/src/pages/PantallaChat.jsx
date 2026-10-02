@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+// frontend/src/pages/PantallaChat.jsx
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
 import { useDirectMessages } from '../hooks/useDirectMessages'
@@ -11,7 +12,6 @@ import {
   MessageSquare,
   X,
   Lock,
-  Unlock,
   Stamp,
   Pin,
   Reply,
@@ -26,7 +26,11 @@ import {
   Megaphone,
   Coffee,
   Radio,
-  Folder
+  Folder,
+  Send,
+  MoreVertical,
+  Check,
+  CornerDownLeft
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { animarBurbuja } from '../utils/animations'
@@ -35,10 +39,10 @@ import { suscribirEvento, transmitirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 
 const CANALES = [
-  { id: 'general', label: 'General', desc: 'Sala principal del aula' },
-  { id: 'dudas', label: 'Dudas', desc: 'Consultas sobre ejercicios' },
-  { id: 'apuntes', label: 'Apuntes', desc: 'Resúmenes y enlaces útiles' },
-  { id: 'avisos', label: 'Avisos', desc: 'Comunicados oficiales del profe' },
+  { id: 'general', label: 'General', desc: 'Sala principal del aula de SMR2' },
+  { id: 'dudas', label: 'Dudas', desc: 'Consultas sobre ejercicios y laboratorio' },
+  { id: 'apuntes', label: 'Apuntes', desc: 'Chuletas, comandos y enlaces útiles' },
+  { id: 'avisos', label: 'Avisos', desc: 'Comunicados oficiales de clase' },
 ]
 
 const RESPUESTAS_RAPIDAS = [
@@ -71,6 +75,37 @@ export function PantallaChat() {
   const [texto, setTexto] = useState('')
   const [likedId, setLikedId] = useState(null)
 
+  // Detección de ancho móvil vs PC
+  const [esMovil, setEsMovil] = useState(() => {
+    if (typeof window !== 'undefined') return window.innerWidth <= 768
+    return false
+  })
+
+  useEffect(() => {
+    const handleResize = () => setEsMovil(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Soporte de visualViewport en móviles para teclado virtual sin saltos
+  const [tecladoDesfase, setTecladoDesfase] = useState(0)
+  useEffect(() => {
+    if (!esMovil || typeof window === 'undefined' || !window.visualViewport) return
+
+    const handleVisualResize = () => {
+      const vv = window.visualViewport
+      const desfase = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      setTecladoDesfase(desfase)
+    }
+
+    window.visualViewport.addEventListener('resize', handleVisualResize)
+    window.visualViewport.addEventListener('scroll', handleVisualResize)
+    return () => {
+      window.visualViewport.removeEventListener('resize', handleVisualResize)
+      window.visualViewport.removeEventListener('scroll', handleVisualResize)
+    }
+  }, [esMovil])
+
   // Modo de vista: 'canales' o 'dms'
   const [modoVista, setModoVista] = useState('canales')
   const [destinatarioDmSeleccionado, setDestinatarioDmSeleccionado] = useState(null)
@@ -102,17 +137,26 @@ export function PantallaChat() {
   }, [texto])
 
   const chatEndRef = useRef(null)
+  const scrollContainerRef = useRef(null)
   const ultimoMensajeRef = useRef(null)
   const typingTimerRef = useRef(null)
-  const inputRef = useRef(null)
+  const textareaRef = useRef(null)
 
-  // Estados de Interfaz y Nuevas Funciones
+  // Estados de Interfaz
   const [mensajeAResponder, setMensajeAResponder] = useState(null) // { id, texto, nombre }
   const [mostrarBuscador, setMostrarBuscador] = useState(false)
   const [queryBusqueda, setQueryBusqueda] = useState('')
   const [mensajeDestacadoId, setMensajeDestacadoId] = useState(null)
   const [menuReaccionesAbiertoId, setMenuReaccionesAbiertoId] = useState(null)
   const [mostrarMenuSellos, setMostrarMenuSellos] = useState(false)
+
+  // Botón flotante para ir al último mensaje y contador de no leídos
+  const [mostrarBotonScrollBottom, setMostrarBotonScrollBottom] = useState(false)
+  const [mensajesNuevosScrolleado, setMensajesNuevosScrolleado] = useState(0)
+
+  // Gestos táctiles móviles: Long Press para menú de acciones
+  const touchTimerRef = useRef(null)
+  const [mensajeAccionSheet, setMensajeAccionSheet] = useState(null)
 
   // Estado de moderación del chat
   const [chatSilenciado, setChatSilenciado] = useState(false)
@@ -133,7 +177,7 @@ export function PantallaChat() {
     )
   }, [mensajes, queryBusqueda])
 
-  // Comprobar si el chat está silenciado por el moderador
+  // Comprobar silencio del chat
   useEffect(() => {
     const revisarSilencio = () => {
       try {
@@ -152,7 +196,6 @@ export function PantallaChat() {
     return () => clearInterval(timer)
   }, [])
 
-  // Escuchar evento de moderación y sellos
   useEffect(() => {
     const desuscribirSilencio = suscribirEvento('silencio_chat', ({ silenciadoHasta }) => {
       if (silenciadoHasta && Number(silenciadoHasta) > Date.now()) {
@@ -166,17 +209,38 @@ export function PantallaChat() {
     }
   }, [])
 
-  // Scroll automático hacia el final
+  // Control de scroll y detección para el botón "ir al último mensaje"
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    const distFondo = scrollHeight - scrollTop - clientHeight
+    if (distFondo > 160) {
+      setMostrarBotonScrollBottom(true)
+    } else {
+      setMostrarBotonScrollBottom(false)
+      setMensajesNuevosScrolleado(0)
+    }
+  }
+
+  const scrollToBottom = (suave = true) => {
+    chatEndRef.current?.scrollIntoView({ behavior: suave ? 'smooth' : 'auto' })
+    setMostrarBotonScrollBottom(false)
+    setMensajesNuevosScrolleado(0)
+  }
+
+  // Scroll automático hacia el final al recibir mensajes si el usuario está cerca del fondo
   useEffect(() => {
     if (!queryBusqueda) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      if (mostrarBotonScrollBottom) {
+        setMensajesNuevosScrolleado(prev => prev + 1)
+      } else {
+        scrollToBottom(true)
+      }
     }
     if (ultimoMensajeRef.current) {
       animarBurbuja(ultimoMensajeRef.current)
     }
   }, [mensajes.length, queryBusqueda])
 
-  // Desplazarse a un mensaje específico (por cita o fijado)
   const scrollToMessage = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`)
     if (el) {
@@ -187,15 +251,28 @@ export function PantallaChat() {
     }
   }
 
-  // Control del indicador de escritura (typing)
-  const handleInputChange = (e) => {
+  // Control del input / textarea con auto-expansión en PC
+  const handleTextareaChange = (e) => {
     setTexto(e.target.value)
+    // Auto-ajustar altura hasta un máximo de 130px
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${Math.min(130, textareaRef.current.scrollHeight)}px`
+    }
     if (perfil) {
       emitirTyping(perfil, true)
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
       typingTimerRef.current = setTimeout(() => {
         emitirTyping(perfil, false)
       }, 2500)
+    }
+  }
+
+  // Atajos de teclado en PC: Enter envía, Shift+Enter inserta salto de línea
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      manejarEnvio()
     }
   }
 
@@ -210,6 +287,9 @@ export function PantallaChat() {
 
     const contenido = texto
     setTexto('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
     if (perfil) emitirTyping(perfil, false)
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
 
@@ -222,6 +302,7 @@ export function PantallaChat() {
     setMensajeAResponder(null)
     sound.playPop()
     await enviar(contenido, perfil.id, perfil, replyData)
+    setTimeout(() => scrollToBottom(true), 50)
   }
 
   const manejarLike = async (id) => {
@@ -241,17 +322,36 @@ export function PantallaChat() {
     sound.playPop()
     toggleReaccion(msgId, emoji, perfil.id)
     setMenuReaccionesAbiertoId(null)
+    setMensajeAccionSheet(null)
   }
 
   const manejarEstamparSello = async (sello) => {
     if (!perfil) return
     sound.playStamp()
     setMostrarMenuSellos(false)
+    setMensajeAccionSheet(null)
     await enviar(sello.texto, perfil.id, perfil)
+    setTimeout(() => scrollToBottom(true), 50)
+  }
+
+  // Gestos táctiles móviles (Long-press)
+  const iniciarLongPress = (msg) => {
+    if (!esMovil) return
+    touchTimerRef.current = setTimeout(() => {
+      sound.playPop()
+      setMensajeAccionSheet(msg)
+    }, 450)
+  }
+
+  const cancelarLongPress = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current)
+      touchTimerRef.current = null
+    }
   }
 
   const parsearEfectoMensaje = (textoMsg) => {
-    if (!textoMsg.startsWith('[EFECTO:')) return null
+    if (!textoMsg || !textoMsg.startsWith('[EFECTO:')) return null
     const match = textoMsg.match(/\[EFECTO:([a-z0-9_]+)(?::([^\]]+))?\]\s*(.*)/i)
     if (!match) return null
     return {
@@ -269,11 +369,9 @@ export function PantallaChat() {
     return SELLOS_RAPIDOS.find(s => s.id === selloId) || SELLOS_RAPIDOS[0]
   }
 
-  // Formateo enriquecido de texto: código monospace, enlaces y menciones
+  // Renderizado enriquecido
   const renderizarTextoEnriquecido = (cadena, esPropio) => {
     if (!cadena) return null
-
-    // 1. Detección de bloques de código ```
     if (cadena.includes('```')) {
       const partes = cadena.split(/(```[\s\S]*?```)/g)
       return partes.map((parte, i) => {
@@ -288,14 +386,11 @@ export function PantallaChat() {
         return <span key={i}>{renderizarInline(parte, esPropio)}</span>
       })
     }
-
     return renderizarInline(cadena, esPropio)
   }
 
   const renderizarInline = (str, esPropio) => {
-    // Regex para URLs, código inline `...` y menciones @...
     const tokens = str.split(/(`[^`]+`|https?:\/\/[^\s]+|@[a-zA-Z0-9_]+)/g)
-
     return tokens.map((token, idx) => {
       if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
         return (
@@ -343,1323 +438,1543 @@ export function PantallaChat() {
     })
   }
 
-  // Lista de usuarios escribiendo (excluyendo al usuario actual)
   const nombresEscribiendo = Object.entries(usuariosEscribiendo)
     .filter(([uid]) => uid !== perfil?.id)
     .map(([, nombre]) => nombre)
 
   const estaBloqueadoEnvio = chatSilenciado && perfil?.rol !== 'moderador'
 
-  return (
-    <main className="app-container">
-      {/* Cabecera */}
-      <header style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h1 className="apple-large-title" style={{ fontSize: 26 }}>
-                Chat de Clase
-              </h1>
-              <span className="apple-badge apple-badge-positive" style={{ fontSize: 11, padding: '2px 8px' }}>
-                En vivo
-              </span>
+  // ──────────────────────────────────────────────────────────────────────────
+  // COMPONENTES AUXILIARES PARA EL RENDER
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Lista de canales estilo Apple
+  const renderSidebarCanales = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px' }}>
+        <span className="apple-caption" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 11 }}>
+          Canales de Aula
+        </span>
+        <span className="apple-badge apple-badge-positive" style={{ fontSize: 10, padding: '1px 6px' }}>
+          En vivo
+        </span>
+      </div>
+
+      {CANALES.map((c) => {
+        const activo = modoVista === 'canales' && canal === c.id
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => {
+              sound.playPop()
+              setModoVista('canales')
+              setCanal(c.id)
+              setMensajeAResponder(null)
+              setQueryBusqueda('')
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '9px 12px',
+              borderRadius: 12,
+              border: 'none',
+              backgroundColor: activo ? 'var(--color-accent)' : 'transparent',
+              color: activo ? '#FFFFFF' : 'var(--color-ink)',
+              fontWeight: activo ? 700 : 500,
+              fontSize: 14,
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.12s ease',
+              width: '100%'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <Hash size={16} opacity={activo ? 1 : 0.6} />
+              <div style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13, lineHeight: 1.2 }}>{c.label}</span>
+                <span style={{
+                  display: 'block',
+                  fontSize: 10,
+                  opacity: activo ? 0.9 : 0.6,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {c.desc}
+                </span>
+              </div>
             </div>
-            <p className="apple-subheadline" style={{ marginTop: 1, fontSize: 13 }}>
-              SMR2 Tarde · Intercambio, código y sellos de clase
-            </p>
+            {c.id === 'dudas' && (
+              <span style={{
+                fontSize: 10,
+                backgroundColor: activo ? 'rgba(255,255,255,0.25)' : 'var(--color-fill-secondary)',
+                color: activo ? '#FFF' : 'var(--color-secondary-ink)',
+                padding: '2px 6px',
+                borderRadius: 9999,
+                fontWeight: 700
+              }}>
+                Q&A
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // VISTA MÓVIL A PANTALLA COMPLETA
+  // ──────────────────────────────────────────────────────────────────────────
+  if (esMovil) {
+    return (
+      <div
+        className="chat-mobile-layout"
+        style={{
+          height: '100dvh',
+          paddingBottom: tecladoDesfase > 0 ? `${tecladoDesfase}px` : '0px',
+          transition: 'padding-bottom 0.1s ease-out'
+        }}
+      >
+        {/* Cabecera Móvil Compacta con Safe-Area Top */}
+        <header style={{
+          paddingTop: 'max(10px, env(safe-area-inset-top, 10px))',
+          paddingBottom: 10,
+          paddingLeft: 14,
+          paddingRight: 14,
+          backgroundColor: 'var(--color-surface)',
+          borderBottom: '1px solid var(--color-separator)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 40
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              backgroundColor: 'rgba(0, 122, 255, 0.12)',
+              color: 'var(--color-accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800
+            }}>
+              <Hash size={18} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <h1 className="apple-headline" style={{ fontSize: 16, margin: 0 }}>
+                  #{canal}
+                </h1>
+                <span className="apple-badge apple-badge-positive" style={{ fontSize: 10, padding: '1px 6px' }}>
+                  En vivo
+                </span>
+              </div>
+              <p className="apple-caption" style={{ margin: 0, fontSize: 11 }}>
+                {CANALES.find(c => c.id === canal)?.desc}
+              </p>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Botón Buscador */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Botón DMs */}
             <button
               type="button"
               onClick={() => {
-                setMostrarBuscador(!mostrarBuscador)
-                if (mostrarBuscador) setQueryBusqueda('')
+                sound.playPop()
+                setModoVista(modoVista === 'canales' ? 'dms' : 'canales')
               }}
-              title="Buscar mensajes"
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 9999,
-                backgroundColor: mostrarBuscador ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                color: mostrarBuscador ? '#FFFFFF' : 'var(--color-ink)',
-                border: '1px solid var(--color-separator)',
+                minWidth: 44,
+                minHeight: 44,
+                borderRadius: 12,
+                backgroundColor: modoVista === 'dms' ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                color: modoVista === 'dms' ? '#FFF' : 'var(--color-ink)',
+                border: 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease'
+                position: 'relative'
               }}
+              aria-label="Abrir Mensajes Directos"
             >
-              <Search size={16} />
+              <MessageSquare size={18} />
+              {dmHook.totalNoLeidos > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 4,
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--color-destructive)'
+                }} />
+              )}
+            </button>
+
+            {/* Botón Buscador */}
+            <button
+              type="button"
+              onClick={() => {
+                sound.playPop()
+                setMostrarBuscador(!mostrarBuscador)
+                if (mostrarBuscador) setQueryBusqueda('')
+              }}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                borderRadius: 12,
+                backgroundColor: mostrarBuscador ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                color: mostrarBuscador ? '#FFF' : 'var(--color-ink)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+              aria-label="Buscar en el chat"
+            >
+              <Search size={18} />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Barra de Búsqueda Desplegable */}
-        {mostrarBuscador && (
+        {/* Selector Deslizable de Canales en Móvil */}
+        {modoVista === 'canales' && (
           <div style={{
-            marginTop: 10,
             display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            animation: 'fadeIn 0.15s ease'
+            gap: 6,
+            padding: '6px 12px',
+            backgroundColor: 'var(--color-surface)',
+            borderBottom: '1px solid var(--color-separator)',
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
+            whiteSpace: 'nowrap'
           }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <Search size={15} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--color-tertiary-ink)' }} />
-              <input
-                type="text"
-                value={queryBusqueda}
-                onChange={(e) => setQueryBusqueda(e.target.value)}
-                placeholder="Buscar mensajes, palabras o alumnos en este canal..."
-                className="apple-input"
-                autoFocus
-                style={{ paddingLeft: 36, minHeight: 38, fontSize: 13, width: '100%' }}
-              />
-              {queryBusqueda && (
+            {CANALES.map((c) => {
+              const act = canal === c.id
+              return (
                 <button
+                  key={c.id}
                   type="button"
-                  onClick={() => setQueryBusqueda('')}
+                  onClick={() => {
+                    sound.playPop()
+                    setCanal(c.id)
+                    setMensajeAResponder(null)
+                    setQueryBusqueda('')
+                  }}
                   style={{
-                    position: 'absolute',
-                    right: 10,
-                    top: 10,
-                    background: 'none',
+                    minHeight: 36,
+                    padding: '4px 14px',
+                    borderRadius: 9999,
                     border: 'none',
-                    color: 'var(--color-tertiary-ink)',
+                    backgroundColor: act ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: act ? '#FFFFFF' : 'var(--color-ink)',
+                    fontSize: 13,
+                    fontWeight: act ? 700 : 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
                     cursor: 'pointer'
                   }}
                 >
-                  <X size={15} />
+                  <Hash size={13} opacity={act ? 1 : 0.6} />
+                  <span>{c.label}</span>
                 </button>
-              )}
-            </div>
-            {queryBusqueda && (
-              <span className="apple-caption" style={{ whiteSpace: 'nowrap' }}>
-                {mensajesFiltrados.length} encontrados
-              </span>
-            )}
+              )
+            })}
           </div>
         )}
-      </header>
 
-
-
-      {/* Selector Principal de Modo: Canales de Aula vs Mensajes Directos */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        backgroundColor: 'var(--color-fill-tertiary)',
-        padding: 3,
-        borderRadius: 12,
-        marginBottom: 10,
-        gap: 4
-      }}>
-        <button
-          type="button"
-          onClick={() => {
-            sound.playPop()
-            setModoVista('canales')
-          }}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            padding: '7px 12px',
-            borderRadius: 9,
-            border: 'none',
-            backgroundColor: modoVista === 'canales' ? 'var(--color-surface)' : 'transparent',
-            color: modoVista === 'canales' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-            fontWeight: modoVista === 'canales' ? 700 : 500,
-            fontSize: 13,
-            cursor: 'pointer',
-            boxShadow: modoVista === 'canales' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          <Hash size={14} color={modoVista === 'canales' ? 'var(--color-accent)' : 'currentColor'} />
-          <span>Canales de Clase</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            sound.playPop()
-            setModoVista('dms')
-          }}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            padding: '7px 12px',
-            borderRadius: 9,
-            border: 'none',
-            backgroundColor: modoVista === 'dms' ? 'var(--color-surface)' : 'transparent',
-            color: modoVista === 'dms' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-            fontWeight: modoVista === 'dms' ? 700 : 500,
-            fontSize: 13,
-            cursor: 'pointer',
-            boxShadow: modoVista === 'dms' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-            transition: 'all 0.15s ease',
-            position: 'relative'
-          }}
-        >
-          <MessageSquare size={14} color={modoVista === 'dms' ? 'var(--color-accent)' : 'currentColor'} />
-          <span>Mensajes Directos</span>
-          {dmHook.totalNoLeidos > 0 && (
-            <span style={{
-              minWidth: 18,
-              height: 18,
-              borderRadius: 9,
-              backgroundColor: 'var(--color-destructive)',
-              color: '#FFFFFF',
-              fontSize: 11,
-              fontWeight: 800,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0 5px',
-              lineHeight: 1
-            }}>
-              {dmHook.totalNoLeidos}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {modoVista === 'dms' ? (
-        <PanelMensajesDirectos
-          perfil={perfil}
-          destinatarioInicial={destinatarioDmSeleccionado}
-          useDmHook={dmHook}
-          onSelectDestinatario={(contacto) => setDestinatarioDmSeleccionado(contacto)}
-          onCerrar={() => setModoVista('canales')}
-        />
-      ) : (
-        <>
-          {/* Selector de canales estilo Apple Segmented Control */}
+        {/* Buscador Desplegable en Móvil */}
+        {mostrarBuscador && (
           <div style={{
+            padding: '8px 12px',
+            backgroundColor: 'var(--color-surface-secondary)',
+            borderBottom: '1px solid var(--color-separator)',
             display: 'flex',
-            gap: 6,
-            marginBottom: 8,
-            overflowX: 'auto',
-            paddingBottom: 2,
-            scrollbarWidth: 'none',
+            alignItems: 'center',
+            gap: 8
           }}>
-        {CANALES.map((c) => {
-          const activo = canal === c.id
-          return (
-            <button
-              key={c.id}
-              onClick={() => {
-                setCanal(c.id)
-                setMensajeAResponder(null)
-                setQueryBusqueda('')
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '7px 14px',
-                borderRadius: 9999,
-                border: 'none',
-                backgroundColor: activo ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                color: activo ? '#FFFFFF' : 'var(--color-ink)',
-                fontWeight: activo ? 700 : 500,
-                fontSize: 13,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Hash size={13} opacity={activo ? 0.95 : 0.6} />
-              <span>{c.label}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Banner Informativo Canal de Apuntes */}
-      {canal === 'apuntes' && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 12px',
-          borderRadius: 10,
-          backgroundColor: 'rgba(10, 132, 255, 0.05)',
-          border: '1px solid rgba(10, 132, 255, 0.2)',
-          marginBottom: 8
-        }}>
-          <Folder size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-ink)' }}>
-              Canal de Apuntes y Archivos Técnicos
-            </span>
-            <p style={{ fontSize: 11, color: 'var(--color-secondary-ink)', margin: 0 }}>
-              Comparte comandos, chuletas y guías de clase (+10 XP de Autoría Técnica por aporte).
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Banner de Mensaje Fijado en este Canal */}
-      {mensajeFijado && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          padding: '8px 12px',
-          borderRadius: 10,
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid rgba(10, 132, 255, 0.3)',
-          marginBottom: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-            <Pin size={14} color="var(--color-accent)" style={{ flexShrink: 0, transform: 'rotate(45deg)' }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--color-accent)', textTransform: 'uppercase', display: 'block' }}>
-                Mensaje fijado {mensajeFijado.fijado_por_nombre ? `por ${mensajeFijado.fijado_por_nombre}` : ''}
-              </span>
-              <p style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--color-ink)',
-                margin: 0,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {mensajeFijado.texto}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={() => scrollToMessage(mensajeFijado.id)}
-              style={{
-                padding: '3px 8px',
-                borderRadius: 6,
-                backgroundColor: 'rgba(10, 132, 255, 0.12)',
-                color: 'var(--color-accent)',
-                border: 'none',
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Ver
-            </button>
-            {perfil?.rol === 'moderador' && (
+            <Search size={16} color="var(--color-secondary-ink)" />
+            <input
+              type="text"
+              value={queryBusqueda}
+              onChange={(e) => setQueryBusqueda(e.target.value)}
+              placeholder="Buscar mensajes o alumnos..."
+              autoFocus
+              className="apple-input"
+              style={{ flex: 1, minHeight: 40, fontSize: 15 }}
+            />
+            {queryBusqueda && (
               <button
                 type="button"
-                onClick={() => toggleFijado(mensajeFijado.id, perfil)}
-                title="Desfijar mensaje"
-                style={{ background: 'none', border: 'none', color: 'var(--color-tertiary-ink)', cursor: 'pointer', padding: 2 }}
+                onClick={() => setQueryBusqueda('')}
+                style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', minWidth: 40, minHeight: 40 }}
               >
-                <X size={14} />
+                <X size={18} />
               </button>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Ventana de mensajes del chat estilo iOS */}
-      <div className="card chat-window-card">
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '16px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6
-        }}>
-          {cargando && mensajes.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 6px', width: '100%' }}>
-              {[
-                { w: '62%', own: false },
-                { w: '48%', own: true },
-                { w: '74%', own: false },
-                { w: '52%', own: true },
-                { w: '38%', own: false }
-              ].map((sk, i) => (
-                <div
-                  key={i}
+        {/* Vista Alternativa de DMs en Móvil */}
+        {modoVista === 'dms' ? (
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <PanelMensajesDirectos
+              perfil={perfil}
+              destinatarioInicial={destinatarioDmSeleccionado}
+              useDmHook={dmHook}
+              onSelectDestinatario={(contacto) => setDestinatarioDmSeleccionado(contacto)}
+              onCerrar={() => setModoVista('canales')}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Banner de Mensaje Fijado */}
+            {mensajeFijado && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '7px 12px',
+                backgroundColor: 'rgba(10, 132, 255, 0.08)',
+                borderBottom: '1px solid rgba(10, 132, 255, 0.2)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                  <Pin size={13} color="var(--color-accent)" style={{ transform: 'rotate(45deg)' }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>Fijado:</span>
+                  <p style={{ fontSize: 12, color: 'var(--color-ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {mensajeFijado.texto}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => scrollToMessage(mensajeFijado.id)}
                   style={{
-                    display: 'flex',
-                    alignSelf: sk.own ? 'flex-end' : 'flex-start',
-                    alignItems: 'center',
-                    gap: 8,
-                    width: sk.w,
-                    opacity: 0.7
+                    border: 'none',
+                    background: 'none',
+                    color: 'var(--color-accent)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: '4px 8px',
+                    cursor: 'pointer'
                   }}
                 >
-                  {!sk.own && (
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--color-fill-secondary)', flexShrink: 0 }} />
-                  )}
-                  <div
-                    style={{
-                      flex: 1,
-                      height: 38,
-                      borderRadius: 16,
-                      backgroundColor: sk.own ? 'rgba(0, 122, 255, 0.16)' : 'var(--color-fill-secondary)',
-                      animation: 'pulse 1.5s ease-in-out infinite'
-                    }}
-                  />
-                </div>
-              ))}
-              <p className="apple-caption" style={{ textAlign: 'center', marginTop: 10 }}>
-                Sincronizando mensajes de #{canal}...
-              </p>
-            </div>
-          ) : mensajesFiltrados.length === 0 ? (
-            <div style={{ textAlign: 'center', margin: 'auto', padding: 24 }}>
-              <div style={{ display: 'inline-flex', padding: 12, borderRadius: 14, background: 'var(--color-fill-secondary)', color: 'var(--color-secondary-ink)', marginBottom: 8 }}>
-                <MessageSquare size={24} />
+                  Ver
+                </button>
               </div>
-              <p className="apple-subheadline" style={{ fontSize: 14 }}>
-                {queryBusqueda ? `Sin resultados para "${queryBusqueda}"` : `No hay mensajes en #${canal}.`}
-              </p>
-              <p className="apple-caption" style={{ marginTop: 2 }}>
-                {queryBusqueda ? 'Intenta con otras palabras o limpia la búsqueda.' : 'Escribe un mensaje, comparte un enlace o resuelve una duda.'}
-              </p>
-            </div>
-          ) : (
-            mensajesFiltrados.map((m, idx) => {
-              try {
-                const esPropio = perfil && m.user_id === perfil.id
-                const esUltimo = idx === mensajesFiltrados.length - 1
-                const hora = m.created_at
-                  ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : ''
-                const isLiked = likedId === m.id
-                const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
-                const autorUsername = m.username || m.profiles?.username
-                const autorRol = m.rol || m.profiles?.rol || 'alumno'
-                const autorColor = m.color_acento || m.profiles?.color_acento
-                const autorDigito = m.digito_id || m.profiles?.digito_id
-                const autorApodo = m.titulo_vip || (m.profiles?.frase ? m.profiles.frase : (esPropio && perfil?.frase ? perfil.frase : null))
-                const autorMarco = m.marco_avatar || m.profiles?.marco_avatar || (esPropio ? perfil?.marco_avatar : null)
-                const autorBurbuja = m.burbuja_chat || m.profiles?.burbuja_chat || (esPropio ? perfil?.burbuja_chat : null)
-                const autorPin = m.insignia_activa || m.profiles?.insignia_activa || (esPropio ? perfil?.insignia_activa : null)
-                const esModerador = autorRol === 'moderador'
+            )}
 
-                // Agrupación de mensajes consecutivos
-                const mensajeAnterior = idx > 0 ? mensajesFiltrados[idx - 1] : null
-                const mismoEmisor = mensajeAnterior && mensajeAnterior.user_id === m.user_id && (new Date(m.created_at) - new Date(mensajeAnterior.created_at)) < 120000
+            {/* Contenedor Principal de Mensajes Móvil con Scroll Suave */}
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                position: 'relative'
+              }}
+            >
+              {cargando && mensajes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 30, color: 'var(--color-secondary-ink)' }}>
+                  Cargando mensajes del aula...
+                </div>
+              ) : mensajesFiltrados.length === 0 ? (
+                <div style={{ textAlign: 'center', margin: 'auto', padding: 20 }}>
+                  <MessageSquare size={32} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 8px' }} />
+                  <p className="apple-subheadline" style={{ fontSize: 14 }}>
+                    {queryBusqueda ? `Sin coincidencias para "${queryBusqueda}"` : `Sé el primero en escribir en #${canal}`}
+                  </p>
+                </div>
+              ) : (
+                mensajesFiltrados.map((m, idx) => {
+                  const esPropio = perfil && m.user_id === perfil.id
+                  const esUltimo = idx === mensajesFiltrados.length - 1
+                  const hora = m.created_at
+                    ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : ''
+                  const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
+                  const autorUsername = m.username || m.profiles?.username
+                  const autorRol = m.rol || m.profiles?.rol || 'alumno'
+                  const autorColor = m.color_acento || m.profiles?.color_acento
+                  const autorDigito = m.digito_id || m.profiles?.digito_id
+                  const esModerador = autorRol === 'moderador'
 
-                // 1. Mensaje tipo ETIQUETA / CONFIRMACIÓN RÁPIDA
-                const selloDetectado = parsearSelloMensaje(m.texto)
-                if (selloDetectado) {
-                  const colorTag = selloDetectado.id === 'PRESENTE' ? '#FF3B30' : selloDetectado.id === 'ENTENDIDO' ? '#34C759' : '#007AFF'
+                  const sello = parsearSelloMensaje(m.texto)
+                  if (sello) {
+                    const colorTag = sello.id === 'PRESENTE' ? '#FF3B30' : sello.id === 'ENTENDIDO' ? '#34C759' : '#007AFF'
+                    return (
+                      <div
+                        key={m.id || idx}
+                        id={`msg-${m.id}`}
+                        ref={esUltimo ? ultimoMensajeRef : null}
+                        onTouchStart={() => iniciarLongPress(m)}
+                        onTouchEnd={cancelarLongPress}
+                        style={{
+                          alignSelf: esPropio ? 'flex-end' : 'flex-start',
+                          margin: '4px 0',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '8px 16px',
+                          borderRadius: 9999,
+                          backgroundColor: `${colorTag}18`,
+                          color: colorTag,
+                          border: `1.5px solid ${colorTag}33`,
+                          fontSize: 13,
+                          fontWeight: 800
+                        }}>
+                          <CheckCircle2 size={15} />
+                          <span>{sello.etiqueta}</span>
+                          <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>{hora}</span>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  const tieneReacciones = m.reacciones && Object.keys(m.reacciones).length > 0
+
                   return (
                     <div
                       key={m.id || idx}
                       id={`msg-${m.id}`}
                       ref={esUltimo ? ultimoMensajeRef : null}
-                      className={mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}
+                      onTouchStart={() => iniciarLongPress(m)}
+                      onTouchEnd={cancelarLongPress}
                       style={{
-                        width: '100%',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: esPropio ? 'flex-end' : 'flex-start',
-                        margin: '6px 0',
-                        borderRadius: 12,
-                        padding: '4px 6px'
+                        width: '100%',
+                        animation: 'fadeIn 0.15s ease'
                       }}
                     >
-                      {!mismoEmisor && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                          <span className="apple-caption" style={{ fontWeight: 600 }}>{autorNombre}</span>
-                          {autorUsername && <span className="apple-caption" style={{ color: 'var(--color-accent)' }}>@{autorUsername}</span>}
-                          {autorDigito && <span className="apple-caption">({autorDigito})</span>}
+                      {/* Remitente si no es propio */}
+                      {!esPropio && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, paddingLeft: 4 }}>
+                          <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-ink)' }}>{autorNombre}</span>
+                          {esModerador && (
+                            <span style={{
+                              fontSize: 9,
+                              fontWeight: 800,
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              backgroundColor: 'rgba(10, 132, 255, 0.15)',
+                              color: 'var(--color-accent)'
+                            }}>
+                              Profe
+                            </span>
+                          )}
                         </div>
                       )}
 
+                      {/* Burbuja Grande con Zonas Táctiles Cómodas */}
                       <div
                         style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '6px 14px',
-                          borderRadius: 9999,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          backgroundColor: `${colorTag}18`,
-                          color: colorTag,
-                          border: `1px solid ${colorTag}33`
+                          maxWidth: '86%',
+                          padding: '12px 16px',
+                          borderRadius: 20,
+                          borderBottomRightRadius: esPropio ? 4 : 20,
+                          borderBottomLeftRadius: esPropio ? 20 : 4,
+                          backgroundColor: esPropio ? 'var(--color-accent)' : 'var(--color-surface)',
+                          color: esPropio ? '#FFFFFF' : 'var(--color-ink)',
+                          border: esPropio ? 'none' : '1px solid var(--color-separator)',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                          fontSize: 15,
+                          lineHeight: 1.45,
+                          position: 'relative'
                         }}
                       >
-                        <CheckCircle2 size={13} />
-                        <span>{selloDetectado.etiqueta}</span>
+                        {/* Cita si es respuesta */}
+                        {m.reply_to && (
+                          <div style={{
+                            padding: '4px 8px',
+                            borderLeft: `3px solid ${esPropio ? 'rgba(255,255,255,0.7)' : 'var(--color-accent)'}`,
+                            backgroundColor: esPropio ? 'rgba(255,255,255,0.15)' : 'var(--color-fill-secondary)',
+                            borderRadius: 6,
+                            marginBottom: 6,
+                            fontSize: 12
+                          }}>
+                            <strong>{m.reply_to.nombre}:</strong> {m.reply_to.texto}
+                          </div>
+                        )}
+
+                        <div>{renderizarTextoEnriquecido(m.texto, esPropio)}</div>
+
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: 4,
+                          marginTop: 4,
+                          fontSize: 10,
+                          opacity: 0.75
+                        }}>
+                          <span>{hora}</span>
+                        </div>
                       </div>
 
-                      <span className="apple-caption" style={{ fontSize: 10, marginTop: 4 }}>
-                        {hora}
-                      </span>
+                      {/* Reacciones debajo de la burbuja */}
+                      {tieneReacciones && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          {Object.entries(m.reacciones).map(([emoji, uids]) => {
+                            if (!Array.isArray(uids) || uids.length === 0) return null
+                            const propia = perfil && uids.includes(perfil.id)
+                            return (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => manejarReaccionEmoji(m.id, emoji)}
+                                style={{
+                                  minHeight: 28,
+                                  minWidth: 36,
+                                  borderRadius: 14,
+                                  border: `1px solid ${propia ? 'var(--color-accent)' : 'var(--color-separator)'}`,
+                                  backgroundColor: propia ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface)',
+                                  color: propia ? 'var(--color-accent)' : 'var(--color-ink)',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 3,
+                                  padding: '2px 8px'
+                                }}
+                              >
+                                <span>{emoji}</span>
+                                <span>{uids.length}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )
-                }
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
 
-              // 2. Mensaje tipo EFECTO DE CLASE
-              const efectoInfo = parsearEfectoMensaje(m.texto)
-              if (efectoInfo) {
-                const configEfecto = {
-                  terremoto: { color: '#FF3B30', bg: 'var(--color-negative-bg)', icono: Zap, titulo: 'SACUDIDA EN EL AULA' },
-                  confeti: { color: '#FF9500', bg: 'var(--color-warning-bg)', icono: Sparkles, titulo: 'LLUVIA DE CONFETI' },
-                  megafono: { color: '#007AFF', bg: 'rgba(0, 122, 255, 0.08)', icono: Megaphone, titulo: 'TABLÓN DE AVISOS' },
-                  descanso: { color: '#34C759', bg: 'var(--color-positive-bg)', icono: Coffee, titulo: 'SILBATO 18:10' }
-                }[efectoInfo.tipo] || { color: '#007AFF', bg: 'var(--color-fill-secondary)', icono: Radio, titulo: 'AVISO EN DIRECTO' }
-
-                const IconoEfecto = configEfecto.icono
-
-                return (
-                  <div
-                    key={m.id || idx}
-                    id={`msg-${m.id}`}
-                    ref={esUltimo ? ultimoMensajeRef : null}
-                    style={{
-                      width: '100%',
-                      padding: '12px 14px',
-                      borderRadius: 14,
-                      backgroundColor: configEfecto.bg,
-                      border: `1.5px solid ${configEfecto.color}35`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      margin: '4px 0',
-                      animation: 'fadeIn 0.2s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 8,
-                        backgroundColor: configEfecto.color,
-                        color: '#FFFFFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}>
-                        <IconoEfecto size={16} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: configEfecto.color, letterSpacing: 0.5 }}>
-                            {configEfecto.titulo}
-                          </span>
-                          <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
-                            · {autorNombre}
-                          </span>
-                        </div>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink)', margin: '2px 0 0', wordBreak: 'break-word' }}>
-                          {efectoInfo.contenido || m.texto}
-                        </p>
-                      </div>
-                    </div>
-
-                    <span className="apple-caption" style={{ fontSize: 11, flexShrink: 0 }}>
-                      {hora}
-                    </span>
-                  </div>
-                )
-              }
-
-              // 3. Mensaje regular estilo iOS con soporte de citas y reacciones
-              const tieneReacciones = m.reacciones && Object.keys(m.reacciones).length > 0
-
-              return (
-                <div
-                  key={m.id || idx}
-                  id={`msg-${m.id}`}
-                  ref={esUltimo ? ultimoMensajeRef : null}
-                  className={`chat-message-row ${mensajeDestacadoId === m.id ? 'chat-highlight-flash' : ''}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: esPropio ? 'flex-end' : 'flex-start',
-                    maxWidth: '88%',
-                    alignSelf: esPropio ? 'flex-end' : 'flex-start',
-                    marginTop: mismoEmisor ? 2 : 8,
-                    borderRadius: 14,
-                    padding: '2px 4px',
-                    position: 'relative'
-                  }}
-                >
-                  {/* Encabezado del remitente con botón para iniciar DM */}
-                  {!esPropio && !mismoEmisor && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      marginBottom: 3,
-                      paddingLeft: 4,
-                      flexWrap: 'wrap'
-                    }}>
-                      <div
-                        onClick={() => abrirChatPrivadoCon({
-                          id: m.user_id,
-                          nombre: autorNombre,
-                          username: autorUsername,
-                          rol: autorRol,
-                          color_acento: autorColor,
-                          digito_id: autorDigito,
-                          marco_avatar: autorMarco,
-                          insignia_activa: autorPin
-                        })}
-                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                        title={`Abrir chat privado con ${autorNombre}`}
-                      >
-                        <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} marco={autorMarco} />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => abrirChatPrivadoCon({
-                          id: m.user_id,
-                          nombre: autorNombre,
-                          username: autorUsername,
-                          rol: autorRol,
-                          color_acento: autorColor,
-                          digito_id: autorDigito,
-                          marco_avatar: autorMarco,
-                          insignia_activa: autorPin
-                        })}
-                        title={`Enviar mensaje directo a ${autorNombre}`}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          padding: '1px 4px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4
-                        }}
-                      >
-                        <span className="apple-caption" style={{ fontWeight: 700, color: 'var(--color-ink)' }}>
-                          {autorNombre}
-                        </span>
-                        {autorUsername && (
-                          <span className="apple-caption" style={{ color: 'var(--color-accent)', fontWeight: 600 }}>
-                            @{autorUsername}
-                          </span>
-                        )}
-                        <MessageSquare size={11} color="var(--color-secondary-ink)" style={{ marginLeft: 2 }} />
-                      </button>
-                      {autorPin === 'pin_oro' && <span title="Pin de Oro Coleccionista SMR2" style={{ fontSize: 12 }}>👑</span>}
-                      {autorPin === 'pin_hacker' && <span title="Insignia Hacker Ético" style={{ fontSize: 12 }}>🛡️</span>}
-                      {autorPin === 'pin_arcade' && <span title="Medalla Estrella Yoshi" style={{ fontSize: 12 }}>⭐</span>}
-                      {esModerador && (
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 6,
-                          backgroundColor: 'rgba(10, 132, 255, 0.12)',
-                          color: 'var(--color-accent)',
-                          border: '1px solid rgba(10, 132, 255, 0.25)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3
-                        }}>
-                          <ShieldCheck size={11} />
-                          Profesor
-                        </span>
-                      )}
-                      {autorDigito && (
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '1px 5px',
-                          borderRadius: 4,
-                          backgroundColor: 'var(--color-fill-secondary)',
-                          color: 'var(--color-secondary-ink)',
-                          fontVariantNumeric: 'tabular-nums'
-                        }}>
-                          {autorDigito}
-                        </span>
-                      )}
-                      {autorApodo && (
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '1px 6px',
-                          borderRadius: 6,
-                          backgroundColor: 'rgba(255, 149, 0, 0.1)',
-                          color: 'var(--color-warning)',
-                          border: '1px solid rgba(255, 149, 0, 0.25)'
-                        }}>
-                          {autorApodo}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Burbuja del mensaje con soporte de doble click/tap para dar me gusta */}
-                  <div
-                    onDoubleClick={(e) => {
-                      e.stopPropagation()
-                      manejarLike(m.id)
-                    }}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 18,
-                      borderBottomRightRadius: esPropio ? 4 : 18,
-                      borderBottomLeftRadius: esPropio ? 18 : 4,
-                      backgroundColor: autorBurbuja === 'carmin'
-                        ? (esPropio ? '#991B1B' : '#7F1D1D')
-                        : autorBurbuja === 'matrix'
-                        ? '#064E3B'
-                        : esPropio
-                        ? 'var(--color-accent)'
-                        : esModerador
-                        ? 'var(--color-surface)'
-                        : 'var(--color-surface)',
-                      border: autorBurbuja === 'carmin'
-                        ? '1.5px solid #F59E0B'
-                        : autorBurbuja === 'matrix'
-                        ? '1.5px solid #34C759'
-                        : esPropio
-                        ? 'none'
-                        : esModerador
-                        ? '1.5px solid rgba(10, 132, 255, 0.35)'
-                        : '1px solid var(--color-separator)',
-                      color: (autorBurbuja || esPropio) ? '#FFFFFF' : 'var(--color-ink)',
-                      fontSize: 15,
-                      lineHeight: 1.4,
-                      wordBreak: 'break-word',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                      position: 'relative',
-                      cursor: 'pointer'
-                    }}
-                    title="Doble clic para dar me gusta ❤️"
-                  >
-                    {/* Indicador de Cita / Mensaje citado */}
-                    {(m.reply_to_texto || m.reply_to) && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (m.reply_to) scrollToMessage(m.reply_to)
-                        }}
-                        className="chat-reply-quote"
-                        style={{
-                          borderLeftColor: esPropio ? '#FFFFFF' : 'var(--color-accent)',
-                          backgroundColor: esPropio ? 'rgba(255, 255, 255, 0.15)' : 'rgba(120, 120, 128, 0.08)',
-                          color: esPropio ? '#FFFFFF' : 'var(--color-ink)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 2 }}>
-                          ↩️ {m.reply_to_nombre || 'Respuesta a compañero'}
-                        </div>
-                        <div style={{
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          opacity: 0.9
-                        }}>
-                          {m.reply_to_texto || 'Mensaje citado'}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Sello de Solución Oficial */}
-                    {m.es_solucion && (
-                      <div
-                        className="sello-tinta sello-tinta-verde"
-                        style={{
-                          fontSize: 10,
-                          padding: '3px 8px',
-                          marginBottom: 8,
-                          display: 'inline-flex',
-                          backgroundColor: 'rgba(52, 199, 89, 0.15)',
-                          border: '1.5px solid #34C759'
-                        }}
-                      >
-                        ✓ SOLUCIÓN OFICIAL SMR2 · +10 SE 💶
-                      </div>
-                    )}
-
-                    {/* Texto formateado del mensaje */}
-                    {renderizarTextoEnriquecido(m.texto, esPropio)}
-
-                    {/* Badge de Autoría Humana Verificada */}
-                    {m.es_autoria_humana && m.texto && m.texto.length >= 80 && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: 9,
-                        fontWeight: 700,
-                        color: esPropio ? 'rgba(255, 255, 255, 0.85)' : 'var(--color-secondary-ink)',
-                        marginTop: 6,
-                        letterSpacing: 0.4
-                      }}>
-                        <span>✍️</span>
-                        <span>100% AUTORÍA HUMANA</span>
-                      </div>
-                    )}
-
-                    {/* Badge flotante de Me Gusta en la esquina de la burbuja */}
-                    {((m.likes_count || 0) > 0 || m.liked_by_me) && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          manejarLike(m.id)
-                        }}
-                        className={`chat-bubble-like-badge ${m.liked_by_me ? 'liked' : ''} ${isLiked ? 'heart-pop' : ''}`}
-                        title={m.likers && m.likers.length > 0 ? `Le gusta a: ${m.likers.join(', ')}` : (m.liked_by_me ? 'Ya no me gusta' : 'Dar me gusta')}
-                        style={{
-                          position: 'absolute',
-                          bottom: -9,
-                          right: esPropio ? 10 : -8,
-                          backgroundColor: 'var(--color-surface)',
-                          border: m.liked_by_me ? '1.5px solid rgba(255, 59, 48, 0.5)' : '1px solid var(--color-separator)',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                          borderRadius: 9999,
-                          padding: '2px 7px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          color: '#FF3B30',
-                          zIndex: 5,
-                          userSelect: 'none',
-                          transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
-                        }}
-                      >
-                        <Heart size={12} fill="currentColor" />
-                        <span className="tabular-nums" style={{ color: 'var(--color-ink)' }}>
-                          {m.likes_count || 1}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Pin badge si está fijado */}
-                    {m.fijado && (
-                      <div style={{
-                        position: 'absolute',
-                        top: -8,
-                        right: esPropio ? 'auto' : -6,
-                        left: esPropio ? -6 : 'auto',
-                        width: 20,
-                        height: 20,
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--color-accent)',
-                        color: '#FFFFFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                      }}>
-                        <Pin size={11} style={{ transform: 'rotate(45deg)' }} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Barra de Reacciones con Emoji Pills */}
-                  {tieneReacciones && (
-                    <div style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: 4,
-                      marginTop: 6,
-                      paddingLeft: esPropio ? 0 : 4,
-                      paddingRight: esPropio ? 4 : 0
-                    }}>
-                      {Object.entries(m.reacciones).map(([emoji, userIds]) => {
-                        if (!Array.isArray(userIds) || userIds.length === 0) return null
-                        const reaccionadaPorMi = perfil && userIds.includes(perfil.id)
-                        return (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => manejarReaccionEmoji(m.id, emoji)}
-                            className={`chat-reaction-pill ${reaccionadaPorMi ? 'activa' : ''}`}
-                            title={reaccionadaPorMi ? 'Quitar mi reacción' : 'Reaccionar'}
-                          >
-                            <span>{emoji}</span>
-                            <span className="tabular-nums">{userIds.length}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Acciones y Metadatos debajo de la burbuja */}
-                  <div style={{
+            {/* Botón Flotante "Ir al último mensaje" con badge */}
+            {mostrarBotonScrollBottom && (
+              <button
+                type="button"
+                className="chat-scroll-bottom-btn"
+                onClick={() => scrollToBottom(true)}
+                aria-label="Ir al último mensaje"
+                style={{ bottom: '78px' }}
+              >
+                <ChevronDown size={22} />
+                {mensajesNuevosScrolleado > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: 'var(--color-destructive)',
+                    color: '#FFF',
+                    fontSize: 10,
+                    fontWeight: 900,
+                    borderRadius: 9999,
+                    padding: '1px 5px',
+                    minWidth: 16,
+                    height: 16,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
-                    marginTop: 4,
-                    padding: '0 4px',
-                    flexWrap: 'wrap'
+                    justifyContent: 'center'
                   }}>
-                    <span className="apple-caption" style={{ fontSize: 11 }}>
-                      {hora}
-                    </span>
+                    {mensajesNuevosScrolleado}
+                  </span>
+                )}
+              </button>
+            )}
 
-                    {/* Botón de Me Gusta mejorado */}
-                    <button
-                      type="button"
-                      onClick={() => manejarLike(m.id)}
-                      className={`chat-like-btn ${isLiked ? 'heart-pop' : ''} ${m.liked_by_me ? 'liked' : ''}`}
-                      title={
-                        m.likers && m.likers.length > 0
-                          ? `Le gusta a: ${m.likers.join(', ')}`
-                          : m.liked_by_me ? 'Ya no me gusta' : 'Dar me gusta'
-                      }
-                      style={{
-                        background: m.liked_by_me ? 'rgba(255, 59, 48, 0.12)' : 'transparent',
-                        border: m.liked_by_me ? '1px solid rgba(255, 59, 48, 0.3)' : '1px solid transparent',
-                        borderRadius: 10,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        color: m.liked_by_me
-                          ? '#FF3B30'
-                          : 'var(--color-secondary-ink)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        padding: '2px 7px',
-                        transition: 'all 0.16s ease'
-                      }}
-                    >
-                      <Heart
-                        size={13}
-                        fill={m.liked_by_me ? '#FF3B30' : 'none'}
-                        color={m.liked_by_me ? '#FF3B30' : 'currentColor'}
-                        style={{
-                          transform: isLiked ? 'scale(1.3)' : 'scale(1)',
-                          transition: 'transform 0.15s ease'
-                        }}
-                      />
-                      <span className="tabular-nums font-semibold">
-                        {m.liked_by_me ? 'Te gusta' : 'Me gusta'}
-                      </span>
-                    </button>
+            {/* Indicador de Usuarios Escribiendo */}
+            {nombresEscribiendo.length > 0 && (
+              <div style={{ padding: '2px 14px', fontSize: 11, color: 'var(--color-secondary-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="chat-dot-bounce" />
+                <span>{nombresEscribiendo.join(', ')} escribiendo...</span>
+              </div>
+            )}
 
-                    {/* Botón Responder (Quote) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMensajeAResponder({ id: m.id, texto: m.texto, nombre: autorNombre })
-                        inputRef.current?.focus()
-                        sound.playPop()
-                      }}
-                      title="Citar y responder"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--color-secondary-ink)',
-                        cursor: 'pointer',
-                        padding: '2px 4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        fontSize: 11,
-                        fontWeight: 600
-                      }}
-                    >
-                      <Reply size={12} />
-                      <span>Responder</span>
-                    </button>
+            {/* Banner de Cita/Respuesta Activa */}
+            {mensajeAResponder && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 14px',
+                backgroundColor: 'var(--color-surface-secondary)',
+                borderTop: '1px solid var(--color-separator)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                  <Reply size={14} color="var(--color-accent)" />
+                  <span style={{ fontSize: 12, color: 'var(--color-accent)', fontWeight: 700 }}>
+                    Respondiendo a {mensajeAResponder.nombre}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMensajeAResponder(null)}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', minWidth: 36, minHeight: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
 
-                    {/* Marcar Solución (canal dudas) */}
-                    {canal === 'dudas' && (perfil?.rol === 'moderador' || (!esPropio && m.reply_to)) && (
+            {/* Menú de Sellos Rápidos */}
+            {mostrarMenuSellos && (
+              <div style={{
+                padding: '8px 12px',
+                backgroundColor: 'var(--color-surface)',
+                borderTop: '1px solid var(--color-separator)',
+                display: 'flex',
+                gap: 6,
+                overflowX: 'auto',
+                scrollbarWidth: 'none'
+              }}>
+                {SELLOS_RAPIDOS.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => manejarEstamparSello(s)}
+                    style={{
+                      minHeight: 38,
+                      padding: '4px 12px',
+                      borderRadius: 9999,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: 'var(--color-surface-secondary)',
+                      color: 'var(--color-ink)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <CheckCircle2 size={13} color="var(--color-accent)" />
+                    <span>{s.etiqueta}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input Anclado Abajo Siempre Accesible con Teclado Abierto */}
+            <footer style={{
+              padding: '8px 12px',
+              paddingBottom: tecladoDesfase > 0 ? '8px' : 'max(8px, env(safe-area-inset-bottom, 8px))',
+              backgroundColor: 'var(--color-surface)',
+              borderTop: '1px solid var(--color-separator)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              zIndex: 40
+            }}>
+              <button
+                type="button"
+                onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  borderRadius: 12,
+                  border: '1px solid var(--color-separator)',
+                  backgroundColor: mostrarMenuSellos ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                  color: mostrarMenuSellos ? '#FFF' : 'var(--color-ink)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                aria-label="Abrir sellos de clase"
+              >
+                <Stamp size={18} />
+              </button>
+
+              <input
+                type="text"
+                value={texto}
+                disabled={estaBloqueadoEnvio}
+                onChange={(e) => setTexto(e.target.value)}
+                placeholder={
+                  estaBloqueadoEnvio
+                    ? '🔒 Chat silenciado'
+                    : mensajeAResponder
+                    ? `Respondiendo a @${mensajeAResponder.nombre}...`
+                    : `Mensaje en #${canal}...`
+                }
+                className="apple-input"
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  fontSize: 16,
+                  borderRadius: 22,
+                  padding: '8px 16px'
+                }}
+              />
+
+              <button
+                type="button"
+                disabled={!texto.trim() || estaBloqueadoEnvio}
+                onClick={manejarEnvio}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  borderRadius: 22,
+                  border: 'none',
+                  backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                  color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: texto.trim() && !estaBloqueadoEnvio ? 'pointer' : 'default'
+                }}
+                aria-label="Enviar mensaje"
+              >
+                <ArrowUp size={20} strokeWidth={2.6} />
+              </button>
+            </footer>
+
+            {/* Action Sheet Móvil al Mantener Pulsado (Long Press) */}
+            {mensajeAccionSheet && (
+              <div
+                className="chat-mobile-sheet-overlay"
+                onClick={() => setMensajeAccionSheet(null)}
+              >
+                <div
+                  className="chat-mobile-sheet"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div style={{ width: 36, height: 4, backgroundColor: 'var(--color-separator)', borderRadius: 2, margin: '0 auto 8px' }} />
+
+                  {/* Fila de Reacciones Rápidas */}
+                  <div style={{ display: 'flex', justifyContent: 'space-around', padding: '6px 0', borderBottom: '1px solid var(--color-separator)' }}>
+                    {REACCIONES_POPULARES.map(({ emoji, label }) => (
                       <button
+                        key={emoji}
                         type="button"
-                        onClick={() => {
-                          marcarSolucion(m.id, m.user_id, perfil.id)
-                          sound.playStamp()
-                          triggerConfetti()
-                        }}
-                        title={m.es_solucion ? 'Desmarcar solución' : 'Marcar como respuesta correcta'}
+                        onClick={() => manejarReaccionEmoji(mensajeAccionSheet.id, emoji)}
                         style={{
-                          background: m.es_solucion ? 'rgba(52, 199, 89, 0.15)' : 'none',
-                          border: m.es_solucion ? '1px solid rgba(52, 199, 89, 0.35)' : 'none',
-                          borderRadius: 8,
-                          color: m.es_solucion ? 'var(--color-positive)' : 'var(--color-secondary-ink)',
-                          cursor: 'pointer',
-                          padding: '2px 6px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                          fontSize: 11,
-                          fontWeight: 700
-                        }}
-                      >
-                        <CheckCircle2 size={12} />
-                        <span>{m.es_solucion ? 'Solución Oficial' : 'Es la solución'}</span>
-                      </button>
-                    )}
-
-                    {/* Selector de Reacciones Populares */}
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        type="button"
-                        onClick={() => setMenuReaccionesAbiertoId(menuReaccionesAbiertoId === m.id ? null : m.id)}
-                        title="Añadir reacción"
-                        style={{
+                          fontSize: 24,
                           background: 'none',
                           border: 'none',
-                          color: 'var(--color-secondary-ink)',
                           cursor: 'pointer',
-                          padding: '2px 4px',
-                          display: 'inline-flex',
-                          alignItems: 'center'
+                          minWidth: 44,
+                          minHeight: 44,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        aria-label={label}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="chat-sheet-action-btn"
+                    onClick={() => {
+                      manejarLike(mensajeAccionSheet.id)
+                      setMensajeAccionSheet(null)
+                    }}
+                  >
+                    <Heart size={18} color="#FF3B30" />
+                    <span>Dar Me Gusta</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="chat-sheet-action-btn"
+                    onClick={() => {
+                      setMensajeAResponder({
+                        id: mensajeAccionSheet.id,
+                        texto: mensajeAccionSheet.texto,
+                        nombre: mensajeAccionSheet.nombre || mensajeAccionSheet.profiles?.nombre || 'Compañero'
+                      })
+                      setMensajeAccionSheet(null)
+                      sound.playPop()
+                    }}
+                  >
+                    <Reply size={18} color="var(--color-accent)" />
+                    <span>Responder / Citar</span>
+                  </button>
+
+                  {(perfil?.id === mensajeAccionSheet.user_id || perfil?.rol === 'moderador') && (
+                    <button
+                      type="button"
+                      className="chat-sheet-action-btn"
+                      style={{ color: '#EF4444' }}
+                      onClick={() => {
+                        if (confirm('¿Eliminar este mensaje?')) {
+                          eliminarMensaje(mensajeAccionSheet.id)
+                        }
+                        setMensajeAccionSheet(null)
+                      }}
+                    >
+                      <Trash2 size={18} />
+                      <span>Eliminar mensaje</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setMensajeAccionSheet(null)}
+                    style={{ minHeight: 46, borderRadius: 14, fontWeight: 700 }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // VISTA PC (DESKTOP WORKSPACE CON LAYOUT SPLIT)
+  // ──────────────────────────────────────────────────────────────────────────
+  return (
+    <div className="chat-pc-container">
+      {/* Barra Lateral Izquierda: Canales y Contactos */}
+      <aside className="chat-pc-sidebar">
+        {/* Cabecera Sidebar */}
+        <div style={{
+          padding: '14px 16px',
+          borderBottom: '1px solid var(--color-separator)',
+          backgroundColor: 'var(--color-surface-secondary)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div>
+              <h2 className="apple-headline" style={{ fontSize: 16, margin: 0 }}>
+                Chat de Clase
+              </h2>
+              <span className="apple-caption" style={{ fontSize: 11 }}>
+                SMR2 Tarde · En tiempo real
+              </span>
+            </div>
+            <span className="apple-badge apple-badge-positive" style={{ fontSize: 10 }}>
+              Live
+            </span>
+          </div>
+
+          {/* Segmented Control: Canales vs Mensajes Directos */}
+          <div style={{
+            display: 'flex',
+            backgroundColor: 'var(--color-fill-tertiary)',
+            padding: 3,
+            borderRadius: 10,
+            gap: 2
+          }}>
+            <button
+              type="button"
+              onClick={() => {
+                sound.playPop()
+                setModoVista('canales')
+              }}
+              style={{
+                flex: 1,
+                border: 'none',
+                padding: '6px 10px',
+                borderRadius: 8,
+                backgroundColor: modoVista === 'canales' ? 'var(--color-surface)' : 'transparent',
+                color: modoVista === 'canales' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                fontSize: 12,
+                fontWeight: modoVista === 'canales' ? 700 : 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+                boxShadow: modoVista === 'canales' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none'
+              }}
+            >
+              <Hash size={13} />
+              <span>Canales</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                sound.playPop()
+                setModoVista('dms')
+              }}
+              style={{
+                flex: 1,
+                border: 'none',
+                padding: '6px 10px',
+                borderRadius: 8,
+                backgroundColor: modoVista === 'dms' ? 'var(--color-surface)' : 'transparent',
+                color: modoVista === 'dms' ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                fontSize: 12,
+                fontWeight: modoVista === 'dms' ? 700 : 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+                boxShadow: modoVista === 'dms' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none'
+              }}
+            >
+              <MessageSquare size={13} />
+              <span>Privados</span>
+              {dmHook.totalNoLeidos > 0 && (
+                <span style={{
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  backgroundColor: 'var(--color-destructive)',
+                  color: '#FFF',
+                  fontSize: 10,
+                  fontWeight: 900,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0 4px'
+                }}>
+                  {dmHook.totalNoLeidos}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Contenido Sidebar con Scroll */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {modoVista === 'canales' ? (
+            renderSidebarCanales()
+          ) : (
+            <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ padding: '6px 8px' }}>
+                <span className="apple-caption" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 11 }}>
+                  Compañeros de Clase
+                </span>
+              </div>
+              {dmHook.contactosClase.map(c => {
+                const activo = destinatarioDmSeleccionado?.id === c.id
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      sound.playPop()
+                      setDestinatarioDmSeleccionado(c)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 10px',
+                      borderRadius: 12,
+                      border: 'none',
+                      backgroundColor: activo ? 'var(--color-fill-secondary)' : 'transparent',
+                      color: 'var(--color-ink)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      width: '100%',
+                      transition: 'background-color 0.12s ease'
+                    }}
+                  >
+                    <AvatarUsuario nombre={c.nombre} color={c.color_acento} rol={c.rol} size={30} fontSize={12} marco={c.marco_avatar} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{c.nombre}</span>
+                      </div>
+                      <span className="apple-caption" style={{ fontSize: 11 }}>
+                        {c.rol === 'moderador' ? 'Profesor' : `@${c.username || 'alumno'}`}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Pie de Sidebar con Datos de Usuario Actual */}
+        <div style={{
+          padding: '10px 14px',
+          borderTop: '1px solid var(--color-separator)',
+          backgroundColor: 'var(--color-surface-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10
+        }}>
+          <AvatarUsuario nombre={perfil?.nombre} color={perfil?.color_acento} rol={perfil?.rol} size={32} fontSize={12} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-ink)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {perfil?.nombre}
+            </span>
+            <span className="apple-caption" style={{ fontSize: 11 }}>
+              {perfil?.rol === 'moderador' ? 'Profesor' : 'Estudiante'} · {perfil?.puntos_total || 0} SE 💶
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      {/* Panel Derecho Principal de Chat */}
+      <main className="chat-pc-main">
+        {modoVista === 'dms' ? (
+          <PanelMensajesDirectos
+            perfil={perfil}
+            destinatarioInicial={destinatarioDmSeleccionado}
+            useDmHook={dmHook}
+            onSelectDestinatario={(contacto) => setDestinatarioDmSeleccionado(contacto)}
+            onCerrar={() => setModoVista('canales')}
+          />
+        ) : (
+          <>
+            {/* Cabecera Superior del Canal */}
+            <div style={{
+              padding: '12px 18px',
+              borderBottom: '1px solid var(--color-separator)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'var(--color-surface-secondary)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(0, 122, 255, 0.12)',
+                  color: 'var(--color-accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900
+                }}>
+                  <Hash size={20} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h1 className="apple-headline" style={{ fontSize: 17, margin: 0 }}>
+                      #{canal}
+                    </h1>
+                    <span className="apple-badge apple-badge-neutral" style={{ fontSize: 11 }}>
+                      {CANALES.find(c => c.id === canal)?.desc}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones de Cabecera: Buscador */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ position: 'relative', width: 220 }}>
+                  <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--color-tertiary-ink)' }} />
+                  <input
+                    type="text"
+                    value={queryBusqueda}
+                    onChange={(e) => setQueryBusqueda(e.target.value)}
+                    placeholder="Buscar en el canal..."
+                    className="apple-input"
+                    style={{ paddingLeft: 30, minHeight: 34, fontSize: 12, width: '100%', borderRadius: 10 }}
+                  />
+                  {queryBusqueda && (
+                    <button
+                      type="button"
+                      onClick={() => setQueryBusqueda('')}
+                      style={{ position: 'absolute', right: 8, top: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-tertiary-ink)' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Mensaje Fijado */}
+            {mensajeFijado && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 18px',
+                backgroundColor: 'rgba(10, 132, 255, 0.08)',
+                borderBottom: '1px solid rgba(10, 132, 255, 0.2)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                  <Pin size={14} color="var(--color-accent)" style={{ transform: 'rotate(45deg)' }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-accent)' }}>Mensaje Fijado:</span>
+                  <p style={{ fontSize: 13, color: 'var(--color-ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {mensajeFijado.texto}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => scrollToMessage(mensajeFijado.id)}
+                  style={{
+                    backgroundColor: 'rgba(10, 132, 255, 0.15)',
+                    border: 'none',
+                    color: 'var(--color-accent)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: 8,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Ir al mensaje
+                </button>
+              </div>
+            )}
+
+            {/* Hilo de Mensajes con Ancho de Lectura Cómodo (760px) */}
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '16px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                position: 'relative'
+              }}
+            >
+              <div style={{ maxWidth: 760, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {cargando && mensajes.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-secondary-ink)' }}>
+                    Cargando mensajes del canal...
+                  </div>
+                ) : mensajesFiltrados.length === 0 ? (
+                  <div style={{ textAlign: 'center', margin: 'auto', padding: 40 }}>
+                    <MessageSquare size={36} color="var(--color-tertiary-ink)" style={{ margin: '0 auto 10px' }} />
+                    <p className="apple-subheadline">
+                      {queryBusqueda ? `Sin resultados para "${queryBusqueda}"` : `Bienvenido al canal #${canal}`}
+                    </p>
+                  </div>
+                ) : (
+                  mensajesFiltrados.map((m, idx) => {
+                    const esPropio = perfil && m.user_id === perfil.id
+                    const esUltimo = idx === mensajesFiltrados.length - 1
+                    const hora = m.created_at
+                      ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : ''
+                    const autorNombre = m.nombre || m.profiles?.nombre || 'Compañero'
+                    const autorUsername = m.username || m.profiles?.username
+                    const autorRol = m.rol || m.profiles?.rol || 'alumno'
+                    const autorColor = m.color_acento || m.profiles?.color_acento
+                    const autorDigito = m.digito_id || m.profiles?.digito_id
+                    const esModerador = autorRol === 'moderador'
+
+                    const sello = parsearSelloMensaje(m.texto)
+                    if (sello) {
+                      const colorTag = sello.id === 'PRESENTE' ? '#FF3B30' : sello.id === 'ENTENDIDO' ? '#34C759' : '#007AFF'
+                      return (
+                        <div
+                          key={m.id || idx}
+                          id={`msg-${m.id}`}
+                          ref={esUltimo ? ultimoMensajeRef : null}
+                          style={{
+                            alignSelf: esPropio ? 'flex-end' : 'flex-start',
+                            margin: '4px 0'
+                          }}
+                        >
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '8px 16px',
+                            borderRadius: 9999,
+                            backgroundColor: `${colorTag}18`,
+                            color: colorTag,
+                            border: `1.5px solid ${colorTag}33`,
+                            fontSize: 13,
+                            fontWeight: 800
+                          }}>
+                            <CheckCircle2 size={15} />
+                            <span>{sello.etiqueta}</span>
+                            <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 6 }}>{hora}</span>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    const tieneReacciones = m.reacciones && Object.keys(m.reacciones).length > 0
+
+                    return (
+                      <div
+                        key={m.id || idx}
+                        id={`msg-${m.id}`}
+                        ref={esUltimo ? ultimoMensajeRef : null}
+                        className="chat-message-row"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: esPropio ? 'flex-end' : 'flex-start',
+                          width: '100%',
+                          position: 'relative',
+                          padding: '3px 8px'
                         }}
                       >
-                        <Smile size={12} />
-                      </button>
-
-                      {menuReaccionesAbiertoId === m.id && (
-                        <div style={{
-                          position: 'absolute',
-                          bottom: 24,
-                          left: esPropio ? 'auto' : 0,
-                          right: esPropio ? 0 : 'auto',
-                          display: 'flex',
-                          gap: 6,
-                          padding: '6px 8px',
-                          borderRadius: 20,
-                          backgroundColor: 'var(--color-surface)',
-                          border: '1px solid var(--color-separator)',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-                          zIndex: 100,
-                          animation: 'fadeIn 0.15s ease'
-                        }}>
-                          {REACCIONES_POPULARES.map(({ emoji, label }) => (
+                        {/* Barra de Herramientas Flotante en Hover para PC */}
+                        <div className="chat-hover-toolbar">
+                          {REACCIONES_POPULARES.slice(0, 3).map(({ emoji, label }) => (
                             <button
                               key={emoji}
                               type="button"
                               onClick={() => manejarReaccionEmoji(m.id, emoji)}
                               title={label}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                fontSize: 16,
-                                cursor: 'pointer',
-                                padding: '2px',
-                                transition: 'transform 0.1s ease'
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.25)'}
-                              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 2 }}
                             >
                               {emoji}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => manejarLike(m.id)}
+                            title="Me gusta"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
+                          >
+                            <Heart size={13} color={m.liked_by_me ? '#FF3B30' : 'currentColor'} fill={m.liked_by_me ? '#FF3B30' : 'none'} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMensajeAResponder({ id: m.id, texto: m.texto, nombre: autorNombre })
+                              textareaRef.current?.focus()
+                              sound.playPop()
+                            }}
+                            title="Responder / Citar"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
+                          >
+                            <Reply size={13} />
+                          </button>
+                          {(esPropio || perfil?.rol === 'moderador') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm('¿Eliminar mensaje?')) eliminarMensaje(m.id)
+                              }}
+                              title="Eliminar"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#EF4444' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Fijar en el canal (Solo Moderador) */}
-                    {perfil?.rol === 'moderador' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          toggleFijado(m.id, perfil)
-                          sound.playStamp()
-                        }}
-                        title={m.fijado ? 'Desfijar del canal' : 'Fijar mensaje en canal'}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: m.fijado ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
-                          cursor: 'pointer',
-                          padding: '2px 4px'
-                        }}
-                      >
-                        <Pin size={12} style={{ transform: 'rotate(45deg)' }} />
-                      </button>
-                    )}
+                        {/* Remitente si no es propio */}
+                        {!esPropio && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, paddingLeft: 4 }}>
+                            <AvatarUsuario nombre={autorNombre} color={autorColor} rol={autorRol} size={22} fontSize={10} />
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-ink)' }}>{autorNombre}</span>
+                            {autorUsername && (
+                              <span style={{ fontSize: 11, color: 'var(--color-accent)', fontWeight: 600 }}>
+                                @{autorUsername}
+                              </span>
+                            )}
+                            {esModerador && (
+                              <span style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                backgroundColor: 'rgba(10, 132, 255, 0.15)',
+                                color: 'var(--color-accent)'
+                              }}>
+                                Profesor
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                    {/* Eliminar Mensaje (Autor o Moderador) */}
-                    {(esPropio || perfil?.rol === 'moderador') && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm('¿Eliminar este mensaje del chat?')) {
-                            eliminarMensaje(m.id)
-                            sound.playPop()
-                          }
-                        }}
-                        title="Eliminar mensaje"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--color-secondary-ink)',
-                          cursor: 'pointer',
-                          padding: '2px 4px'
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            } catch (err) {
-              console.error('Error renderizando mensaje:', err)
-              return (
-                <div
-                  key={m.id || idx}
-                  style={{
-                    padding: '8px 14px',
-                    margin: '4px 0',
-                    borderRadius: 14,
-                    backgroundColor: 'var(--color-fill-secondary)',
-                    fontSize: 13,
-                    color: 'var(--color-ink)'
-                  }}
-                >
-                  {m.texto || 'Mensaje de clase'}
-                </div>
-              )
-            }
-          })
-        )}
-          <div ref={chatEndRef} />
-        </div>
+                        {/* Burbuja de Lectura Cómoda */}
+                        <div
+                          style={{
+                            maxWidth: '75%',
+                            padding: '10px 15px',
+                            borderRadius: 18,
+                            borderBottomRightRadius: esPropio ? 4 : 18,
+                            borderBottomLeftRadius: esPropio ? 18 : 4,
+                            backgroundColor: esPropio ? 'var(--color-accent)' : 'var(--color-surface)',
+                            color: esPropio ? '#FFFFFF' : 'var(--color-ink)',
+                            border: esPropio ? 'none' : '1px solid var(--color-separator)',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                            fontSize: 14.5,
+                            lineHeight: 1.45
+                          }}
+                        >
+                          {/* Cita si es respuesta */}
+                          {m.reply_to && (
+                            <div style={{
+                              padding: '4px 8px',
+                              borderLeft: `3px solid ${esPropio ? 'rgba(255,255,255,0.7)' : 'var(--color-accent)'}`,
+                              backgroundColor: esPropio ? 'rgba(255,255,255,0.15)' : 'var(--color-fill-secondary)',
+                              borderRadius: 6,
+                              marginBottom: 6,
+                              fontSize: 12
+                            }}>
+                              <strong>{m.reply_to.nombre}:</strong> {m.reply_to.texto}
+                            </div>
+                          )}
 
-        {/* Indicador de Usuarios Escribiendo (Typing) */}
-        {nombresEscribiendo.length > 0 && (
-          <div style={{ padding: '4px 14px', animation: 'fadeIn 0.2s ease' }}>
-            <div className="chat-typing-dots">
-              <span className="chat-dot-bounce" />
-              <span className="chat-dot-bounce" />
-              <span className="chat-dot-bounce" />
-              <span style={{ marginLeft: 4, fontWeight: 600 }}>
-                {nombresEscribiendo.join(', ')} {nombresEscribiendo.length === 1 ? 'está escribiendo...' : 'están escribiendo...'}
-              </span>
-            </div>
-          </div>
-        )}
+                          <div>{renderizarTextoEnriquecido(m.texto, esPropio)}</div>
 
-        {/* Banner de Mensaje al que se responde (Reply Bar) */}
-        {mensajeAResponder && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 14px',
-            backgroundColor: 'var(--color-surface-secondary)',
-            borderTop: '1px solid var(--color-separator)',
-            borderLeft: '4px solid var(--color-accent)',
-            animation: 'fadeIn 0.15s ease'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-              <Reply size={15} color="var(--color-accent)" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)', display: 'block' }}>
-                  Respondiendo a {mensajeAResponder.nombre}
-                </span>
-                <p style={{
-                  fontSize: 12,
-                  color: 'var(--color-secondary-ink)',
-                  margin: 0,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}>
-                  {mensajeAResponder.texto}
-                </p>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-end',
+                            gap: 6,
+                            marginTop: 4,
+                            fontSize: 10,
+                            opacity: 0.75
+                          }}>
+                            <span>{hora}</span>
+                          </div>
+                        </div>
+
+                        {/* Reacciones en PC */}
+                        {tieneReacciones && (
+                          <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                            {Object.entries(m.reacciones).map(([emoji, uids]) => {
+                              if (!Array.isArray(uids) || uids.length === 0) return null
+                              const propia = perfil && uids.includes(perfil.id)
+                              return (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => manejarReaccionEmoji(m.id, emoji)}
+                                  style={{
+                                    minHeight: 24,
+                                    borderRadius: 12,
+                                    border: `1px solid ${propia ? 'var(--color-accent)' : 'var(--color-separator)'}`,
+                                    backgroundColor: propia ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface)',
+                                    color: propia ? 'var(--color-accent)' : 'var(--color-ink)',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                    padding: '2px 7px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{uids.length}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={chatEndRef} />
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setMensajeAResponder(null)}
-              style={{ background: 'none', border: 'none', color: 'var(--color-tertiary-ink)', cursor: 'pointer', padding: 4 }}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-
-        {/* Cajón de Sellos Rápidos de Aula */}
-        {mostrarMenuSellos && (
-          <div style={{
-            padding: '10px 14px',
-            backgroundColor: 'var(--color-surface)',
-            borderTop: '1px solid var(--color-separator)',
-            animation: 'fadeIn 0.15s ease'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span className="apple-caption" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--color-ink)' }}>
-                Sellos Oficiales de Clase
-              </span>
+            {/* Botón Flotante "Ir al último mensaje" en PC */}
+            {mostrarBotonScrollBottom && (
               <button
                 type="button"
-                onClick={() => setMostrarMenuSellos(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', cursor: 'pointer' }}
+                className="chat-scroll-bottom-btn"
+                onClick={() => scrollToBottom(true)}
+                aria-label="Ir al último mensaje"
+                style={{ bottom: '90px' }}
               >
-                <X size={15} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-              {SELLOS_RAPIDOS.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => manejarEstamparSello(s)}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: '8px 14px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
+                <ChevronDown size={20} />
+                {mensajesNuevosScrolleado > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: 'var(--color-destructive)',
+                    color: '#FFF',
+                    fontSize: 10,
+                    fontWeight: 900,
                     borderRadius: 9999,
-                    border: '1px solid var(--color-separator)',
-                    backgroundColor: 'var(--color-surface-secondary)',
-                    color: 'var(--color-ink)',
+                    padding: '1px 5px',
+                    minWidth: 16,
+                    height: 16,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
-                    transition: 'all 0.12s ease'
-                  }}
+                    justifyContent: 'center'
+                  }}>
+                    {mensajesNuevosScrolleado}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Banner de Respuesta Cita Activa */}
+            {mensajeAResponder && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 18px',
+                backgroundColor: 'var(--color-surface-secondary)',
+                borderTop: '1px solid var(--color-separator)',
+                maxWidth: 760,
+                margin: '0 auto',
+                width: '100%'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Reply size={15} color="var(--color-accent)" />
+                  <span style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 700 }}>
+                    Respondiendo a @{mensajeAResponder.nombre}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                    "{mensajeAResponder.texto.slice(0, 50)}..."
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMensajeAResponder(null)}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-secondary-ink)', cursor: 'pointer' }}
                 >
-                  <CheckCircle2 size={13} color="var(--color-accent)" />
-                  <span>{s.etiqueta}</span>
+                  <X size={16} />
                 </button>
-              ))}
-            </div>
-          </div>
+              </div>
+            )}
+
+            {/* Cajón de Sellos en PC */}
+            {mostrarMenuSellos && (
+              <div style={{
+                padding: '8px 18px',
+                backgroundColor: 'var(--color-surface)',
+                borderTop: '1px solid var(--color-separator)',
+                display: 'flex',
+                gap: 8,
+                maxWidth: 760,
+                margin: '0 auto',
+                width: '100%'
+              }}>
+                {SELLOS_RAPIDOS.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => manejarEstamparSello(s)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: 9999,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: 'var(--color-surface-secondary)',
+                      color: 'var(--color-ink)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <CheckCircle2 size={13} color="var(--color-accent)" />
+                    <span>{s.etiqueta}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input Multilínea en PC (Enter envía, Shift+Enter salto de línea) */}
+            <footer style={{
+              padding: '12px 18px 16px',
+              backgroundColor: 'var(--color-surface)',
+              borderTop: '1px solid var(--color-separator)'
+            }}>
+              <div style={{ maxWidth: 760, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
+                    title="Sellos rápidos oficiales de clase"
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 12,
+                      border: '1px solid var(--color-separator)',
+                      backgroundColor: mostrarMenuSellos ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                      color: mostrarMenuSellos ? '#FFF' : 'var(--color-ink)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Stamp size={18} />
+                  </button>
+
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={texto}
+                    disabled={estaBloqueadoEnvio}
+                    onChange={handleTextareaChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder={
+                      estaBloqueadoEnvio
+                        ? '🔒 Chat silenciado temporalmente por moderación'
+                        : mensajeAResponder
+                        ? `Respondiendo a @${mensajeAResponder.nombre}...`
+                        : `Escribe en #${canal}...`
+                    }
+                    className="chat-multiline-input"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={!texto.trim() || estaBloqueadoEnvio}
+                    onClick={manejarEnvio}
+                    title="Enviar mensaje (Enter)"
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 12,
+                      border: 'none',
+                      backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                      color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: texto.trim() && !estaBloqueadoEnvio ? 'pointer' : 'default',
+                      flexShrink: 0
+                    }}
+                  >
+                    <ArrowUp size={20} strokeWidth={2.4} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                  <span className="apple-caption" style={{ fontSize: 11 }}>
+                    Presiona <kbd style={{ padding: '1px 4px', borderRadius: 4, backgroundColor: 'var(--color-fill-secondary)' }}>Enter</kbd> para enviar · <kbd style={{ padding: '1px 4px', borderRadius: 4, backgroundColor: 'var(--color-fill-secondary)' }}>Shift + Enter</kbd> para nueva línea
+                  </span>
+
+                  {estadoAntiIa && (
+                    <span className="apple-caption" style={{ color: estadoAntiIa.esGenuino ? 'var(--color-positive)' : 'var(--color-warning)', fontWeight: 600 }}>
+                      {estadoAntiIa.esGenuino ? '✓ Autoría Humana Verificada' : '⚠️ Detectado patrón sintético'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </footer>
+          </>
         )}
-
-        {/* Respuestas rápidas */}
-        <div style={{
-          display: 'flex',
-          gap: 6,
-          padding: '6px 12px',
-          overflowX: 'auto',
-          backgroundColor: 'var(--color-surface-secondary)',
-          borderTop: '0.5px solid var(--color-separator)',
-          scrollbarWidth: 'none',
-        }}>
-          {RESPUESTAS_RAPIDAS.map((frase) => (
-            <button
-              key={frase}
-              type="button"
-              onClick={() => {
-                setTexto(frase)
-                inputRef.current?.focus()
-              }}
-              style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-separator)',
-                padding: '5px 12px',
-                borderRadius: 9999,
-                fontSize: 12,
-                fontWeight: 500,
-                color: 'var(--color-secondary-ink)',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {frase}
-            </button>
-          ))}
-        </div>
-
-        {/* Barra de entrada de texto */}
-        <form
-          onSubmit={manejarEnvio}
-          style={{
-            padding: '10px 12px',
-            paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
-            backgroundColor: 'var(--color-surface)',
-            borderTop: '0.5px solid var(--color-separator)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          {/* Botón de Confirmaciones Rápidas */}
-          <button
-            type="button"
-            onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
-            title="Confirmaciones rápidas de clase"
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 9999,
-              backgroundColor: mostrarMenuSellos ? 'var(--color-fill-secondary)' : 'transparent',
-              color: 'var(--color-ink)',
-              border: '1px solid var(--color-separator)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0
-            }}
-          >
-            <CheckCircle2 size={19} color={mostrarMenuSellos ? 'var(--color-accent)' : 'currentColor'} />
-          </button>
-
-          <input
-            ref={inputRef}
-            className="apple-input"
-            value={texto}
-            disabled={estaBloqueadoEnvio}
-            onChange={handleInputChange}
-            placeholder={
-              estaBloqueadoEnvio
-                ? '🔒 Chat silenciado temporalmente por moderación'
-                : mensajeAResponder
-                ? `Respondiendo a @${mensajeAResponder.nombre}...`
-                : `Mensaje en #${canal}...`
-            }
-            style={{
-              minHeight: 42,
-              borderRadius: 22,
-              padding: '8px 16px',
-              fontSize: 16,
-              opacity: estaBloqueadoEnvio ? 0.6 : 1
-            }}
-          />
-
-          <button
-            type="submit"
-            disabled={!texto.trim() || estaBloqueadoEnvio}
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 9999,
-              backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-              color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
-              border: 'none',
-              cursor: texto.trim() && !estaBloqueadoEnvio ? 'pointer' : 'default',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <ArrowUp size={20} strokeWidth={2.6} />
-          </button>
-        </form>
-      </div>
-      </>
-    )}
-
-    </main>
+      </main>
+    </div>
   )
 }

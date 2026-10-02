@@ -866,3 +866,191 @@ body {
   }
 }
 
+/* ─── REDISEÑO PANEL DE CHAT (Móvil y PC Adaptados) ─── */
+
+/* Botón flotante para ir al último mensaje */
+.chat-scroll-bottom-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 84px;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-separator);
+  color: var(--color-accent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 30;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.chat-scroll-bottom-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.chat-scroll-bottom-btn:active {
+  transform: scale(0.92);
+}
+
+/* Barra de acciones flotante en hover para PC */
+.chat-hover-toolbar {
+  opacity: 0;
+  visibility: hidden;
+  position: absolute;
+  top: -14px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-separator);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
+  transform: translateY(4px);
+  z-index: 25;
+}
+
+.chat-message-row:hover .chat-hover-toolbar {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* Action Sheet móvil al mantener pulsado (Long Press) */
+.chat-mobile-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fadeIn 0.18s ease;
+}
+
+.chat-mobile-sheet {
+  background-color: var(--color-surface);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideUpSheet 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 85dvh;
+  overflow-y: auto;
+}
+
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.chat-sheet-action-btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--color-separator);
+  background-color: var(--color-fill-secondary);
+  color: var(--color-ink);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.chat-sheet-action-btn:active {
+  background-color: var(--color-fill-tertiary);
+}
+
+/* Multiline composer con soporte Enter/Shift+Enter */
+.chat-multiline-input {
+  width: 100%;
+  min-height: 44px;
+  max-height: 120px;
+  resize: none;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--color-separator);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat-multiline-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+/* Layout específico de PC */
+.chat-pc-container {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  height: calc(100vh - 84px);
+  display: grid;
+  grid-template-columns: 310px 1fr;
+  gap: 14px;
+  padding: 12px 16px 20px;
+  box-sizing: border-box;
+}
+
+.chat-pc-sidebar {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-separator);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  height: 100%;
+}
+
+.chat-pc-main {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-separator);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  height: 100%;
+  position: relative;
+}
+
+/* Layout móvil pantalla completa */
+.chat-mobile-layout {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg);
+  z-index: 100;
+  overflow: hidden;
+}
+
+

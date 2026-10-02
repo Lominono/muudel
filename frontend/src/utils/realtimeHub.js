@@ -51,6 +51,15 @@ export function obtenerCanalRealtime() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
         window.dispatchEvent(new CustomEvent('muudel-rt-postgres-profiles', { detail: payload }))
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_posts' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('muudel-rt-postgres-feed_posts', { detail: payload }))
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_post_likes' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('muudel-rt-postgres-feed_post_likes', { detail: payload }))
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_post_comments' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('muudel-rt-postgres-feed_post_comments', { detail: payload }))
+      })
 
     canalRealtime.subscribe((status) => {
       if (status === 'SUBSCRIBED') {

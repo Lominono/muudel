@@ -147,10 +147,9 @@ adminRouter.post('/eliminar-usuario', async (req, res) => {
 // 3. Ajuste masivo de puntos/monedas a todos los alumnos
 adminRouter.post('/ajuste-masivo', async (req, res) => {
   try {
-    const { delta, motivo } = req.body
-    const deltaNum = Number(delta)
+    const deltaNum = Number(req.body.delta ?? req.body.cantidad)
     if (isNaN(deltaNum) || deltaNum === 0) {
-      return res.status(400).json({ error: 'delta numérico válido es requerido' })
+      return res.status(400).json({ error: 'delta o cantidad numérico válido es requerido' })
     }
 
     const supabaseAdmin = getSupabaseAdmin()

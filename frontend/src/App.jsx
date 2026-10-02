@@ -155,21 +155,89 @@ function ContenidoApp() {
         })
     })
 
-    // Sincronizar inmediatamente cuando cualquier componente modifique StevenEuros
+    // Sincronizar inmediatamente cuando el panel de administración o cualquier componente modifique StevenEuros
+    const sincronizarPerfilSaldo = async (nuevoSaldo) => {
+      if (!perfil?.id) return
+      if (nuevoSaldo != null) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: nuevoSaldo } : prev)
+        const localUser = localStorage.getItem('racha_local_user')
+        if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser)
+            localStorage.setItem('racha_local_user', JSON.stringify({ ...parsed, puntos_total: nuevoSaldo }))
+          } catch (e) {}
+        }
+      } else {
+        const { data: pData } = await supabase
+          .from('profiles')
+          .select('puntos_total, racha_actual')
+          .eq('id', perfil.id)
+          .single()
+        if (pData) {
+          setPerfil(prev => prev ? { ...prev, puntos_total: pData.puntos_total, racha_actual: pData.racha_actual ?? prev.racha_actual } : prev)
+          const localUser = localStorage.getItem('racha_local_user')
+          if (localUser) {
+            try {
+              const parsed = JSON.parse(localUser)
+              localStorage.setItem('racha_local_user', JSON.stringify({ ...parsed, puntos_total: pData.puntos_total, racha_actual: pData.racha_actual ?? parsed.racha_actual }))
+            } catch (e) {}
+          }
+        }
+      }
+    }
+
     const handleSyncStevenEuros = (e) => {
-      const { puntos, userId } = e.detail || {}
-      if (puntos != null && (!userId || userId === perfil?.id)) {
-        setPerfil(prev => prev ? { ...prev, puntos_total: puntos } : prev)
+      const { puntos, nuevosPuntos, userId, alumnoId } = e.detail || {}
+      const targetId = userId || alumnoId
+      const pts = nuevosPuntos ?? puntos
+      if (!targetId || String(targetId) === String(perfil?.id)) {
+        sincronizarPerfilSaldo(pts)
       }
     }
     window.addEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+
+    // Escuchador de cambios en la tabla Postgres profiles de Supabase
+    const handleRtPostgresProfiles = (e) => {
+      const payload = e.detail
+      if (payload?.new && String(payload.new.id) === String(perfil?.id)) {
+        sincronizarPerfilSaldo(payload.new.puntos_total)
+      }
+    }
+    window.addEventListener('muudel-rt-postgres-profiles', handleRtPostgresProfiles)
+
+    // Escuchar broadcast de ajuste masivo de monedas de la administración
+    const desuscribirMasivo = suscribirEvento('ajuste_masivo_puntos', (data) => {
+      sound.playWin()
+      triggerConfetti()
+      sincronizarPerfilSaldo(null)
+    })
+
+    const desuscribirStevenEuros = suscribirEvento('steveneuros_actualizados', (data) => {
+      const { alumnoId, userId, nuevosPuntos } = data || {}
+      const targetId = userId || alumnoId
+      if (!targetId || String(targetId) === String(perfil?.id)) {
+        sincronizarPerfilSaldo(nuevosPuntos)
+      }
+    })
+
+    const desuscribirPuntos = suscribirEvento('puntos_actualizados', (data) => {
+      const { alumnoId, userId, nuevosPuntos } = data || {}
+      const targetId = userId || alumnoId
+      if (!targetId || String(targetId) === String(perfil?.id)) {
+        sincronizarPerfilSaldo(nuevosPuntos)
+      }
+    })
 
     return () => {
       desuscribirNotif()
       desuscribirAviso()
       desuscribirDados()
       desuscribir21()
+      desuscribirMasivo()
+      desuscribirStevenEuros()
+      desuscribirPuntos()
       window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+      window.removeEventListener('muudel-rt-postgres-profiles', handleRtPostgresProfiles)
     }
   }, [perfil?.id])
 

@@ -25,13 +25,106 @@ import {
   Check,
   ChevronRight,
   X,
-  Calendar
+  Calendar,
+  ShieldCheck,
+  Trash2,
+  Pin,
+  CornerDownRight
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
 import { sumarXpSkill } from '../utils/skillsData'
 import { obtenerConfigRecompensas, calcularPuntosGanados } from '../utils/recompensasConfig'
 import { getEstadoHorarioCompleto } from '../utils/horarioData'
+
+export const ADMIN_LOMINONO_ID = '00000000-0000-4000-a000-000000000001'
+
+const NOMBRES_INVENTADOS = [
+  'alumno inventado', 'usuario inventado', 'demo', 'test', 'mock', 'bot',
+  'admin', 'profesor', 'lominoño', 'sistema', 'moderador'
+]
+
+// Resolver autor: si es usuario inventado, moderador o del sistema, se muestra como (Post de administración)
+function resolverAutorFeed(p) {
+  const prof = p?.profiles
+  const nombreRaw = (prof?.nombre || '').trim()
+  const nombreLower = nombreRaw.toLowerCase()
+
+  const esNombreInventado = NOMBRES_INVENTADOS.some(palabra => nombreLower.includes(palabra))
+  const esModerador = prof?.rol === 'moderador' || prof?.rol === 'admin'
+  const esAdminId = p?.user_id === ADMIN_LOMINONO_ID
+  const esPostAdmin = Boolean(p?.es_admin) || p?.categoria === 'Aviso'
+  const sinPerfilReal = !prof || !nombreRaw
+
+  const esAdministracion = sinPerfilReal || esModerador || esAdminId || esPostAdmin || esNombreInventado
+
+  if (esAdministracion) {
+    const nombreVisible = (nombreRaw && !esNombreInventado) ? nombreRaw : 'lominoño'
+    return {
+      userId: prof?.id || ADMIN_LOMINONO_ID,
+      autor: `${nombreVisible} (Post de administración)`,
+      autorLimpio: nombreVisible,
+      username: prof?.username ? `@${prof.username.replace('@', '')}` : '@administracion',
+      rol: 'moderador',
+      esAdministracion: true,
+      color: prof?.color_acento || '#0A84FF',
+      avatarEmoji: prof?.avatar_emoji || '🛡️'
+    }
+  }
+
+  return {
+    userId: prof.id,
+    autor: nombreRaw,
+    autorLimpio: nombreRaw,
+    username: prof.username ? `@${prof.username.replace('@', '')}` : `@${nombreRaw.toLowerCase().replace(/\s+/g, '')}`,
+    rol: prof.rol || 'alumno',
+    esAdministracion: false,
+    color: prof.color_acento || '#007AFF',
+    avatarEmoji: prof.avatar_emoji || '🧑‍🎓'
+  }
+}
+
+// Posts oficiales de la administración garantizados en caso de tabla vacía o desconexión
+const POSTS_ADMINISTRACION_OFICIALES = [
+  {
+    id: 'post-admin-bienvenida',
+    tipo: 'post',
+    userId: ADMIN_LOMINONO_ID,
+    autor: 'lominoño (Post de administración)',
+    autorLimpio: 'lominoño',
+    username: 'administracion',
+    color: '#0A84FF',
+    rol: 'moderador',
+    avatarEmoji: '🛡️',
+    esAdministracion: true,
+    categoria: 'Aviso',
+    titulo: 'Bienvenidos al Feed Oficial de SMR2 Tarde',
+    contenido: 'Este es el canal oficial de comunicación del aula SMR2. Aquí compartimos comandos de Linux, resolución de dudas técnicas, chuletas de examen y avisos del profesorado. ¡Cada publicación constructiva suma StevenEuros (SE 💶) a tu cuenta!',
+    tiempoHace: 'Fijado',
+    likes: 5,
+    liked: false,
+    fijado: true
+  },
+  {
+    id: 'post-admin-linux-tip',
+    tipo: 'post',
+    userId: ADMIN_LOMINONO_ID,
+    autor: 'lominoño (Post de administración)',
+    autorLimpio: 'lominoño',
+    username: 'administracion',
+    color: '#0A84FF',
+    rol: 'moderador',
+    avatarEmoji: '🐧',
+    esAdministracion: true,
+    categoria: 'Linux',
+    titulo: 'Chuleta de Permisos Octales y Diagnóstico de Red',
+    contenido: `Para el examen de administración de sistemas, memorizad estas equivalencias octales:\nchmod 755 -> rwxr-xr-x (scripts ejecutables para todos)\nchmod 644 -> rw-r--r-- (archivos de configuración)\nchmod 600 -> rw------- (claves SSH id_rsa privadas)\n\nDiagnóstico de red: ss -tulpn && ip -br a`,
+    tiempoHace: '2h',
+    likes: 8,
+    liked: false,
+    fijado: false
+  }
+]
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -50,7 +143,8 @@ export function PantallaHoy() {
 
   // Compositor inline estilo X
   const [textoPost, setTextoPost] = useState('')
-  const [categoriaPost, setCategoriaPost] = useState('Truco') // 'Truco' | 'Linux' | 'Redes' | 'Duda' | 'General'
+  const [categoriaPost, setCategoriaPost] = useState('Truco') // 'Aviso' | 'Truco' | 'Linux' | 'Redes' | 'Duda' | 'General'
+  const [fijarPostAdmin, setFijarPostAdmin] = useState(false)
   const [publicando, setPublicando] = useState(false)
   const composerRef = useRef(null)
 
@@ -69,6 +163,22 @@ export function PantallaHoy() {
       return {}
     }
   })
+
+  // Reposts dados localmente
+  const [repostsDados, setRepostsDados] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`muudel_feed_reposts_${perfil?.id}`) || '{}')
+    } catch (e) {
+      return {}
+    }
+  })
+
+  // Comentarios interactivos por post
+  const [comentariosAbiertos, setComentariosAbiertos] = useState({})
+  const [comentariosPorPost, setComentariosPorPost] = useState({})
+  const [cargandoComentarios, setCargandoComentarios] = useState({})
+  const [nuevoComentarioTexto, setNuevoComentarioTexto] = useState({})
+  const [enviandoComentario, setEnviandoComentario] = useState(false)
 
   // Estado compacto de asistencia 15:30
   const [asistenciaConfirmada, setAsistenciaConfirmada] = useState(null)
@@ -95,6 +205,9 @@ export function PantallaHoy() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_posts' }, () => {
         cargarFeedCompleto()
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_post_comments' }, () => {
+        // Actualizar comentarios en vivo si están abiertos
+      })
       .subscribe()
 
     // Suscripciones de eventos Broadcast de clase
@@ -105,9 +218,24 @@ export function PantallaHoy() {
       })
     })
 
+    const desEliminarPost = suscribirEvento('eliminar_feed_post', ({ postId }) => {
+      if (postId) {
+        setPostsFeed(prev => prev.filter(p => p.id !== postId))
+      }
+    })
+
     const desLike = suscribirEvento('like_feed_item', ({ itemId, nuevoCount }) => {
       setPostsFeed(prev => prev.map(p => p.id === itemId ? { ...p, likes: nuevoCount } : p))
       setRespuestasFeed(prev => prev.map(r => r.id === itemId ? { ...r, likes: nuevoCount } : r))
+    })
+
+    const desNuevoComentario = suscribirEvento('nuevo_feed_comentario', ({ postId, comentario }) => {
+      if (postId && comentario) {
+        setComentariosPorPost(prev => ({
+          ...prev,
+          [postId]: [...(prev[postId] || []).filter(c => c.id !== comentario.id), comentario]
+        }))
+      }
     })
 
     const desCheckin = suscribirEvento('checkin_confirmado', (datos) => {
@@ -121,24 +249,80 @@ export function PantallaHoy() {
       if (nuevaCfg) setConfigRec(nuevaCfg)
     })
 
+    // Sincronización en vivo del saldo de StevenEuros
+    const desStevenEuros = suscribirEvento('steveneuros_actualizados', (datos) => {
+      const { alumnoId, userId, nuevosPuntos } = datos || {}
+      const targetId = userId || alumnoId
+      if (!targetId || String(targetId) === String(perfil?.id)) {
+        if (nuevosPuntos != null) {
+          setPerfil(prev => prev ? { ...prev, puntos_total: nuevosPuntos } : prev)
+        } else {
+          cargarSaldoFresco()
+        }
+      }
+    })
+
+    const desMasivo = suscribirEvento('ajuste_masivo_puntos', () => {
+      cargarSaldoFresco()
+    })
+
     const handleSyncStevenEuros = (e) => {
-      const { puntos, userId } = e.detail || {}
-      if (puntos != null && (!userId || userId === perfil?.id)) {
-        setPerfil(prev => prev ? { ...prev, puntos_total: puntos } : prev)
+      const { puntos, nuevosPuntos, userId, alumnoId } = e.detail || {}
+      const targetId = userId || alumnoId
+      const pts = nuevosPuntos ?? puntos
+      if (!targetId || String(targetId) === String(perfil?.id)) {
+        if (pts != null) {
+          setPerfil(prev => prev ? { ...prev, puntos_total: pts } : prev)
+        } else {
+          cargarSaldoFresco()
+        }
       }
     }
     window.addEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+
+    const handleRtProfiles = (e) => {
+      const payload = e.detail
+      if (payload?.new && String(payload.new.id) === String(perfil?.id)) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: payload.new.puntos_total, racha_actual: payload.new.racha_actual ?? prev.racha_actual } : prev)
+      }
+    }
+    window.addEventListener('muudel-rt-postgres-profiles', handleRtProfiles)
+
+    const handleRtFeedPosts = () => {
+      cargarFeedCompleto()
+    }
+    window.addEventListener('muudel-rt-postgres-feed_posts', handleRtFeedPosts)
 
     return () => {
       clearInterval(timerHorario)
       supabase.removeChannel(canalFeed)
       desNuevoPost()
+      desEliminarPost()
       desLike()
+      desNuevoComentario()
       desCheckin()
       desRecompensas()
+      desStevenEuros()
+      desMasivo()
       window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
+      window.removeEventListener('muudel-rt-postgres-profiles', handleRtProfiles)
+      window.removeEventListener('muudel-rt-postgres-feed_posts', handleRtFeedPosts)
     }
   }, [perfil?.id, fechaHoy])
+
+  const cargarSaldoFresco = async () => {
+    if (!perfil?.id) return
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('puntos_total, racha_actual')
+        .eq('id', perfil.id)
+        .single()
+      if (data) {
+        setPerfil(prev => prev ? { ...prev, puntos_total: data.puntos_total, racha_actual: data.racha_actual ?? prev.racha_actual } : prev)
+      }
+    } catch (_) {}
+  }
 
   const cargarFeedCompleto = async () => {
     setCargandoPosts(true)
@@ -157,51 +341,70 @@ export function PantallaHoy() {
         }
       }
 
+      // Cargar mis likes
+      let likedSet = {}
+      if (perfil) {
+        const { data: misLikes } = await supabase
+          .from('feed_post_likes')
+          .select('post_id')
+          .eq('user_id', perfil.id)
+        if (misLikes) {
+          misLikes.forEach(l => { likedSet[l.post_id] = true })
+        }
+      }
+      setLikesDados(likedSet)
+
       // 2. Cargar posts reales desde la tabla feed_posts
+      let rawPosts = null
       const { data: postsData, error: errPosts } = await supabase
         .from('feed_posts')
         .select(`
-          id, categoria, titulo, contenido, likes_count, created_at,
+          id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
           profiles (id, nombre, username, color_acento, rol, avatar_emoji)
         `)
         .eq('soft_deleted', false)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(60)
 
       if (!errPosts && postsData) {
-        // Cargar mis likes
-        let likedSet = {}
-        if (perfil) {
-          const { data: misLikes } = await supabase
-            .from('feed_post_likes')
-            .select('post_id')
-            .eq('user_id', perfil.id)
-          if (misLikes) {
-            misLikes.forEach(l => { likedSet[l.post_id] = true })
-          }
-        }
-        setLikesDados(likedSet)
+        rawPosts = postsData
+      } else {
+        // Fallback a API del backend
+        try {
+          const resp = await fetch('/api/feed/posts')
+          const json = await resp.json()
+          if (json.posts) rawPosts = json.posts
+        } catch (_) {}
+      }
 
-        // Filtrar estrictamente solo usuarios reales con perfil existente (sin mocks)
-        const mapeados = postsData
-          .filter(p => p.profiles && p.profiles.nombre && p.profiles.nombre.trim() !== '')
-          .map(p => ({
+      if (rawPosts && rawPosts.length > 0) {
+        // Mapear cada post resolviendo de forma explícita si es alumno o (Post de administración)
+        const mapeados = rawPosts.map(p => {
+          const autorInfo = resolverAutorFeed(p)
+          return {
             id: p.id,
             tipo: 'post',
-            userId: p.profiles.id,
-            autor: p.profiles.nombre,
-            username: p.profiles.username || 'alumno',
-            color: p.profiles.color_acento || '#007AFF',
-            rol: p.profiles.rol || 'alumno',
-            avatarEmoji: p.profiles.avatar_emoji || '🧑',
+            userId: autorInfo.userId,
+            autor: autorInfo.autor,
+            autorLimpio: autorInfo.autorLimpio,
+            username: autorInfo.username,
+            color: autorInfo.color,
+            rol: autorInfo.rol,
+            esAdministracion: autorInfo.esAdministracion,
+            avatarEmoji: autorInfo.avatarEmoji,
             categoria: p.categoria || 'General',
             titulo: p.titulo,
             contenido: p.contenido,
+            fijado: Boolean(p.fijado),
             tiempoHace: calcularTiempoRelativo(p.created_at),
             likes: p.likes_count || 0,
             liked: Boolean(likedSet[p.id])
-          }))
+          }
+        })
         setPostsFeed(mapeados)
+      } else {
+        // Si aún no hay posts creados en la base de datos, mostrar los oficiales de administración
+        setPostsFeed(POSTS_ADMINISTRACION_OFICIALES)
       }
 
       // 3. Cargar respuestas y retos validados de alumnos reales desde Supabase
@@ -219,25 +422,30 @@ export function PantallaHoy() {
 
         if (entregasData && entregasData.length > 0) {
           const respuestasMapeadas = entregasData
-            .filter(e => e.profiles && e.profiles.nombre && e.evidencia)
-            .map(e => ({
-              id: 'rc_' + e.id,
-              tipo: 'respuesta',
-              userId: e.profiles.id,
-              autor: e.profiles.nombre,
-              username: e.profiles.username || 'alumno',
-              color: e.profiles.color_acento || '#34C759',
-              rol: e.profiles.rol || 'alumno',
-              avatarEmoji: e.profiles.avatar_emoji || '🎯',
-              categoria: 'Reto',
-              retoTitulo: e.retos?.titulo || 'Reto Técnico',
-              contenido: e.evidencia,
-              feedback: e.feedback_admin,
-              estado: 'aprobado',
-              tiempoHace: calcularTiempoRelativo(e.created_at),
-              likes: 0,
-              liked: false
-            }))
+            .filter(e => e.evidencia)
+            .map(e => {
+              const autorInfo = resolverAutorFeed(e)
+              return {
+                id: 'rc_' + e.id,
+                tipo: 'respuesta',
+                userId: autorInfo.userId,
+                autor: autorInfo.autor,
+                autorLimpio: autorInfo.autorLimpio,
+                username: autorInfo.username,
+                color: autorInfo.color,
+                rol: autorInfo.rol,
+                esAdministracion: autorInfo.esAdministracion,
+                avatarEmoji: autorInfo.avatarEmoji,
+                categoria: 'Reto',
+                retoTitulo: e.retos?.titulo || 'Reto Técnico',
+                contenido: e.evidencia,
+                feedback: e.feedback_admin,
+                estado: 'aprobado',
+                tiempoHace: calcularTiempoRelativo(e.created_at),
+                likes: 0,
+                liked: false
+              }
+            })
           setRespuestasFeed(respuestasMapeadas)
         } else {
           setRespuestasFeed([])
@@ -247,6 +455,7 @@ export function PantallaHoy() {
       }
     } catch (err) {
       console.warn('Error cargando feed:', err)
+      setPostsFeed(POSTS_ADMINISTRACION_OFICIALES)
     } finally {
       setCargandoPosts(false)
     }
@@ -261,40 +470,89 @@ export function PantallaHoy() {
     setPublicando(true)
     sound.playStamp()
 
-    // Extraer título natural (primera frase o hasta 60 caracteres)
+    const esModerador = perfil.rol === 'moderador'
     let tituloAuto = contenidoLimpio.split('\n')[0].substring(0, 65).trim()
-    if (tituloAuto.length < 3) tituloAuto = `${categoriaPost} técnico de ${perfil.nombre}`
+    if (tituloAuto.length < 3) {
+      tituloAuto = esModerador
+        ? `Aviso de Administración`
+        : `${categoriaPost} técnico de ${perfil.nombre}`
+    }
 
     const analisisAntiIA = analizarTextoAntiIA(contenidoLimpio)
 
     try {
-      const { data: postCreado, error } = await supabase
-        .from('feed_posts')
-        .insert({
-          user_id: perfil.id,
-          categoria: categoriaPost,
-          titulo: tituloAuto,
-          contenido: contenidoLimpio
-        })
-        .select(`
-          id, categoria, titulo, contenido, likes_count, created_at,
-          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
-        `)
-        .single()
+      let postCreado = null
 
-      if (!error && postCreado) {
+      // 1. Intentar inserción directa en Supabase
+      try {
+        const { data, error } = await supabase
+          .from('feed_posts')
+          .insert({
+            user_id: perfil.id,
+            categoria: categoriaPost,
+            titulo: tituloAuto,
+            contenido: contenidoLimpio,
+            es_admin: esModerador,
+            fijado: esModerador && fijarPostAdmin
+          })
+          .select(`
+            id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
+            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+          `)
+          .single()
+
+        if (!error && data) {
+          postCreado = data
+        }
+      } catch (_) {}
+
+      // 2. Fallback a API con Service Key
+      if (!postCreado) {
+        try {
+          const resp = await fetch('/api/feed/publicar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: perfil.id,
+              categoria: categoriaPost,
+              titulo: tituloAuto,
+              contenido: contenidoLimpio,
+              es_admin: esModerador
+            })
+          })
+          const json = await resp.json()
+          if (json.post) postCreado = json.post
+        } catch (_) {}
+      }
+
+      if (postCreado) {
+        const autorInfo = resolverAutorFeed({
+          ...postCreado,
+          profiles: {
+            id: perfil.id,
+            nombre: perfil.nombre,
+            username: perfil.username,
+            rol: perfil.rol,
+            color_acento: perfil.color_acento,
+            avatar_emoji: perfil.avatar_emoji
+          }
+        })
+
         const nuevo = {
           id: postCreado.id,
           tipo: 'post',
-          userId: perfil.id,
-          autor: perfil.nombre,
-          username: perfil.username || 'tu_usuario',
-          color: perfil.color_acento || '#007AFF',
-          rol: perfil.rol || 'alumno',
-          avatarEmoji: perfil.avatar_emoji || '🧑',
+          userId: autorInfo.userId,
+          autor: autorInfo.autor,
+          autorLimpio: autorInfo.autorLimpio,
+          username: autorInfo.username,
+          color: autorInfo.color,
+          rol: autorInfo.rol,
+          esAdministracion: autorInfo.esAdministracion,
+          avatarEmoji: autorInfo.avatarEmoji,
           categoria: postCreado.categoria,
           titulo: postCreado.titulo,
           contenido: postCreado.contenido,
+          fijado: Boolean(postCreado.fijado),
           tiempoHace: 'ahora mismo',
           likes: 0,
           liked: false,
@@ -304,25 +562,33 @@ export function PantallaHoy() {
         setPostsFeed(prev => [nuevo, ...prev])
         transmitirEvento('nuevo_feed_post', nuevo)
         setTextoPost('')
+        setFijarPostAdmin(false)
         triggerConfetti()
 
-        // Premiar puntos según configuración activa del aula
-        const mult = Number(configRec?.multiplicadorGlobal) || 1.0
-        const baseFeed = Number(configRec?.puntosPostFeed) || 10
-        const ratio = analisisAntiIA.esGenuino ? 1.0 : 0.5
-        const ptsExtra = Math.max(1, Math.round(baseFeed * ratio * mult))
-        const nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
-        setPerfil({ ...perfil, puntos_total: nuevoSaldo })
-        localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
-        window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
-        transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
+        // Premiar StevenEuros si es alumno
+        if (!esModerador) {
+          const mult = Number(configRec?.multiplicadorGlobal) || 1.0
+          const baseFeed = Number(configRec?.puntosPostFeed) || 10
+          const ratio = analisisAntiIA.esGenuino ? 1.0 : 0.5
+          const ptsExtra = Math.max(1, Math.round(baseFeed * ratio * mult))
+          const nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
 
-        // Otorgar XP de competencia técnica
-        let skillKey = 'autoria_tecnica'
-        if (categoriaPost === 'Truco' || categoriaPost === 'Linux') skillKey = 'linux_bash'
-        else if (categoriaPost === 'Redes') skillKey = 'redes_vlans'
-        sumarXpSkill(perfil.id, skillKey, 15)
+          setPerfil({ ...perfil, puntos_total: nuevoSaldo })
+          localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
+
+          try {
+            await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
+          } catch (_) {}
+
+          window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
+          transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
+
+          // Otorgar XP técnica
+          let skillKey = 'autoria_tecnica'
+          if (categoriaPost === 'Truco' || categoriaPost === 'Linux') skillKey = 'linux_bash'
+          else if (categoriaPost === 'Redes') skillKey = 'redes_vlans'
+          sumarXpSkill(perfil.id, skillKey, 15)
+        }
       }
     } catch (err) {
       console.warn('Error al publicar post:', err)
@@ -346,22 +612,37 @@ export function PantallaHoy() {
     })
 
     if (esPostReal) {
+      const postActual = postsFeed.find(p => p.id === itemId)
+      const nuevoCount = Math.max(0, (postActual?.likes || 0) + (yaLeDi ? -1 : 1))
+
       setPostsFeed(prev => prev.map(p => {
         if (p.id === itemId) {
-          const nuevoCount = Math.max(0, (p.likes || 0) + (yaLeDi ? -1 : 1))
           return { ...p, likes: nuevoCount, liked: !yaLeDi }
         }
         return p
       }))
 
+      transmitirEvento('like_feed_item', { itemId, nuevoCount })
+
       try {
         if (!yaLeDi) {
-          await supabase.from('feed_post_likes').insert({ post_id: itemId, user_id: perfil.id })
+          await supabase.from('feed_post_likes').upsert({ post_id: itemId, user_id: perfil?.id })
           await supabase.rpc('increment_likes_count', { post_id: itemId })
         } else {
-          await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil.id })
+          await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil?.id })
+          await supabase.rpc('decrement_likes_count', { post_id: itemId })
         }
-      } catch (_) {}
+        await supabase.from('feed_posts').update({ likes_count: nuevoCount }).eq('id', itemId)
+      } catch (_) {
+        // Fallback a API
+        try {
+          await fetch('/api/feed/like', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId: itemId, userId: perfil?.id, darLike: !yaLeDi })
+          })
+        } catch (_) {}
+      }
     } else {
       setRespuestasFeed(prev => prev.map(r => {
         if (r.id === itemId) {
@@ -370,6 +651,147 @@ export function PantallaHoy() {
         }
         return r
       }))
+    }
+  }
+
+  // Repost / Impulsar post
+  const handleRepost = (itemId) => {
+    sound.playStamp()
+    const yaRepostee = Boolean(repostsDados[itemId])
+    setRepostsDados(prev => {
+      const copia = { ...prev }
+      if (yaRepostee) delete copia[itemId]
+      else copia[itemId] = true
+      localStorage.setItem(`muudel_feed_reposts_${perfil?.id}`, JSON.stringify(copia))
+      return copia
+    })
+    triggerConfetti()
+  }
+
+  // Eliminar post del feed (por autor o moderador)
+  const handleEliminarPost = async (postId) => {
+    if (!window.confirm('¿Seguro que deseas eliminar esta publicación del feed?')) return
+    sound.playPop()
+
+    setPostsFeed(prev => prev.filter(p => p.id !== postId))
+
+    try {
+      await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', postId)
+      await fetch('/api/feed/eliminar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, userId: perfil?.id })
+      })
+    } catch (_) {}
+
+    transmitirEvento('eliminar_feed_post', { postId })
+  }
+
+  // Desplegar / cerrar hilo de comentarios de un post
+  const handleToggleComentarios = async (postId) => {
+    const estaAbierto = Boolean(comentariosAbiertos[postId])
+    setComentariosAbiertos(prev => ({ ...prev, [postId]: !estaAbierto }))
+
+    if (!estaAbierto && !comentariosPorPost[postId]) {
+      setCargandoComentarios(prev => ({ ...prev, [postId]: true }))
+      try {
+        const { data, error } = await supabase
+          .from('feed_post_comments')
+          .select(`
+            id, post_id, contenido, created_at,
+            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+          `)
+          .eq('post_id', postId)
+          .eq('soft_deleted', false)
+          .order('created_at', { ascending: true })
+
+        if (!error && data) {
+          setComentariosPorPost(prev => ({ ...prev, [postId]: data }))
+        } else {
+          const resp = await fetch(`/api/feed/comentarios/${postId}`)
+          const json = await resp.json()
+          setComentariosPorPost(prev => ({ ...prev, [postId]: json.comentarios || [] }))
+        }
+      } catch (_) {
+        setComentariosPorPost(prev => ({ ...prev, [postId]: [] }))
+      } finally {
+        setCargandoComentarios(prev => ({ ...prev, [postId]: false }))
+      }
+    }
+  }
+
+  // Enviar comentario a un post
+  const handleEnviarComentario = async (postId) => {
+    const texto = (nuevoComentarioTexto[postId] || '').trim()
+    if (!texto || !perfil || enviandoComentario) return
+
+    setEnviandoComentario(true)
+    sound.playPop()
+
+    try {
+      let nuevoCom = null
+
+      try {
+        const { data, error } = await supabase
+          .from('feed_post_comments')
+          .insert({ post_id: postId, user_id: perfil.id, contenido: texto })
+          .select(`
+            id, post_id, contenido, created_at,
+            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+          `)
+          .single()
+        if (!error && data) nuevoCom = data
+      } catch (_) {}
+
+      if (!nuevoCom) {
+        try {
+          const resp = await fetch('/api/feed/comentar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId, userId: perfil.id, contenido: texto })
+          })
+          const json = await resp.json()
+          if (json.comentario) nuevoCom = json.comentario
+        } catch (_) {}
+      }
+
+      if (!nuevoCom) {
+        nuevoCom = {
+          id: 'com_' + Date.now(),
+          post_id: postId,
+          contenido: texto,
+          created_at: new Date().toISOString(),
+          profiles: {
+            id: perfil.id,
+            nombre: perfil.nombre,
+            username: perfil.username,
+            rol: perfil.rol,
+            color_acento: perfil.color_acento,
+            avatar_emoji: perfil.avatar_emoji
+          }
+        }
+      }
+
+      setComentariosPorPost(prev => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), nuevoCom]
+      }))
+      setNuevoComentarioTexto(prev => ({ ...prev, [postId]: '' }))
+      transmitirEvento('nuevo_feed_comentario', { postId, comentario: nuevoCom })
+
+      // Micro-recompensa por comentar (+2 SE 💶)
+      if (perfil.rol !== 'moderador') {
+        const nuevoSaldo = (perfil.puntos_total || 0) + 2
+        setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
+        localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
+        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
+        window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
+        transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
+      }
+    } catch (err) {
+      console.warn('Error al enviar comentario:', err)
+    } finally {
+      setEnviandoComentario(false)
     }
   }
 
@@ -419,9 +841,10 @@ export function PantallaHoy() {
     if (tabActiva === 'respuestas') {
       return respuestasFeed
     }
-    // 'para_ti': exclusivamente publicaciones auténticas de los alumnos y profesor
     return postsFeed
   })()
+
+  const esModerador = perfil?.rol === 'moderador'
 
   return (
     <div style={{
@@ -647,56 +1070,16 @@ export function PantallaHoy() {
                   : estadoHorario.estado === 'en_descanso'
                   ? 'var(--color-warning)'
                   : 'var(--color-accent)',
-                color: '#FFFFFF',
-                letterSpacing: 0.3
+                color: '#FFFFFF'
               }}>
-                {estadoHorario.estado === 'en_clase'
-                  ? '• EN CLASE AHORA'
-                  : estadoHorario.estado === 'en_descanso'
-                  ? '☕ RECREO / DESCANSO'
-                  : estadoHorario.estado === 'antes_de_clase'
-                  ? '⏳ HOY A LAS 15:30'
-                  : 'HORARIO SMR2'}
+                {estadoHorario.estado === 'en_clase' ? 'EN CLASE AHORA' : estadoHorario.estado === 'en_descanso' ? 'DESCANSO' : 'SMR2'}
               </span>
-
-              {estadoHorario.claseActual?.minutosRestantes != null && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
-                  · Quedan {estadoHorario.claseActual.minutosRestantes} min
-                </span>
-              )}
-            </div>
-
-            <div style={{
-              fontSize: 14,
-              fontWeight: 800,
-              color: 'var(--color-ink)',
-              marginTop: 2,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
-              {estadoHorario.claseActual?.nombre || estadoHorario.proximaClase?.nombre || 'Horario oficial de clase'}
-            </div>
-
-            <div style={{
-              fontSize: 12,
-              color: 'var(--color-secondary-ink)',
-              marginTop: 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}>
-              {estadoHorario.claseActual?.profesor ? (
-                <span>{estadoHorario.claseActual.profesor}</span>
-              ) : estadoHorario.proximaClase?.profesor ? (
-                <span>Docente: {estadoHorario.proximaClase.profesor}</span>
-              ) : (
-                <span>{estadoHorario.mensaje}</span>
-              )}
-              <span style={{ opacity: 0.5 }}>·</span>
-              <span className="tabular-nums" style={{ fontWeight: 600 }}>
-                {estadoHorario.claseActual?.rango || estadoHorario.proximaClase?.rango || '15:30 - 21:15'}
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-ink)' }}>
+                {estadoHorario.claseActual?.nombre || 'Jornada escolar'}
               </span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+              {estadoHorario.minutosRestantes ? `${estadoHorario.minutosRestantes} min restantes · ` : ''}Prof. {estadoHorario.claseActual?.profesor || 'lominoño'}
             </div>
           </div>
         </div>
@@ -793,7 +1176,7 @@ export function PantallaHoy() {
         </div>
       )}
 
-      {/* 3. COMPOSITOR INLINE ESTILO X ("¿QUÉ ESTÁ PASANDO EN CLASE?") */}
+      {/* 3. COMPOSITOR INLINE ESTILO X */}
       <section style={{
         padding: '14px 16px',
         borderBottom: '1px solid var(--color-separator)',
@@ -811,12 +1194,31 @@ export function PantallaHoy() {
 
         {/* Input box */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Indicador para moderadores */}
+          {esModerador && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'var(--color-accent)',
+              backgroundColor: 'rgba(0, 122, 255, 0.08)',
+              padding: '4px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(0, 122, 255, 0.2)'
+            }}>
+              <ShieldCheck size={13} />
+              <span>Publicando como: {perfil?.nombre || 'lominoño'} (Post de administración)</span>
+            </div>
+          )}
+
           <textarea
             ref={composerRef}
             rows={textoPost.includes('\n') ? 3 : 2}
             value={textoPost}
             onChange={(e) => setTextoPost(e.target.value)}
-            placeholder="¿Qué está pasando en clase? Comparte un comando, duda o truco..."
+            placeholder={esModerador ? 'Publicar comunicado oficial o tip técnico para la clase...' : '¿Qué está pasando en clase? Comparte un comando, duda o truco...'}
             style={{
               width: '100%',
               border: 'none',
@@ -832,7 +1234,7 @@ export function PantallaHoy() {
 
           {/* Categorías pill selector */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {['Truco', 'Linux', 'Redes', 'Duda', 'General'].map(cat => {
+            {(esModerador ? ['Aviso', 'Truco', 'Linux', 'Redes', 'Duda', 'General'] : ['Truco', 'Linux', 'Redes', 'Duda', 'General']).map(cat => {
               const sel = categoriaPost === cat
               return (
                 <button
@@ -855,9 +1257,21 @@ export function PantallaHoy() {
                 </button>
               )
             })}
+
+            {esModerador && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={fijarPostAdmin}
+                  onChange={(e) => setFijarPostAdmin(e.target.checked)}
+                  style={{ accentColor: 'var(--color-accent)' }}
+                />
+                <span>📌 Fijar</span>
+              </label>
+            )}
           </div>
 
-          {/* Barra inferior del compositor: Contador, Recompensa y Botón Postear */}
+          {/* Barra inferior del compositor: Recompensa y Botón Postear */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -867,9 +1281,15 @@ export function PantallaHoy() {
             marginTop: 4
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
-                🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} StevenEuros (SE 💶) al publicar
-              </span>
+              {!esModerador ? (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
+                  🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} StevenEuros (SE 💶) al publicar
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-positive)' }}>
+                  ✓ Post Oficial Verificado del Aula SMR2
+                </span>
+              )}
             </div>
 
             <button
@@ -893,7 +1313,7 @@ export function PantallaHoy() {
               }}
             >
               <Send size={13} />
-              <span>{publicando ? 'Publicando...' : 'Postear'}</span>
+              <span>{publicando ? 'Publicando...' : (esModerador ? 'Publicar (Admin)' : 'Postear')}</span>
             </button>
           </div>
         </div>
@@ -920,7 +1340,12 @@ export function PantallaHoy() {
 
         {itemsTimeline.map((item) => {
           const yaLeDiLike = Boolean(likesDados[item.id])
+          const yaRepostee = Boolean(repostsDados[item.id])
           const esRespuesta = item.tipo === 'respuesta'
+          const esAdminPost = item.esAdministracion || item.rol === 'moderador'
+          const puedeBorrar = esModerador || item.userId === perfil?.id
+          const comentariosEstePost = comentariosPorPost[item.id] || []
+          const comentariosAbiertosEstePost = Boolean(comentariosAbiertos[item.id])
 
           return (
             <article
@@ -930,16 +1355,16 @@ export function PantallaHoy() {
                 borderBottom: '1px solid var(--color-separator)',
                 display: 'flex',
                 gap: 12,
-                backgroundColor: 'transparent',
+                backgroundColor: item.fijado ? 'rgba(0, 122, 255, 0.02)' : 'transparent',
                 transition: 'background-color 0.1s ease'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-fill-tertiary)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = item.fijado ? 'rgba(0, 122, 255, 0.04)' : 'var(--color-fill-tertiary)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = item.fijado ? 'rgba(0, 122, 255, 0.02)' : 'transparent' }}
             >
               {/* Columna izquierda: Avatar */}
               <div style={{ flexShrink: 0 }}>
                 <AvatarUsuario
-                  nombre={item.autor}
+                  nombre={item.autorLimpio || item.autor}
                   color={item.color || '#007AFF'}
                   rol={item.rol || 'alumno'}
                   size={40}
@@ -955,32 +1380,89 @@ export function PantallaHoy() {
                     <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-ink)' }}>
                       {item.autor}
                     </span>
-                    {item.rol === 'moderador' && (
-                      <span className="apple-badge apple-badge-accent" style={{ fontSize: 9 }}>
-                        Profesor
+
+                    {/* Badge destacado de Post de Administración */}
+                    {esAdminPost && (
+                      <span
+                        className="apple-badge apple-badge-accent"
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                          color: '#0A84FF',
+                          border: '1px solid rgba(10, 132, 255, 0.25)'
+                        }}
+                      >
+                        <ShieldCheck size={11} />
+                        Post de administración
                       </span>
                     )}
+
                     <span style={{ fontSize: 13, color: 'var(--color-secondary-ink)', opacity: 0.8 }}>
-                      @{item.username || 'alumno'}
+                      {item.username.startsWith('@') ? item.username : `@${item.username}`}
                     </span>
                     <span style={{ color: 'var(--color-secondary-ink)', opacity: 0.5 }}>·</span>
                     <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
                       {item.tiempoHace}
                     </span>
+
+                    {item.fijado && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: 'var(--color-warning)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                        padding: '1px 6px',
+                        borderRadius: 4
+                      }}>
+                        <Pin size={10} /> Fijado
+                      </span>
+                    )}
                   </div>
 
-                  {/* Badge de categoría */}
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '2px 7px',
-                    borderRadius: 9999,
-                    backgroundColor: esRespuesta ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0, 122, 255, 0.08)',
-                    color: esRespuesta ? 'var(--color-positive)' : 'var(--color-accent)',
-                    flexShrink: 0
-                  }}>
-                    #{item.categoria || (esRespuesta ? 'Reto' : 'Tip')}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {/* Badge de categoría */}
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 9999,
+                      backgroundColor: esRespuesta ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0, 122, 255, 0.08)',
+                      color: esRespuesta ? 'var(--color-positive)' : 'var(--color-accent)',
+                      flexShrink: 0
+                    }}>
+                      #{item.categoria || (esRespuesta ? 'Reto' : 'Tip')}
+                    </span>
+
+                    {/* Botón de eliminar para moderadores o dueños */}
+                    {puedeBorrar && (
+                      <button
+                        type="button"
+                        onClick={() => handleEliminarPost(item.id)}
+                        title="Eliminar publicación"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--color-secondary-ink)',
+                          padding: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          opacity: 0.7
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-negative)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-secondary-ink)' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Si es respuesta a un reto específico */}
@@ -1031,7 +1513,7 @@ export function PantallaHoy() {
                   </div>
                 )}
 
-                {/* Fila de Interacciones estilo X (Acciones limpias) */}
+                {/* Fila de Interacciones estilo X */}
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1043,8 +1525,8 @@ export function PantallaHoy() {
                   {/* Comentarios */}
                   <button
                     type="button"
-                    title="Responder en Chat"
-                    onClick={() => navigate('/chat')}
+                    title="Ver o responder comentarios"
+                    onClick={() => handleToggleComentarios(item.id)}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -1052,20 +1534,20 @@ export function PantallaHoy() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 5,
-                      color: 'inherit',
+                      color: comentariosAbiertosEstePost ? 'var(--color-accent)' : 'inherit',
                       fontSize: 12,
                       padding: 4
                     }}
                   >
                     <MessageSquare size={15} />
-                    <span>0</span>
+                    <span>{comentariosEstePost.length}</span>
                   </button>
 
                   {/* Repost / Retweet */}
                   <button
                     type="button"
                     title="Impulsar en el aula"
-                    onClick={() => { sound.playStamp(); triggerConfetti() }}
+                    onClick={() => handleRepost(item.id)}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -1073,13 +1555,13 @@ export function PantallaHoy() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 5,
-                      color: 'inherit',
+                      color: yaRepostee ? 'var(--color-positive)' : 'inherit',
                       fontSize: 12,
                       padding: 4
                     }}
                   >
                     <Repeat2 size={16} />
-                    <span>0</span>
+                    <span>{yaRepostee ? 1 : 0}</span>
                   </button>
 
                   {/* Corazón Like */}
@@ -1129,6 +1611,88 @@ export function PantallaHoy() {
                     <Share2 size={14} />
                   </button>
                 </div>
+
+                {/* HILO DE COMENTARIOS INLINE */}
+                {comentariosAbiertosEstePost && (
+                  <div style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: '1px solid var(--color-separator)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}>
+                    {cargandoComentarios[item.id] && comentariosEstePost.length === 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', padding: 6 }}>
+                        Cargando comentarios...
+                      </div>
+                    )}
+
+                    {comentariosEstePost.map((c, cIdx) => {
+                      const cProf = c.profiles
+                      const cEsAdmin = cProf?.rol === 'moderador' || !cProf
+                      const cNombre = cEsAdmin ? `${cProf?.nombre || 'lominoño'} (Post de administración)` : (cProf?.nombre || 'Alumno')
+
+                      return (
+                        <div key={c.id || cIdx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <CornerDownRight size={13} color="var(--color-secondary-ink)" style={{ marginTop: 6, flexShrink: 0 }} />
+                          <AvatarUsuario
+                            nombre={cProf?.nombre || 'lominoño'}
+                            color={cProf?.color_acento || '#007AFF'}
+                            rol={cProf?.rol || 'alumno'}
+                            size={26}
+                            fontSize={10}
+                          />
+                          <div style={{
+                            flex: 1,
+                            backgroundColor: 'var(--color-surface-secondary)',
+                            borderRadius: 10,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            lineHeight: 1.4
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                              <span style={{ fontWeight: 700, color: 'var(--color-ink)' }}>{cNombre}</span>
+                              <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)' }}>
+                                {calcularTiempoRelativo(c.created_at)}
+                              </span>
+                            </div>
+                            <div style={{ color: 'var(--color-ink)', wordBreak: 'break-word' }}>
+                              {c.contenido}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* Input para responder */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                      <input
+                        type="text"
+                        className="apple-input"
+                        placeholder="Escribe una respuesta técnica..."
+                        value={nuevoComentarioTexto[item.id] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setNuevoComentarioTexto(prev => ({ ...prev, [item.id]: val }))
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleEnviarComentario(item.id)
+                        }}
+                        style={{ flex: 1, height: 32, fontSize: 12 }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!(nuevoComentarioTexto[item.id] || '').trim() || enviandoComentario}
+                        onClick={() => handleEnviarComentario(item.id)}
+                        className="btn-primary"
+                        style={{ minHeight: 32, padding: '0 12px', fontSize: 12, fontWeight: 700 }}
+                      >
+                        Responder (+2 SE)
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </article>
           )

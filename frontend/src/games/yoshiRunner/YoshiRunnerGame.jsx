@@ -1,6 +1,7 @@
 // frontend/src/games/yoshiRunner/YoshiRunnerGame.jsx
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { SPRITES_DATA_URI } from './yoshiAssets'
+import { RuletaYoshiModal } from './RuletaYoshiModal'
 import { sound, triggerConfetti } from '../../utils/haptics'
 import { supabase } from '../../utils/supabase'
 import { transmitirEvento } from '../../utils/realtimeHub'
@@ -317,6 +318,29 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   const [retoSuperadoEnPartida, setRetoSuperadoEnPartida] = useState(false)
   const [dificultad, setDificultad] = useState(() => localStorage.getItem('muudel_yoshi_dificultad') || 'normal')
 
+  // Ruleta de Yoshi (Reglas 1-8)
+  const [mostrarRuleta, setMostrarRuleta] = useState(false)
+  const [saldoRuleta, setSaldoRuleta] = useState(() => {
+    if (typeof perfil?.monedas_ruleta_yoshi === 'number') return perfil.monedas_ruleta_yoshi
+    return Number(localStorage.getItem('muudel_yoshi_ruleta_saldo_' + perfil?.id) || 0)
+  })
+  const [monedasNuevaPartida, setMonedasNuevaPartida] = useState(0)
+
+  // Sincronizar saldo de ruleta con servidor al montar
+  useEffect(() => {
+    if (perfil?.id) {
+      fetch(`/api/ruleta/yoshi-estado?user_id=${perfil.id}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && typeof d.saldoMonedas === 'number') {
+            setSaldoRuleta(d.saldoMonedas)
+            localStorage.setItem('muudel_yoshi_ruleta_saldo_' + perfil.id, String(d.saldoMonedas))
+          }
+        })
+        .catch(() => {})
+    }
+  }, [perfil?.id])
+
   // Mutable refs usadas dentro del game loop (evitar closures stale)
   const retoSuperadoRef = useRef(false)
   const juegoEstadoRef = useRef('inicio')
@@ -449,33 +473,33 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     }
 
     const diff = DIFICULTADES_YOSHI[dificultadRef.current || 'normal'] || DIFICULTADES_YOSHI.normal
-    // Sin límite diario de monedas: todo lo que consigas se acredita con el multiplicador de dificultad
-    const basePuntos = Math.max(0, Math.floor(coinsFinales * diff.coinMultiplier))
-    const bonusVictoria = esVictoria ? Math.round(25 * diff.coinMultiplier) : 0
-    const monedasAcreditar = basePuntos + bonusVictoria
+    // Reglas 1 y 2: Las monedas recogidas en la partida pasan al saldo de ruleta de Yoshi.
+    // Las monedas de Yoshi SOLO se apuestan en esta ruleta para ganar StevenEuros.
+    const monedasGanadas = Math.max(0, Math.floor(coinsFinales * diff.coinMultiplier))
+    setMonedasPartida(monedasGanadas)
+    setMonedasNuevaPartida(monedasGanadas)
 
-    if (monedasAcreditar > 0 && p) {
-      const fecha = new Date().toISOString().split('T')[0]
-      const hoyActuales = Number(localStorage.getItem(`muudel_arcade_monedas_${fecha}_${p?.id}`) || 0)
-      const nuevoHoy = hoyActuales + monedasAcreditar
-      localStorage.setItem(`muudel_arcade_monedas_${fecha}_${p.id}`, String(nuevoHoy))
-      setMonedasHoyGanadas(nuevoHoy)
+    if (monedasGanadas > 0 && p) {
+      setSaldoRuleta(prev => {
+        const nuevo = Math.min(500, prev + monedasGanadas)
+        localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(nuevo))
+        return nuevo
+      })
 
-      const nuevosPuntos = (p.puntos_total || 0) + monedasAcreditar
-      localStorage.setItem('racha_local_user', JSON.stringify({ ...p, puntos_total: nuevosPuntos }))
+      fetch('/api/ruleta/yoshi-acumular', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: p.id, monedas_partida: monedasGanadas })
+      }).catch(() => {})
 
       try {
-        await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', p.id)
         await supabase.from('juegos_puntuaciones').insert({
           user_id: p.id, juego: 'yoshi_runner',
-          puntos: scoreFinal, monedas_ganadas: monedasAcreditar
+          puntos: scoreFinal, monedas_ganadas: monedasGanadas
         })
       } catch (_) {}
-
-      transmitirEvento('puntos_actualizados', { userId: p.id, nuevosPuntos })
-      onMonedasGanadas?.(monedasAcreditar)
     }
-  }, [mejorPuntuacion, onMonedasGanadas])
+  }, [mejorPuntuacion])
 
   // ─── Iniciar partida ──────────────────────────────────────────────────────
   const iniciarPartida = useCallback(() => {
@@ -1664,6 +1688,28 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Acceso visible para tirar la ruleta con monedas guardadas (Regla 4) */}
+          <button
+            type="button"
+            onClick={() => setMostrarRuleta(true)}
+            title="Abrir Ruleta de Yoshi con tus monedas acumuladas"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 9999,
+              backgroundColor: 'rgba(251, 191, 36, 0.16)',
+              border: '1px solid rgba(251, 191, 36, 0.4)',
+              color: '#D97706',
+              fontSize: 11,
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            <span>🎰 Ruleta ({saldoRuleta} 🪙)</span>
+          </button>
+
           {juegoEstado === 'jugando' && (
             <div className="tabular-nums" style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-ink)' }}>
               {puntos}m
@@ -1748,35 +1794,123 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
               {DIFICULTADES_YOSHI[dificultad]?.descripcion}
             </div>
 
-            <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 8, backgroundColor: DIFICULTADES_YOSHI[dificultad]?.color || '#30D158', fontWeight: 800, fontSize: 14, padding: '10px 24px', borderRadius: 9999, boxShadow: '0 4px 14px rgba(0,0,0,0.3)', cursor: 'pointer' }}>
-              <Play size={16} fill="#FFF" /><span>Jugar en {DIFICULTADES_YOSHI[dificultad]?.nombre}</span>
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => setMostrarRuleta(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  padding: '8px 16px',
+                  borderRadius: 9999,
+                  backgroundColor: 'rgba(251, 191, 36, 0.2)',
+                  border: '1px solid #FBBF24',
+                  color: '#FBBF24',
+                  cursor: 'pointer'
+                }}
+              >
+                <span>🎰 Ruleta ({saldoRuleta} 🪙)</span>
+              </button>
+
+              <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 8, backgroundColor: DIFICULTADES_YOSHI[dificultad]?.color || '#30D158', fontWeight: 800, fontSize: 14, padding: '10px 24px', borderRadius: 9999, boxShadow: '0 4px 14px rgba(0,0,0,0.3)', cursor: 'pointer' }}>
+                <Play size={16} fill="#FFF" /><span>Jugar en {DIFICULTADES_YOSHI[dificultad]?.nombre}</span>
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Game Over */}
+        {/* Game Over con integración de Ruleta de Yoshi (Reglas 1-8) */}
         {juegoEstado === 'muerto' && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#FFF' }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color: '#FF3B30' }}>FIN DE PARTIDA</div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 13, fontWeight: 700 }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 7, color: '#FFF', padding: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#FF3B30' }}>FIN DE PARTIDA</div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 13, fontWeight: 700 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+{monedasPartida} SE (Sin límite)</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} Monedas Yoshi</div>
             </div>
-            <div style={{ fontSize: 11, color: DIFICULTADES_YOSHI[dificultad]?.color, fontWeight: 700 }}>
-              Modo: {DIFICULTADES_YOSHI[dificultad]?.nombre} ({DIFICULTADES_YOSHI[dificultad]?.badge})
+
+            <div style={{
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.85)',
+              backgroundColor: 'rgba(251, 191, 36, 0.15)',
+              border: '1px solid rgba(251, 191, 36, 0.35)',
+              padding: '4px 10px',
+              borderRadius: 8,
+              maxWidth: 340
+            }}>
+              🪙 Saldo de Ruleta: <strong>{saldoRuleta} monedas</strong> (Límite 500 máx)
             </div>
+
             {retoSuperadoEnPartida && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: 'rgba(52,199,89,0.2)', border: '1px solid #34C759', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 700, color: '#86EFAC' }}>
                 <CheckCircle2 size={13} /><span>Reto completado</span>
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <button type="button" onClick={() => setJuegoEstado('inicio')} style={{ gap: 6, fontSize: 12, padding: '7px 14px', borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.18)', color: '#FFF', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                Cambiar dificultad
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 300, marginTop: 4 }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setMostrarRuleta(true)}
+                style={{
+                  gap: 6,
+                  backgroundColor: '#30D158',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  padding: '9px 18px',
+                  borderRadius: 9999,
+                  boxShadow: '0 4px 12px rgba(48, 209, 88, 0.35)',
+                  cursor: 'pointer',
+                  border: 'none',
+                  color: '#FFF'
+                }}
+              >
+                <span>🎰 Tirar Ruleta Ahora ({saldoRuleta} 🪙)</span>
               </button>
-              <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ gap: 6, backgroundColor: '#0A84FF', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9999 }}>
-                <RotateCcw size={14} /><span>Reintentar</span>
-              </button>
+
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setJuegoEstado('inicio')}
+                  style={{
+                    flex: 1,
+                    fontSize: 11,
+                    padding: '7px 10px',
+                    borderRadius: 9999,
+                    backgroundColor: 'rgba(255,255,255,0.18)',
+                    color: '#FFF',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  Menú inicio
+                </button>
+                <button
+                  type="button"
+                  onClick={iniciarPartida}
+                  style={{
+                    flex: 1,
+                    gap: 4,
+                    backgroundColor: '#0A84FF',
+                    color: '#FFF',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    padding: '7px 12px',
+                    borderRadius: 9999,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <RotateCcw size={13} />
+                  <span>Reintentar</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1871,6 +2005,33 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           </button>
         </div>
       </div>
+
+      {/* Modal interactivo de Ruleta de Yoshi (Reglas 1-8) */}
+      {mostrarRuleta && (
+        <RuletaYoshiModal
+          perfil={perfil}
+          saldoMonedasRuleta={saldoRuleta}
+          monedasPartidaRecienGanadas={monedasNuevaPartida}
+          esGameOver={juegoEstado === 'muerto'}
+          onActualizarSaldoMonedas={(nuevo) => {
+            setSaldoRuleta(nuevo)
+            setMonedasNuevaPartida(0)
+          }}
+          onActualizarStevenEuros={(nuevosPuntos) => {
+            if (perfil) perfil.puntos_total = nuevosPuntos
+            window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: perfil?.id } }))
+          }}
+          onCerrar={() => {
+            setMostrarRuleta(false)
+            setMonedasNuevaPartida(0)
+          }}
+          onVolverAJugar={() => {
+            setMostrarRuleta(false)
+            setMonedasNuevaPartida(0)
+            iniciarPartida()
+          }}
+        />
+      )}
     </div>
   )
 }

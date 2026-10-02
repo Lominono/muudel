@@ -608,7 +608,8 @@ export function PanelMensajesDirectos({
           <form
             onSubmit={handleEnviar}
             style={{
-              padding: '10px 16px 14px',
+              padding: '10px 14px',
+              paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
               borderTop: '1px solid var(--color-separator)',
               display: 'flex',
               gap: 8,
@@ -622,20 +623,21 @@ export function PanelMensajesDirectos({
               type="button"
               onClick={() => setMostrarSellos(!mostrarSellos)}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
+                width: 44,
+                height: 44,
+                borderRadius: 12,
                 border: '1px solid var(--color-separator)',
-                background: mostrarSellos ? 'rgba(10, 132, 255, 0.15)' : 'rgba(120, 120, 128, 0.08)',
+                background: mostrarSellos ? 'rgba(10, 132, 255, 0.15)' : 'var(--color-fill-secondary)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--color-accent)'
+                color: 'var(--color-accent)',
+                flexShrink: 0
               }}
               title="Añadir sello de tinta"
             >
-              <Stamp size={16} />
+              <Stamp size={18} />
             </button>
 
             {/* Menú flotante de sellos */}
@@ -643,11 +645,11 @@ export function PanelMensajesDirectos({
               <div
                 style={{
                   position: 'absolute',
-                  bottom: 56,
-                  left: 16,
+                  bottom: 60,
+                  left: 14,
                   backgroundColor: 'var(--color-surface)',
                   border: '1px solid var(--color-separator)',
-                  borderRadius: 12,
+                  borderRadius: 14,
                   padding: 8,
                   boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
                   display: 'flex',
@@ -664,7 +666,7 @@ export function PanelMensajesDirectos({
                       setMostrarSellos(false)
                     }}
                     className={s.clase}
-                    style={{ fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}
+                    style={{ fontSize: 11, padding: '4px 10px', cursor: 'pointer', borderRadius: 9999 }}
                   >
                     {s.label}
                   </button>
@@ -683,11 +685,12 @@ export function PanelMensajesDirectos({
               }}
               style={{
                 flex: 1,
-                padding: '9px 14px',
-                borderRadius: 9999,
+                minHeight: 44,
+                padding: '9px 16px',
+                borderRadius: 22,
                 border: '1px solid var(--color-separator)',
-                backgroundColor: 'rgba(120, 120, 128, 0.06)',
-                fontSize: 14,
+                backgroundColor: 'var(--color-fill-secondary)',
+                fontSize: 15,
                 outline: 'none',
                 color: 'var(--color-ink)'
               }}
@@ -698,18 +701,19 @@ export function PanelMensajesDirectos({
               disabled={!nuevoTexto.trim()}
               className="btn-primary"
               style={{
-                width: 38,
-                height: 38,
+                width: 44,
+                height: 44,
                 borderRadius: '50%',
                 padding: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: nuevoTexto.trim() ? 1 : 0.4,
-                cursor: nuevoTexto.trim() ? 'pointer' : 'default'
+                cursor: nuevoTexto.trim() ? 'pointer' : 'default',
+                flexShrink: 0
               }}
             >
-              <Send size={16} />
+              <Send size={18} />
             </button>
           </form>
         </section>
