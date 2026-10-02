@@ -23,6 +23,35 @@ function ContenidoApp() {
   const { session, perfil, setPerfil, cargando, cerrarSesion } = useAuth()
   const [alertaClase, setAlertaClase] = useState(null)
   const [pvpPopup, setPvpPopup] = useState(null)
+  const [mostrarAvisoReinicio, setMostrarAvisoReinicio] = useState(false)
+  const [bonoBienvenida, setBonoBienvenida] = useState(0)
+
+  // Aviso de reinicio de economía y asignación del bono de bienvenida
+  useEffect(() => {
+    if (!perfil?.id) return
+    const storageKey = `aviso_reinicio_economia_${perfil.id}`
+    const yaVisto = localStorage.getItem(storageKey)
+    if (!yaVisto) {
+      fetch('/api/ruleta/verificar-bienvenida', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': perfil.id
+        }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data?.bonoOtorgado) {
+            setBonoBienvenida(data.bono)
+            setPerfil(prev => ({ ...prev, puntos_total: data.nuevoSaldo }))
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          setMostrarAvisoReinicio(true)
+        })
+    }
+  }, [perfil?.id])
 
   // Escuchar notificaciones y comunicados globales de clase en vivo
   useEffect(() => {
@@ -602,6 +631,107 @@ function ContenidoApp() {
           </>
         )}
       </Routes>
+      {/* MODAL DE AVISO DE REINICIO DE ECONOMÍA */}
+      {mostrarAvisoReinicio && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          backgroundColor: 'rgba(0, 0, 0, 0.72)',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <div style={{
+            maxWidth: 420,
+            width: '100%',
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
+            borderRadius: 22,
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6)',
+            padding: '26px 22px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+            textAlign: 'center',
+            color: '#FFFFFF'
+          }}>
+            <div style={{
+              width: 58,
+              height: 58,
+              margin: '0 auto',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(10, 132, 255, 0.15)',
+              color: '#0A84FF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <RotateCcw size={28} />
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 6px', color: '#FFF' }}>
+                Economía de Clase Reiniciada
+              </h3>
+              <p style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: 'rgba(255, 255, 255, 0.85)' }}>
+                Hemos reiniciado la economía de StevenEuros. <strong>Tus artículos se mantienen.</strong>
+              </p>
+            </div>
+
+            <div style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              borderRadius: 14,
+              padding: '12px 14px',
+              textAlign: 'left',
+              fontSize: 12,
+              lineHeight: 1.5,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              border: '1px solid rgba(255, 255, 255, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#34C759' }}>
+                <span>💶</span>
+                <span>Bono de bienvenida: +10 StevenEuros acreditados</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 255, 255, 0.8)' }}>
+                <span>🛡️</span>
+                <span>Tus marcos, títulos y mejoras previas siguen activos en tu cuenta y Mochila.</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 255, 255, 0.8)' }}>
+                <span>🏷️</span>
+                <span>Precios de tienda reajustados para ser alcanzables jugando.</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (perfil?.id) localStorage.setItem(`aviso_reinicio_economia_${perfil.id}`, 'true')
+                setMostrarAvisoReinicio(false)
+                sound.playPop()
+              }}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: 'none',
+                backgroundColor: '#0A84FF',
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
       {session && <TabBar />}
     </div>
   )

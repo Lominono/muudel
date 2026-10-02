@@ -1063,3 +1063,215 @@ $$;
 
 
 
+
+
+-- ============================================================================
+-- APARTADO 12: ECONOMÍA DE STEVEEUROS, BANCA SISTEMA Y LEDGER INMUTABLE
+-- ============================================================================
+
+-- Columnas de control en profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS monedas_ruleta_yoshi integer DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS ultimo_bonus_diario_se date;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS racha_bonus_se integer DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS ultimo_jackpot_at timestamptz;
+
+-- Permitir rol sistema en profiles
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_rol_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_rol_check CHECK (rol IN ('alumno', 'moderador', 'sistema'));
+
+-- Perfil de la Banca Sistema
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = '00000000-0000-4000-a000-000000000000') THEN
+    INSERT INTO public.profiles (
+      id, nombre, username, avatar_emoji, color_acento, rol, puntos_total, monedas_ruleta_yoshi, onboarding_completado, frase
+    ) VALUES (
+      '00000000-0000-4000-a000-000000000000', 'BANCA SISTEMA', 'banca_sistema', '🏛️', '#FFD700', 'sistema', 5000, 0, true, 'Banco Central y Reserva de Liquidez de SMR2'
+    );
+  END IF;
+END $$;
+
+-- Ledger inmutable
+CREATE TABLE IF NOT EXISTS public.steven_ledger (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id uuid REFERENCES public.profiles(id) ON DELETE RESTRICT NOT NULL,
+  contrapartida_id uuid REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  tipo text NOT NULL CHECK (tipo IN (
+    'saldo_inicial', 'yoshi_partida', 'ruleta_yoshi', 'bonus_diario', 'mision',
+    'apuesta_casino', 'premio_casino', 'apuesta_pvp', 'premio_pvp', 'comision_pvp',
+    'tienda', 'ajuste_admin', 'reversion_admin', 'emision_diaria_banca'
+  )),
+  moneda text NOT NULL CHECK (moneda IN ('steveneuros', 'monedas_yoshi')),
+  cantidad integer NOT NULL,
+  saldo_anterior integer NOT NULL,
+  saldo_posterior integer NOT NULL,
+  actor_id uuid REFERENCES public.profiles(id),
+  motivo text NOT NULL,
+  idempotency_key text UNIQUE,
+  detalles jsonb DEFAULT '{}'::jsonb,
+  created_at timestamptz DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_steven_ledger_user ON public.steven_ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_steven_ledger_contrapartida ON public.steven_ledger(contrapartida_id);
+CREATE INDEX IF NOT EXISTS idx_steven_ledger_tipo ON public.steven_ledger(tipo);
+CREATE INDEX IF NOT EXISTS idx_steven_ledger_idempotency ON public.steven_ledger(idempotency_key);
+
+-- Trigger inmutabilidad
+CREATE OR REPLACE FUNCTION public.fn_prevent_ledger_mutation()
+RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'El ledger contable es estrictamente inmutable. No se permite UPDATE ni DELETE.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_ledger_mutation ON public.steven_ledger;
+CREATE TRIGGER trg_prevent_ledger_mutation
+BEFORE UPDATE OR DELETE ON public.steven_ledger
+FOR EACH ROW EXECUTE FUNCTION public.fn_prevent_ledger_mutation();
+
+-- Sesiones de Yoshi
+CREATE TABLE IF NOT EXISTS public.yoshi_sesiones (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  session_token text UNIQUE NOT NULL,
+  started_at timestamptz DEFAULT NOW() NOT NULL,
+  expires_at timestamptz DEFAULT (NOW() + interval '15 minutes') NOT NULL,
+  estado text DEFAULT 'activa' CHECK (estado IN ('activa', 'finalizada', 'caducada', 'invalida')),
+  monedas_recogidas integer DEFAULT 0,
+  duracion_ms integer DEFAULT 0,
+  distancia_m integer DEFAULT 0,
+  idempotency_key text UNIQUE,
+  finalizada_at timestamptz,
+  created_at timestamptz DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_yoshi_sesiones_user ON public.yoshi_sesiones(user_id, estado);
+CREATE INDEX IF NOT EXISTS idx_yoshi_sesiones_token ON public.yoshi_sesiones(session_token);
+
+-- Migración inicial de saldos
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN SELECT id, puntos_total, monedas_ruleta_yoshi FROM public.profiles LOOP
+    IF NOT EXISTS (SELECT 1 FROM public.steven_ledger WHERE user_id = r.id AND tipo = 'saldo_inicial' AND moneda = 'steveneuros') THEN
+      INSERT INTO public.steven_ledger (
+        user_id, contrapartida_id, tipo, moneda, cantidad, saldo_anterior, saldo_posterior, motivo, idempotency_key
+      ) VALUES (
+        r.id, NULL, 'saldo_inicial', 'steveneuros', COALESCE(r.puntos_total, 0), 0, COALESCE(r.puntos_total, 0), 'Migración y cuadre inicial de StevenEuros', 'init_se_' || r.id
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+ALTER TABLE public.steven_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.yoshi_sesiones ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "lectura ledger propio o admin" ON public.steven_ledger;
+CREATE POLICY "lectura ledger propio o admin" ON public.steven_ledger
+FOR SELECT USING (
+  auth.uid() = user_id
+  OR auth.uid() = actor_id
+  OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND rol IN ('moderador', 'admin'))
+);
+
+DROP POLICY IF EXISTS "lectura sesiones propia" ON public.yoshi_sesiones;
+CREATE POLICY "lectura sesiones propia" ON public.yoshi_sesiones
+FOR SELECT USING (auth.uid() = user_id);
+
+-- ============================================================================
+-- 13. TABLA CENTRAL DE PRECIOS DE TIENDA E HISTORIAL
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.tienda_precios (
+  id text PRIMARY KEY,
+  titulo text NOT NULL,
+  categoria text NOT NULL,
+  tramo text NOT NULL CHECK (tramo IN ('comun', 'raro', 'epico', 'legendario')),
+  precio integer NOT NULL CHECK (precio > 0),
+  stock_max integer,
+  activo boolean DEFAULT true NOT NULL,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  updated_at timestamptz DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.tienda_precios ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Todos pueden leer precios de tienda" ON public.tienda_precios;
+CREATE POLICY "Todos pueden leer precios de tienda"
+  ON public.tienda_precios FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Solo admins modifican precios de tienda" ON public.tienda_precios;
+CREATE POLICY "Solo admins modifican precios de tienda"
+  ON public.tienda_precios FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid()
+        AND (profiles.rol IN ('moderador', 'admin') OR profiles.id = '00000000-0000-4000-a000-000000000001')
+    )
+  );
+
+CREATE TABLE IF NOT EXISTS public.tienda_precios_historial (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  item_id text REFERENCES public.tienda_precios(id) ON DELETE CASCADE NOT NULL,
+  precio_anterior integer NOT NULL,
+  precio_nuevo integer NOT NULL,
+  motivo text DEFAULT 'Ajuste de equilibrio de aula' NOT NULL,
+  actor_id uuid REFERENCES public.profiles(id),
+  created_at timestamptz DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.tienda_precios_historial ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Lectura de historial de precios para todos" ON public.tienda_precios_historial;
+CREATE POLICY "Lectura de historial de precios para todos"
+  ON public.tienda_precios_historial FOR SELECT
+  TO public
+  USING (true);
+
+INSERT INTO public.tienda_precios (id, titulo, categoria, tramo, precio, stock_max, activo)
+VALUES
+  ('sello_tinta_chat', 'Sello de Tinta Lacrada en Chat', 'efectos', 'comun', 30, NULL, true),
+  ('confeti_chat', 'Lluvia de Confeti en Aula', 'efectos', 'comun', 30, NULL, true),
+  ('terremoto_chat', 'Sacudida Sísmica de Aula', 'efectos', 'comun', 30, NULL, true),
+  ('sirena_descanso', 'Silbato del Recreo (18:10)', 'efectos', 'comun', 30, NULL, true),
+  ('megafono_chat', 'Aviso Fijado con Megáfono', 'efectos', 'comun', 30, NULL, true),
+  ('seguro_ruleta', 'Seguro de Ruleta (Reembolso 50%)', 'juegos', 'comun', 30, NULL, true),
+  ('yoshi_vida_extra', 'Batería Extra Yoshi Runner (+1 Vida)', 'juegos', 'comun', 30, NULL, true),
+  ('ruleta_max_50', 'Licencia Casino Nivel 1 (Tope 50)', 'juegos', 'comun', 30, NULL, true),
+  ('titulo_terminal', 'Título: Hacker de Terminal', 'titulos', 'raro', 100, NULL, true),
+  ('titulo_centinela', 'Título: Centinela SMR2', 'titulos', 'raro', 100, NULL, true),
+  ('titulo_yoshi', 'Título: Domador de Yoshi', 'titulos', 'raro', 100, NULL, true),
+  ('titulo_vlan', 'Título: Maestro de VLANs', 'titulos', 'raro', 100, NULL, true),
+  ('pin_arcade_master', 'Medalla Estrella Yoshi Runner', 'insignias', 'raro', 100, NULL, true),
+  ('pin_hacker', 'Insignia Hacker Ético SMR2', 'insignias', 'raro', 100, NULL, true),
+  ('racha_x2', 'Multiplicador x2 de Racha', 'racha', 'raro', 100, NULL, true),
+  ('marco_obsidiana', 'Marco Obsidiana Stealth', 'marcos', 'raro', 100, NULL, true),
+  ('marco_tinta', 'Marco Sello Carmín', 'marcos', 'raro', 100, NULL, true),
+  ('ruleta_max_100', 'Licencia Casino Nivel 2 (Tope 100)', 'juegos', 'raro', 100, NULL, true),
+  ('titulo_root', 'Título: Linux Root Master', 'titulos', 'epico', 200, 3, true),
+  ('titulo_mvp', 'Título: MVP del Aula 15:30', 'titulos', 'epico', 200, 2, true),
+  ('marco_esmeralda', 'Marco Esmeralda Matrix', 'marcos', 'epico', 200, NULL, true),
+  ('marco_cyber', 'Marco Cyberpunk Neón', 'marcos', 'epico', 200, NULL, true),
+  ('marco_fuego', 'Marco Flama de Racha', 'marcos', 'epico', 200, NULL, true),
+  ('burbuja_matrix', 'Burbuja Matrix Consola', 'burbujas', 'epico', 200, NULL, true),
+  ('burbuja_carmin', 'Burbuja Carmín VIP en Chat', 'burbujas', 'epico', 200, 3, true),
+  ('congelar_racha', 'Escudo Congela-Racha', 'racha', 'epico', 200, NULL, true),
+  ('restaurar_racha', 'Fénix: Restaurador de Racha', 'racha', 'epico', 200, NULL, true),
+  ('marco_oro', 'Marco Dorado Imperial', 'marcos', 'legendario', 400, 2, true),
+  ('pin_oro_smr2', 'Pin de Oro SMR2 Coleccionista', 'insignias', 'legendario', 400, 1, true),
+  ('dados_oro_pvp', 'Dados Dorados VIP (Duelos 1v1)', 'juegos', 'legendario', 400, NULL, true),
+  ('ruleta_max_500', 'Licencia Casino VIP High Roller', 'juegos', 'legendario', 400, 2, true)
+ON CONFLICT (id) DO UPDATE SET
+  titulo = EXCLUDED.titulo,
+  categoria = EXCLUDED.categoria,
+  tramo = EXCLUDED.tramo,
+  precio = EXCLUDED.precio,
+  stock_max = EXCLUDED.stock_max,
+  activo = EXCLUDED.activo,
+  updated_at = now();
+

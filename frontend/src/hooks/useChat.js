@@ -710,10 +710,32 @@ export function useChat(canal, perfil = null) {
       }).eq('id', messageId)
 
       if (nuevoEstado && autorId) {
-        const { data: p } = await supabase.from('profiles').select('puntos_total').eq('id', autorId).single()
-        if (p) {
-          const nuevosPts = (p.puntos_total || 0) + 10
-          await supabase.from('profiles').update({ puntos_total: nuevosPts }).eq('id', autorId)
+        let nuevosPts = 0
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          try {
+            const { data: sData } = await supabase.auth.getSession()
+            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          } catch (_) {}
+          if (marcadorId) headers['x-user-id'] = marcadorId
+
+          const sResp = await fetch('/api/ruleta/feed-recompensa', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              userId: autorId,
+              puntos: 10,
+              motivo: 'Solución destacada en Chat',
+              idempotency_key: `chat_solucion_${messageId}_${autorId}`
+            })
+          })
+          const sData = await sResp.json()
+          if (sData?.nuevoSaldo !== undefined) {
+            nuevosPts = sData.nuevoSaldo
+          }
+        } catch (_) {}
+
+        if (nuevosPts > 0) {
           transmitirEvento('puntos_actualizados', { userId: autorId, nuevosPuntos: nuevosPts })
           transmitirEvento('steveneuros_actualizados', { userId: autorId, nuevosPuntos: nuevosPts })
           window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { userId: autorId, nuevosPuntos: nuevosPts } }))

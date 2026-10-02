@@ -571,15 +571,32 @@ export function PantallaHoy() {
           const baseFeed = Number(configRec?.puntosPostFeed) || 10
           const ratio = analisisAntiIA.esGenuino ? 1.0 : 0.5
           const ptsExtra = Math.max(1, Math.round(baseFeed * ratio * mult))
-          const nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
+          let nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
+          try {
+            const headers = { 'Content-Type': 'application/json' }
+            try {
+              const { data: sData } = await supabase.auth.getSession()
+              if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+            } catch (_) {}
+            if (perfil?.id) headers['x-user-id'] = perfil.id
+
+            const fResp = await fetch('/api/ruleta/feed-recompensa', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                puntos: ptsExtra,
+                motivo: `Publicación en Feed (${categoriaPost || 'Aporte'})`,
+                idempotency_key: `feed_post_${perfil.id}_${Date.now()}`
+              })
+            })
+            const fData = await fResp.json()
+            if (fData?.nuevoSaldo !== undefined) {
+              nuevoSaldo = fData.nuevoSaldo
+            }
+          } catch (_) {}
 
           setPerfil({ ...perfil, puntos_total: nuevoSaldo })
           localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-
-          try {
-            await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
-          } catch (_) {}
-
           window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
           transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
 
@@ -779,12 +796,34 @@ export function PantallaHoy() {
       setNuevoComentarioTexto(prev => ({ ...prev, [postId]: '' }))
       transmitirEvento('nuevo_feed_comentario', { postId, comentario: nuevoCom })
 
-      // Micro-recompensa por comentar (+2 SE 💶)
+      // Micro-recompensa por comentar (+2 SE 💶 desde la Banca)
       if (perfil.rol !== 'moderador') {
-        const nuevoSaldo = (perfil.puntos_total || 0) + 2
+        let nuevoSaldo = (perfil.puntos_total || 0) + 2
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          try {
+            const { data: sData } = await supabase.auth.getSession()
+            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          } catch (_) {}
+          if (perfil?.id) headers['x-user-id'] = perfil.id
+
+          const cResp = await fetch('/api/ruleta/feed-recompensa', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              puntos: 2,
+              motivo: 'Comentario en feed',
+              idempotency_key: `feed_com_${perfil.id}_${Date.now()}`
+            })
+          })
+          const cData = await cResp.json()
+          if (cData?.nuevoSaldo !== undefined) {
+            nuevoSaldo = cData.nuevoSaldo
+          }
+        } catch (_) {}
+
         setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
         localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-        await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
         window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
         transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
       }

@@ -155,15 +155,11 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     setCargandoCrupier(true)
     sound.playChipSound()
 
-    // Deducir apuesta inicial
+    // Deducir apuesta inicial en interfaz local (se liquida al finalizar mano con /api/ruleta/casino-liquidar)
     const saldoTrasApuesta = (perfil.puntos_total || 0) - apuestaCrupier
     const perfilActualizado = { ...perfil, puntos_total: saldoTrasApuesta }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: saldoTrasApuesta }).eq('id', perfil.id)
-    } catch (_) {}
 
     // Barajar 2 barajas para mayor aleatoriedad
     const nuevaBaraja = crearBarajaBarajada(2)
@@ -242,15 +238,11 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     }
 
     sound.playChipSound()
-    // Deducir el monto adicional para doblar
+    // Deducir el monto adicional para doblar en interfaz local
     const saldoTrasDoblar = (perfil.puntos_total || 0) - apuestaCrupier
     const perfilActualizado = { ...perfil, puntos_total: saldoTrasDoblar }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: saldoTrasDoblar }).eq('id', perfil.id)
-    } catch (_) {}
 
     const apuestaDoblada = apuestaCrupier * 2
     setApuestaCrupier(apuestaDoblada)
@@ -317,51 +309,66 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     setResultadoCrupier(desenlace)
 
     let gananciaNeta = 0
-    let saldoFinal = perfil?.puntos_total || 0
+    let cobroTotal = 0
+    let nuevaRacha = rachaMesa
 
     if (desenlace.ganador === 'j1') {
-      // Ganó el jugador: registrar racha en mesa y bonificación combo
-      const nuevaRacha = rachaMesa + 1
+      // Ganó el jugador: racha cosmética en mesa (sin multiplicador inflacionario)
+      nuevaRacha = rachaMesa + 1
       setRachaMesa(nuevaRacha)
       localStorage.setItem('muudel_21_racha_' + perfil?.id, String(nuevaRacha))
 
-      let bonusMulti = 1
-      if (nuevaRacha >= 4) bonusMulti = 1.5 // +50% extra
-      else if (nuevaRacha === 3) bonusMulti = 1.25 // +25% extra
-      else if (nuevaRacha === 2) bonusMulti = 1.1 // +10% extra
-
-      const cobroBase = Math.floor(bet * desenlace.multiplicador)
-      const cobroTotal = Math.floor(cobroBase * bonusMulti)
+      // Regla de ventaja de la casa: 5% rake sobre ganancias netas (mínimo 1 SE)
+      const gananciaBruta = Math.floor(bet * (desenlace.multiplicador - 1))
+      const comision = gananciaBruta > 0 ? Math.max(1, Math.floor(gananciaBruta * 0.05)) : 0
+      cobroTotal = bet + Math.max(0, gananciaBruta - comision)
       gananciaNeta = cobroTotal - bet
-      saldoFinal += cobroTotal
 
       sound.playWin()
       triggerConfetti()
     } else if (desenlace.ganador === 'empate') {
-      // Empate: devolución de la apuesta sin romper racha
-      saldoFinal += bet
+      // Empate: devolución de la apuesta sin romper racha cosmética
+      cobroTotal = bet
       sound.playPop()
     } else {
-      // Derrota: reinicio de racha en la mesa
+      // Derrota: reinicio de racha cosmética en la mesa
+      nuevaRacha = 0
       setRachaMesa(0)
       localStorage.setItem('muudel_21_racha_' + perfil?.id, '0')
       sound.playLose()
     }
 
+    let saldoFinal = (perfil?.puntos_total || 0) + (cobroTotal - bet)
+
+    // Liquidar partida en el servidor contra la Banca
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      const cResp = await fetch('/api/ruleta/casino-liquidar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          apuesta: bet,
+          premio: cobroTotal,
+          juego: 'duelo21_crupier',
+          detalles: { manoJ, manoD, desenlace: desenlace.ganador, racha: nuevaRacha },
+          idempotency_key: `crupier21_${perfil?.id}_${Date.now()}`
+        })
+      })
+      const cData = await cResp.json()
+      if (cData?.nuevoSaldo !== undefined) {
+        saldoFinal = cData.nuevoSaldo
+      }
+    } catch (_) {}
+
     const perfilActualizado = { ...perfil, puntos_total: saldoFinal }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: saldoFinal }).eq('id', perfil.id)
-      if (gananciaNeta > 0) {
-        await supabase.from('juegos_puntuaciones').insert([{
-          user_id: perfil.id,
-          juego: 'blackjack_21',
-          puntuacion: gananciaNeta
-        }])
-      }
-    } catch (_) {}
   }
 
   // =========================================================================
@@ -419,7 +426,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
 
     try {
-      await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', perfil.id)
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      await fetch('/api/ruleta/pvp-apostar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          cantidad: apuestaPvp,
+          partidaId: 'crear_' + Date.now(),
+          juego: 'blackjack_21',
+          idempotency_key: `stake_21_create_${perfil.id}_${Date.now()}`
+        })
+      })
     } catch (_) {}
 
     // Generar baraja y mano inicial para el creador
@@ -491,7 +514,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
 
     try {
-      await supabase.from('profiles').update({ puntos_total: saldoDevuelto }).eq('id', perfil.id)
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      await fetch('/api/ruleta/pvp-cancelar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          cantidad: betAmt,
+          partidaId,
+          juego: 'blackjack_21',
+          idempotency_key: `refund_21_${partidaId}_${perfil.id}`
+        })
+      })
       await supabase.from('pvp_blackjack').update({ estado: 'cancelado' }).eq('id', partidaId)
       await supabase.from('pvp_partidas').update({ estado: 'cancelado' }).eq('id', partidaId)
     } catch (_) {}
@@ -540,7 +579,23 @@ export function Duelo21PvP({ perfil, setPerfil }) {
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
 
     try {
-      await supabase.from('profiles').update({ puntos_total: saldoTrasEntrar }).eq('id', perfil.id)
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      await fetch('/api/ruleta/pvp-apostar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          cantidad: lobby.apuesta,
+          partidaId: lobby.id,
+          juego: 'blackjack_21',
+          idempotency_key: `stake_21_join_${lobby.id}_${perfil.id}`
+        })
+      })
     } catch (_) {}
 
     // Normalizar mano del creador si vino como string
@@ -691,26 +746,40 @@ export function Duelo21PvP({ perfil, setPerfil }) {
       ganadorId = 'empate'
     }
 
-    // Actualizar puntos de ganador / empate en Supabase de forma garantizada
+    // Liquidar puntos mediante endpoint centralizado con rake del 5% a la Banca
     try {
       if (ganadorId && ganadorId !== 'empate') {
-        const { data: profGanador } = await supabase.from('profiles').select('puntos_total').eq('id', ganadorId).single()
-        const saldoG = (profGanador?.puntos_total || 0) + boteTotal
-        await supabase.from('profiles').update({ puntos_total: saldoG }).eq('id', ganadorId)
-        
-        await supabase.from('juegos_puntuaciones').insert([{
-          user_id: ganadorId,
-          juego: 'blackjack_21',
-          puntuacion: boteTotal
-        }])
-      } else if (ganadorId === 'empate') {
-        if (partidaActivaPvp.creador_id) {
-          const { data: pC } = await supabase.from('profiles').select('puntos_total').eq('id', partidaActivaPvp.creador_id).single()
-          await supabase.from('profiles').update({ puntos_total: (pC?.puntos_total || 0) + partidaActivaPvp.apuesta }).eq('id', partidaActivaPvp.creador_id)
+        const headers = { 'Content-Type': 'application/json' }
+        try {
+          const { data: sData } = await supabase.auth.getSession()
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+        } catch (_) {}
+        if (perfil?.id) headers['x-user-id'] = perfil.id
+
+        const pvpResp = await fetch('/api/admin/comision-pvp', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ganadorId,
+            bote: boteTotal,
+            juego: 'blackjack_21',
+            partidaId: partidaActivaPvp.id,
+            idempotency_key: `pvp_21_${partidaActivaPvp.id}_${ganadorId}`
+          })
+        })
+        const pvpData = await pvpResp.json()
+
+        if (ganadorId === perfil?.id && pvpData?.nuevoSaldoGanador !== undefined) {
+          const nuevoSaldo = pvpData.nuevoSaldoGanador
+          setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
+          localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
         }
-        if (partidaActivaPvp.oponente_id) {
-          const { data: pO } = await supabase.from('profiles').select('puntos_total').eq('id', partidaActivaPvp.oponente_id).single()
-          await supabase.from('profiles').update({ puntos_total: (pO?.puntos_total || 0) + partidaActivaPvp.apuesta }).eq('id', partidaActivaPvp.oponente_id)
+      } else if (ganadorId === 'empate') {
+        // Empate: devolución de la apuesta
+        if (partidaActivaPvp.creador_id === perfil?.id || partidaActivaPvp.oponente_id === perfil?.id) {
+          const nuevoSaldo = (perfil?.puntos_total || 0) + partidaActivaPvp.apuesta
+          setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
+          localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
         }
       }
     } catch (errPuntos) {
@@ -719,15 +788,9 @@ export function Duelo21PvP({ perfil, setPerfil }) {
 
     // Efectos y estado local para el usuario activo
     if (ganadorId === perfil?.id) {
-      const nuevoSaldo = (perfil.puntos_total || 0) + boteTotal
-      setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
-      localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
       sound.playWin()
       triggerConfetti()
     } else if (ganadorId === 'empate') {
-      const nuevoSaldo = (perfil?.puntos_total || 0) + partidaActivaPvp.apuesta
-      setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
-      localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
       sound.playPop()
     } else {
       sound.playLose()

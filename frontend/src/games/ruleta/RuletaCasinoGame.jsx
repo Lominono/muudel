@@ -331,15 +331,11 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
     setResultadoGanancia(null)
     setUltimaApuesta({ ...apuestas })
 
-    // Deduct bet immediately
+    // Deduct bet locally during wheel spin
     const nuevoSaldoTrasApuesta = saldoActual - totalApostado
     const perfilActualizado = { ...perfil, puntos_total: nuevoSaldoTrasApuesta }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: nuevoSaldoTrasApuesta }).eq('id', perfil.id)
-    } catch (e) {}
 
     // 1. Determine winning number (server-first, fallback to crypto client)
     const token = (await supabase.auth.getSession()).data.session?.access_token
@@ -554,16 +550,39 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
       }
     }
 
-    const nuevoTotalFinal = saldoBase + gananciaTotal
+    let nuevoTotalFinal = saldoBase + gananciaTotal
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      const lResp = await fetch('/api/ruleta/casino-liquidar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          apuesta: totalApostado,
+          premio: gananciaTotal,
+          juego: 'ruleta_casino',
+          detalles: { numeroGanador, gananciaTotal, totalApostado },
+          idempotency_key: `casino_ruleta_${perfil?.id}_${Date.now()}`
+        })
+      })
+      const lData = await lResp.json()
+      if (lData?.nuevoSaldo !== undefined) {
+        nuevoTotalFinal = lData.nuevoSaldo
+      }
+    } catch (e) {
+      console.warn('Aviso liquidando ruleta contra la Banca:', e)
+    }
+
     const perfilLiquidado = { ...perfil, puntos_total: nuevoTotalFinal }
     setPerfil(perfilLiquidado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilLiquidado))
     window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoTotalFinal, userId: perfil.id } }))
     transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoTotalFinal, userId: perfil.id })
-
-    try {
-      await supabase.from('profiles').update({ puntos_total: nuevoTotalFinal }).eq('id', perfil.id)
-    } catch (e) {}
 
     setResultadoGanancia({
       ganancia: gananciaTotal,
@@ -616,14 +635,34 @@ export function RuletaCasinoGame({ perfil, setPerfil }) {
 
   const solicitarBono = async () => {
     if (solicitandoBono || saldoActual > 0 || yaReclamoBonoHoy) return
-    setSolicitandoBono(true); sound.playStamp()
-    const nuevosPuntos = 5
-    const actualizado = { ...perfil, puntos_total: nuevosPuntos }
-    setPerfil(actualizado)
-    try { localStorage.setItem('racha_local_user', JSON.stringify(actualizado)); localStorage.setItem(bonoStorageKey, '1') } catch (e) {}
-    setYaReclamoBonoHoy(true)
-    try { await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id) } catch (e) {}
-    triggerConfetti(); setSolicitandoBono(false)
+    setSolicitandoBono(true)
+    sound.playStamp()
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      const bResp = await fetch('/api/ruleta/bono-diario', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ idempotency_key: `bono_ruleta_${perfil?.id}_${new Date().toISOString().slice(0, 10)}` })
+      })
+      const bData = await bResp.json()
+      if (bData?.nuevoSaldo !== undefined) {
+        const actualizado = { ...perfil, puntos_total: bData.nuevoSaldo }
+        setPerfil(actualizado)
+        try {
+          localStorage.setItem('racha_local_user', JSON.stringify(actualizado))
+          localStorage.setItem(bonoStorageKey, '1')
+        } catch (e) {}
+        setYaReclamoBonoHoy(true)
+        triggerConfetti()
+      }
+    } catch (e) {}
+    setSolicitandoBono(false)
   }
 
   // ─── REUSABLE CHIP BADGE ─────────────────────────────────

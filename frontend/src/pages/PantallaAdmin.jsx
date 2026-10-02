@@ -66,6 +66,7 @@ import {
   guardarConfigRecompensas,
   cargarConfigRecompensasDesdeServidor
 } from '../utils/recompensasConfig'
+import { PanelSaludEconomicaBanca } from '../components/PanelSaludEconomicaBanca'
 
 export const obtenerPinAdmin = () => {
   return localStorage.getItem('muudel_admin_pin_custom') || '2026'
@@ -326,11 +327,6 @@ export function PantallaAdmin() {
   // Configuración de Economía y Ganancias de la Clase
   const [configRecompensas, setConfigRecompensas] = useState(() => obtenerConfigRecompensas())
   const [guardandoRecompensas, setGuardandoRecompensas] = useState(false)
-  const [ajusteMasivoCantidad, setAjusteMasivoCantidad] = useState(25)
-  const [ajusteMasivoMotivo, setAjusteMasivoMotivo] = useState('Recompensa de clase')
-  const [enviandoAjusteMasivo, setEnviandoAjusteMasivo] = useState(false)
-  const [busquedaEconomia, setBusquedaEconomia] = useState('')
-  const [saldoCustomInputs, setSaldoCustomInputs] = useState({})
 
   const fechaHoy = new Date().toISOString().split('T')[0]
   const timerInactividadRef = useRef(null)
@@ -1137,7 +1133,7 @@ export function PantallaAdmin() {
       const alumnoActual = todosAlumnos.find((a) => a.id === solicitud.userId)
       if (alumnoActual) {
         const nuevosPuntos = (alumnoActual.puntos_total || 0) + puntos
-        await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', solicitud.userId)
+        setTodosAlumnos(prev => prev.map(a => a.id === solicitud.userId ? { ...a, puntos_total: nuevosPuntos } : a))
       }
     } catch (e) {}
 
@@ -1211,7 +1207,6 @@ export function PantallaAdmin() {
           }
           try {
             await supabase.from('checkins').upsert(rec)
-            await supabase.from('profiles').update({ puntos_total: (al.puntos_total || 0) + 10 }).eq('id', al.id)
           } catch (e) {}
         }
 
@@ -1248,13 +1243,33 @@ export function PantallaAdmin() {
       mensaje: `Se le devolverán los ${canje.costo} StevenEuros (SE 💶) inmediatamente a su saldo.`,
       accion: async () => {
         setModalConfirmacion(null)
-        // 1. Devolver puntos al alumno
+        // 1. Devolver puntos al alumno mediante ajuste contable contra la Banca
         const alumno = todosAlumnos.find(a => a.id === canje.userId)
         if (alumno) {
-          const nuevosPuntos = (alumno.puntos_total || 0) + canje.costo
+          let nuevosPuntos = (alumno.puntos_total || 0) + canje.costo
           try {
-            await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', canje.userId)
-          } catch (e) {}
+            const headers = { 'Content-Type': 'application/json' }
+            try {
+              const { data: sData } = await supabase.auth.getSession()
+              if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+            } catch (_) {}
+            if (perfil?.id) headers['x-user-id'] = perfil.id
+
+            const rResp = await fetch('/api/admin/ajustar-saldo', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                targetUserId: canje.userId,
+                cantidad: canje.costo,
+                motivo: `Reembolso por canje rechazado: "${canje.titulo || 'Artículo'}"`,
+                idempotency_key: `refund_canje_${canje.id}_${Date.now()}`
+              })
+            })
+            const rData = await rResp.json()
+            if (rData?.resultado?.nuevoSaldoUsuario !== undefined) {
+              nuevosPuntos = rData.resultado.nuevoSaldoUsuario
+            }
+          } catch (_) {}
           setTodosAlumnos(prev => prev.map(a => a.id === canje.userId ? { ...a, puntos_total: nuevosPuntos } : a))
         }
 
@@ -1477,65 +1492,44 @@ export function PantallaAdmin() {
     } else {
       nuevoPuntaje = Math.max(0, (alumno.puntos_total || 0) + Number(deltaPuntos))
     }
-
-    const payloadUpdate = {
-      puntos_total: nuevoPuntaje,
-      updated_at: new Date().toISOString()
-    }
-
-    if (modificarRacha) {
-      payloadUpdate.racha_actual = Math.max(0, Number(rachaExacta) || 0)
-    }
+    const deltaSE = nuevoPuntaje - (alumno.puntos_total || 0)
 
     setAccionEnCurso(alumnoId)
     try {
-      let actualizadoBd = false
+      if (deltaSE !== 0) {
+        const headers = { 'Content-Type': 'application/json' }
+        try {
+          const { data: sData } = await supabase.auth.getSession()
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+        } catch (_) {}
+        if (perfil?.id) headers['x-user-id'] = perfil.id
 
-      // 1. Intentar vía Endpoint API con Service Key (Garantizado sin bloqueo de RLS)
-      try {
-        const resp = await fetch('/api/admin/modificar-puntaje', {
+        const resp = await fetch('/api/admin/ajustar-saldo', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
-            userId: alumnoId,
-            puntos_total: nuevoPuntaje,
-            racha_actual: modificarRacha ? payloadUpdate.racha_actual : undefined,
-            motivo
+            targetUserId: alumnoId,
+            cantidad: deltaSE,
+            motivo: motivo || 'Ajuste manual de StevenEuros desde administración',
+            idempotency_key: `adj_modal_${alumnoId}_${Date.now()}`
           })
         })
-        if (resp.ok) {
-          actualizadoBd = true
+        const dataRes = await resp.json()
+        if (!resp.ok || !dataRes.success) {
+          throw new Error(dataRes.error || 'Error al aplicar ajuste contable en el servidor')
         }
-      } catch (_) {}
-
-      // 2. Si no respondió la API, llamar al RPC con SECURITY DEFINER
-      if (!actualizadoBd) {
-        try {
-          const { error: rpcErr } = await supabase.rpc('admin_modificar_puntos', {
-            p_user_id: alumnoId,
-            p_nuevos_puntos: nuevoPuntaje,
-            p_nueva_racha: modificarRacha ? payloadUpdate.racha_actual : null
-          })
-          if (!rpcErr) actualizadoBd = true
-        } catch (_) {}
+        if (dataRes?.resultado?.nuevoSaldoUsuario !== undefined) {
+          nuevoPuntaje = dataRes.resultado.nuevoSaldoUsuario
+        }
       }
 
-      // 3. Fallback directo con el cliente Supabase
-      if (!actualizadoBd) {
+      if (modificarRacha) {
         try {
-          const { data: upData, error: upErr } = await supabase
-            .from('profiles')
-            .update(payloadUpdate)
-            .eq('id', alumnoId)
-            .select()
-          if (!upErr && upData && upData.length > 0) {
-            actualizadoBd = true
-          }
+          await supabase.from('profiles').update({
+            racha_actual: Math.max(0, Number(rachaExacta) || 0),
+            updated_at: new Date().toISOString()
+          }).eq('id', alumnoId)
         } catch (_) {}
-      }
-
-      if (!actualizadoBd) {
-        console.warn('Aviso: el ajuste de puntos se aplicó en local pero no pudo confirmarse en Supabase.')
       }
 
       // Actualizar en el estado local de todos los alumnos
@@ -1591,16 +1585,35 @@ export function PantallaAdmin() {
     setEntregasRetos(actualizadas)
     localStorage.setItem('muudel_entregas_retos', JSON.stringify(actualizadas))
 
-    // 2. Sumar puntos al alumno
+    // 2. Sumar puntos al alumno mediante ajuste contable contra la Banca
     const alumno = todosAlumnos.find(a => a.id === entrega.userId)
-    const nuevosPuntos = (alumno?.puntos_total || 0) + puntos
+    let nuevosPuntos = (alumno?.puntos_total || 0) + puntos
 
     try {
-      await supabase
-        .from('profiles')
-        .update({ puntos_total: nuevosPuntos })
-        .eq('id', entrega.userId)
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
 
+      const rResp = await fetch('/api/admin/ajustar-saldo', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          targetUserId: entrega.userId,
+          cantidad: puntos,
+          motivo: `Recompensa Reto Aprobado: "${entrega.retoTitulo || 'Reto'}"`,
+          idempotency_key: `reto_aprob_${entrega.id || entrega.retoId}_${Date.now()}`
+        })
+      })
+      const rData = await rResp.json()
+      if (rData?.resultado?.nuevoSaldoUsuario !== undefined) {
+        nuevosPuntos = rData.resultado.nuevoSaldoUsuario
+      }
+    } catch (_) {}
+
+    try {
       await supabase
         .from('reto_completado')
         .upsert({
@@ -1702,51 +1715,43 @@ export function PantallaAdmin() {
     })
   }
 
-  // Bonificar o penalizar StevenEuros a un alumno
+  // Bonificar o penalizar StevenEuros a un alumno (mediante doble partida contra la Banca)
   const handleModificarPuntos = async (alumnoId, deltaPuntos, motivo = 'Ajuste StevenEuros') => {
     setAccionEnCurso(alumnoId)
     const alumno = todosAlumnos.find((a) => a.id === alumnoId)
-    if (!alumno) return
-
-    const nuevosPuntos = Math.max(0, (alumno.puntos_total || 0) + deltaPuntos)
+    if (!alumno) {
+      setAccionEnCurso(null)
+      return
+    }
 
     try {
-      let actualizado = false
-
-      // 1. Intentar endpoint API con Service Key
+      const headers = { 'Content-Type': 'application/json' }
       try {
-        const resp = await fetch('/api/admin/modificar-puntaje', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: alumnoId, puntos_total: nuevosPuntos, motivo })
-        })
-        if (resp.ok) actualizado = true
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
       } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
 
-      // 2. Fallback directo a Supabase
-      if (!actualizado) {
-        try {
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              puntos_total: nuevosPuntos,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', alumnoId)
-          if (!error) actualizado = true
-        } catch (_) {}
+      const resp = await fetch('/api/admin/ajustar-saldo', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          targetUserId: alumnoId,
+          cantidad: deltaPuntos,
+          motivo: `${motivo} (Panel de Comunidad)`,
+          idempotency_key: `admin_comunidad_${alumnoId}_${Date.now()}`
+        })
+      })
+
+      const dataRes = await resp.json()
+      if (!resp.ok || !dataRes.success) {
+        throw new Error(dataRes.error || 'No se pudo aplicar el ajuste contable en el servidor.')
       }
 
-      // 3. Fallback RPC
-      if (!actualizado) {
-        try {
-          await supabase.rpc('admin_modificar_puntos', { p_user_id: alumnoId, p_nuevos_puntos: nuevosPuntos })
-          actualizado = true
-        } catch (_) {}
-      }
+      const nuevosPuntos = dataRes.resultado?.nuevoSaldoUsuario ?? Math.max(0, (alumno.puntos_total || 0) + deltaPuntos)
 
       sound.playPop()
-      avisar(`${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} StevenEuros (${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} SE 💶) para ${alumno.nombre}.`)
+      avisar(`${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} SE para ${alumno.nombre} registrado en ledger.`)
       setTodosAlumnos((prev) =>
         prev.map((a) => (a.id === alumnoId ? { ...a, puntos_total: nuevosPuntos } : a))
       )
@@ -1771,7 +1776,7 @@ export function PantallaAdmin() {
       window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: alumnoId } }))
       registrarAuditoria('Ajuste StevenEuros', `${deltaPuntos > 0 ? '+' : ''}${deltaPuntos} SE a ${alumno.nombre} (${motivo})`)
     } catch (err) {
-      avisar('Error al modificar StevenEuros.', 'error')
+      avisar(err.message || 'Error al modificar StevenEuros.', 'error')
     } finally {
       setAccionEnCurso(null)
     }
@@ -1797,135 +1802,6 @@ export function PantallaAdmin() {
     }
   }
 
-  // ECONOMÍA: Reparto masivo de monedas a todos los alumnos
-  const handleAjusteMasivoMonedas = async (cantidad = ajusteMasivoCantidad, motivo = ajusteMasivoMotivo) => {
-    const cant = Number(cantidad)
-    if (!cant || isNaN(cant)) return
-    const motivoTexto = (motivo || 'Recompensa general de clase').trim()
-
-    setModalConfirmacion({
-      titulo: `¿Otorgar ${cant > 0 ? '+' : ''}${cant} StevenEuros a TODOS los alumnos?`,
-      mensaje: `Esta acción modificará el saldo de StevenEuros de los ${todosAlumnos.length} estudiantes registrados en la clase. Motivo: "${motivoTexto}".`,
-      accion: async () => {
-        setModalConfirmacion(null)
-        setEnviandoAjusteMasivo(true)
-        try {
-          // 1. Intentar llamar al endpoint de ajuste masivo del backend
-          let apiExitosa = false
-          try {
-            const resp = await fetch('/api/admin/ajuste-masivo', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cantidad: cant, motivo: motivoTexto })
-            })
-            if (resp.ok) apiExitosa = true
-          } catch (_) {}
-
-          // 2. Si no respondió la API, actualizar directamente en Supabase
-          if (!apiExitosa) {
-            for (const al of todosAlumnos) {
-              const nuevoSaldo = Math.max(0, (al.puntos_total || 0) + cant)
-              try {
-                await supabase.from('profiles').update({ puntos_total: nuevoSaldo }).eq('id', al.id)
-              } catch (_) {}
-            }
-          }
-
-          // 3. Actualizar en el estado local de todosAlumnos
-          setTodosAlumnos(prev => prev.map(a => ({
-            ...a,
-            puntos_total: Math.max(0, (a.puntos_total || 0) + cant)
-          })))
-
-          // 4. Si el alumno activo es el del navegador
-          if (perfil) {
-            const nuevoPuntajeLocal = Math.max(0, (perfil.puntos_total || 0) + cant)
-            const localUser = localStorage.getItem('racha_local_user')
-            if (localUser) {
-              try {
-                const parsed = JSON.parse(localUser)
-                localStorage.setItem('racha_local_user', JSON.stringify({ ...parsed, puntos_total: nuevoPuntajeLocal }))
-              } catch (_) {}
-            }
-          }
-
-          // 5. Transmitir evento en tiempo real a todos los clientes conectados
-          transmitirEvento('ajuste_masivo_puntos', { cantidad: cant, motivo: motivoTexto })
-          transmitirEvento('puntos_actualizados_masivo', { delta: cant })
-
-          sound.playStamp()
-          triggerConfetti()
-          avisar(`¡${cant > 0 ? '+' : ''}${cant} StevenEuros entregados con éxito a toda la clase!`)
-          registrarAuditoria('Reparto Masivo', `${cant > 0 ? '+' : ''}${cant} StevenEuros a todos los alumnos (${motivoTexto})`)
-        } catch (err) {
-          avisar('Error en reparto masivo: ' + (err.message || err), 'error')
-        } finally {
-          setEnviandoAjusteMasivo(false)
-        }
-      }
-    })
-  }
-
-  // ECONOMÍA: Fijar saldo exacto de StevenEuros a un alumno
-  const handleFijarMonedasDirecto = async (alumno, nuevoSaldo, motivo = 'Saldo fijado por moderador') => {
-    const alumnoId = alumno.id
-    const puntajeFinal = Math.max(0, Math.round(Number(nuevoSaldo) || 0))
-    setAccionEnCurso(alumnoId)
-    try {
-      let actualizado = false
-      try {
-        const resp = await fetch('/api/admin/modificar-puntaje', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: alumnoId, puntos_total: puntajeFinal, motivo })
-        })
-        if (resp.ok) actualizado = true
-      } catch (_) {}
-
-      if (!actualizado) {
-        try {
-          const { error } = await supabase.from('profiles').update({ puntos_total: puntajeFinal, updated_at: new Date().toISOString() }).eq('id', alumnoId)
-          if (!error) actualizado = true
-        } catch (_) {}
-      }
-
-      if (!actualizado) {
-        try {
-          await supabase.rpc('admin_modificar_puntos', { p_user_id: alumnoId, p_nuevos_puntos: puntajeFinal })
-          actualizado = true
-        } catch (_) {}
-      }
-
-      setTodosAlumnos(prev => prev.map(a => a.id === alumnoId ? { ...a, puntos_total: puntajeFinal } : a))
-
-      // Actualizar si es el usuario en sesión
-      const localUser = localStorage.getItem('racha_local_user')
-      if (localUser) {
-        try {
-          const parsed = JSON.parse(localUser)
-          if (String(parsed.id) === String(alumnoId)) {
-            const actUser = { ...parsed, puntos_total: puntajeFinal }
-            localStorage.setItem('racha_local_user', JSON.stringify(actUser))
-            if (perfil && String(perfil.id) === String(alumnoId)) {
-              setPerfil(actUser)
-            }
-          }
-        } catch (_) {}
-      }
-
-      transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: puntajeFinal, userId: alumnoId })
-      transmitirEvento('steveneuros_actualizados', { alumnoId, nuevosPuntos: puntajeFinal, userId: alumnoId })
-      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: puntajeFinal, userId: alumnoId } }))
-      sound.playStamp()
-      triggerConfetti()
-      avisar(`StevenEuros de ${alumno.nombre} fijados en ${puntajeFinal} SE 💶.`)
-      registrarAuditoria('Fijar StevenEuros', `${alumno.nombre} tiene ahora ${puntajeFinal} StevenEuros (${motivo})`)
-    } catch (err) {
-      avisar('Error al fijar StevenEuros.', 'error')
-    } finally {
-      setAccionEnCurso(null)
-    }
-  }
 
   // Cambiar rol con confirmación de seguridad
   const solicitarCambioRol = (alumno, nuevoRol) => {
@@ -4093,56 +3969,19 @@ export function PantallaAdmin() {
         </div>
       )}
 
-      {/* PESTAÑA ECONOMÍA: MODIFICAR MONEDAS Y REGLAS DE GANANCIA */}
+      {/* PESTAÑA ECONOMÍA: SALUD DE LA BANCA, AUDITORÍA, AJUSTES CONTABLES Y REGLAS DE GANANCIA */}
       {tab === 'economia' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* 1. MÉTRICAS GENERALES DE ECONOMÍA */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: 12
-          }}>
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
-                <Coins size={16} color="var(--color-warning)" />
-                <span>Monedas en Circulación</span>
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-ink)' }}>
-                {todosAlumnos.reduce((acc, a) => acc + (a.puntos_total || 0), 0).toLocaleString()} 🪙
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-                Entre los {todosAlumnos.length} estudiantes del aula
-              </div>
-            </div>
+          {/* 1. SALUD DE LA ECONOMÍA, BANCA CENTRAL, AUDITORÍA Y AJUSTES CONTABLES */}
+          <PanelSaludEconomicaBanca
+            perfilAdmin={perfil}
+            todosAlumnos={todosAlumnos}
+            onActualizarAlumno={(id, nuevosPuntos) => {
+              setTodosAlumnos(prev => prev.map(a => a.id === id ? { ...a, puntos_total: nuevosPuntos } : a))
+            }}
+          />
 
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
-                <TrendingUp size={16} color="var(--color-accent)" />
-                <span>Multiplicador Activo</span>
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-accent)' }}>
-                {configRecompensas.multiplicadorGlobal || 1.0}x
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-                {Number(configRecompensas.multiplicadorGlobal) > 1.0 ? '⚡ Evento de puntos activado' : 'Ritmo estándar de clase'}
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 600 }}>
-                <Users size={16} color="var(--color-positive)" />
-                <span>Promedio por Alumno</span>
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-ink)' }}>
-                {todosAlumnos.length > 0 ? Math.round(todosAlumnos.reduce((acc, a) => acc + (a.puntos_total || 0), 0) / todosAlumnos.length) : 0} 🪙
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-                Saldo medio disponible en tienda
-              </div>
-            </div>
-          </div>
-
-          {/* 2. CONFIGURACIÓN DE LO QUE GANAN (REGLAS DE GANANCIA) */}
+          {/* 2. CONFIGURACIÓN DE LO QUE GANAN (REGLAS DE GANANCIA DE CLASE) */}
           <section className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Sliders size={18} color="var(--color-accent)" />
@@ -4274,263 +4113,6 @@ export function PantallaAdmin() {
                 </button>
               </div>
             </form>
-          </section>
-
-          {/* 3. REPARTO MASIVO DE MONEDAS A TODA LA CLASE */}
-          <section className="card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Zap size={18} color="var(--color-warning)" />
-              <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                Reparto Masivo de StevenEuros (SE 💶) a Toda la Clase
-              </h3>
-            </div>
-            <p className="apple-caption" style={{ marginBottom: 14 }}>
-              Premia a todos los estudiantes registrados al mismo tiempo con StevenEuros tras una dinámica grupal o actividad destacada.
-            </p>
-
-            {/* Accesos rápidos de reparto */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              {[10, 25, 50, 100].map(cant => (
-                <button
-                  key={cant}
-                  type="button"
-                  disabled={enviandoAjusteMasivo}
-                  onClick={() => handleAjusteMasivoMonedas(cant, `Premio de +${cant} StevenEuros para toda la clase`)}
-                  className="btn-secondary"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--color-warning)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                >
-                  <span>+{cant} SE a todos</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Formulario de reparto masivo personalizado */}
-            <div style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-end',
-              flexWrap: 'wrap',
-              padding: 12,
-              borderRadius: 12,
-              backgroundColor: 'var(--color-surface-secondary)',
-              border: '1px solid var(--color-separator)'
-            }}>
-              <div style={{ width: 120 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
-                  Cantidad SE 💶
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="10000"
-                  className="apple-input"
-                  value={ajusteMasivoCantidad}
-                  onChange={(e) => setAjusteMasivoCantidad(Number(e.target.value) || 0)}
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
-                  Concepto / Motivo
-                </label>
-                <input
-                  type="text"
-                  className="apple-input"
-                  placeholder="Ej: Kahoot de Redes, práctica completada al 100%..."
-                  value={ajusteMasivoMotivo}
-                  onChange={(e) => setAjusteMasivoMotivo(e.target.value)}
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              <button
-                type="button"
-                disabled={enviandoAjusteMasivo || !ajusteMasivoCantidad}
-                onClick={() => handleAjusteMasivoMonedas()}
-                className="btn-primary"
-                style={{
-                  minHeight: 38,
-                  padding: '6px 18px',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  backgroundColor: 'var(--color-warning)',
-                  color: '#000000'
-                }}
-              >
-                <Coins size={14} />
-                <span>{enviandoAjusteMasivo ? 'Repartiendo...' : `Repartir +${ajusteMasivoCantidad} SE a Todos`}</span>
-              </button>
-            </div>
-          </section>
-
-          {/* 4. GESTOR INDIVIDUAL DE MONEDAS DE JUGADORES */}
-          <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{
-              padding: '14px 16px',
-              borderBottom: '1px solid var(--color-separator)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 10
-            }}>
-              <div>
-                <h3 className="apple-headline" style={{ fontSize: 16 }}>
-                  Modificar StevenEuros (SE 💶) de Jugadores
-                </h3>
-                <p className="apple-caption" style={{ marginTop: 2 }}>
-                  Suma, resta o establece el saldo exacto de StevenEuros (SE 💶) de cada estudiante.
-                </p>
-              </div>
-
-              {/* Buscador de alumnos */}
-              <div style={{ position: 'relative', width: 220 }}>
-                <input
-                  type="text"
-                  className="apple-input"
-                  placeholder="Buscar jugador..."
-                  value={busquedaEconomia}
-                  onChange={(e) => setBusquedaEconomia(e.target.value)}
-                  style={{ width: '100%', paddingLeft: 30, fontSize: 12, height: 32 }}
-                />
-                <Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--color-secondary-ink)' }} />
-              </div>
-            </div>
-
-            {/* Listado de jugadores con controles directos */}
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {todosAlumnos
-                .filter(a => {
-                  if (!busquedaEconomia.trim()) return true
-                  const q = busquedaEconomia.toLowerCase()
-                  return (a.nombre || '').toLowerCase().includes(q) || (a.username || '').toLowerCase().includes(q)
-                })
-                .map((alumno, idx, arr) => {
-                  const saldoInput = saldoCustomInputs[alumno.id] ?? alumno.puntos_total ?? 0
-                  return (
-                    <div
-                      key={alumno.id}
-                      style={{
-                        padding: '12px 16px',
-                        borderBottom: idx < arr.length - 1 ? '1px solid var(--color-separator)' : 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: 10,
-                        backgroundColor: 'transparent'
-                      }}
-                    >
-                      {/* Información del alumno */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
-                        <InsigniaIniciales nombre={alumno.nombre} color={alumno.color_acento || '#0A84FF'} size={34} />
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 14 }}>{alumno.nombre}</span>
-                            {alumno.digito_id && (
-                              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(0,122,255,0.1)', color: 'var(--color-accent)' }}>
-                                {alumno.digito_id}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                            <strong style={{ color: 'var(--color-warning)' }}>{alumno.puntos_total || 0} SE 💶</strong> · {alumno.racha_actual || 0}d racha
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Botones de acción rápida de StevenEuros */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, -50, 'Ajuste StevenEuros (-50)')}
-                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
-                          title="Restar 50 StevenEuros"
-                        >
-                          -50 SE
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, -20, 'Ajuste StevenEuros (-20)')}
-                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, color: 'var(--color-negative)' }}
-                          title="Restar 20 StevenEuros"
-                        >
-                          -20 SE
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 20, 'Premio StevenEuros (+20)')}
-                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 20 StevenEuros"
-                        >
-                          +20 SE
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 50, 'Premio StevenEuros (+50)')}
-                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 50 StevenEuros"
-                        >
-                          +50 SE
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={accionEnCurso === alumno.id}
-                          onClick={() => handleModificarPuntos(alumno.id, 100, 'Premio StevenEuros (+100)')}
-                          style={{ minHeight: 28, padding: '2px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-warning)' }}
-                          title="Sumar 100 StevenEuros"
-                        >
-                          +100 SE
-                        </button>
-
-                        {/* Input para fijar saldo exacto */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
-                          <input
-                            type="number"
-                            min="0"
-                            className="apple-input"
-                            value={saldoInput}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              setSaldoCustomInputs(prev => ({ ...prev, [alumno.id]: val }))
-                            }}
-                            style={{ width: 68, height: 28, fontSize: 12, padding: '2px 6px', textAlign: 'center' }}
-                            title="Saldo exacto de StevenEuros"
-                          />
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            disabled={accionEnCurso === alumno.id}
-                            onClick={() => handleFijarMonedasDirecto(alumno, saldoInput)}
-                            style={{ minHeight: 28, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}
-                            title="Fijar este saldo exacto de StevenEuros en base de datos"
-                          >
-                            Fijar SE
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
           </section>
         </div>
       )}

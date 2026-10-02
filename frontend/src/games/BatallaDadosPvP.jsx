@@ -331,10 +331,26 @@ export function BatallaDadosPvP() {
         if (insErr) throw insErr
         partidaId = insData.id
 
-        // Descontar puntos en BD
-        await supabase.from('profiles').update({
-          puntos_total: Math.max(0, perfil.puntos_total - apuesta)
-        }).eq('id', perfil.id)
+        // Retener apuesta y poner en custodia de la Banca
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          try {
+            const { data: sData } = await supabase.auth.getSession()
+            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          } catch (_) {}
+          if (perfil?.id) headers['x-user-id'] = perfil.id
+
+          await fetch('/api/ruleta/pvp-apostar', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              cantidad: apuesta,
+              partidaId,
+              juego: 'dados',
+              idempotency_key: `stake_dados_${partidaId}_${perfil.id}`
+            })
+          })
+        } catch (_) {}
       }
 
       sound.playChipSound()
@@ -382,9 +398,25 @@ export function BatallaDadosPvP() {
           resolved_at: new Date().toISOString()
         }).eq('id', partidaId).eq('creador_id', perfil.id)
 
-        await supabase.from('profiles').update({
-          puntos_total: (perfil.puntos_total || 0) + betAmt
-        }).eq('id', perfil.id)
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          try {
+            const { data: sData } = await supabase.auth.getSession()
+            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          } catch (_) {}
+          if (perfil?.id) headers['x-user-id'] = perfil.id
+
+          await fetch('/api/ruleta/pvp-cancelar', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              cantidad: betAmt,
+              partidaId,
+              juego: 'dados',
+              idempotency_key: `refund_dados_${partidaId}_${perfil.id}`
+            })
+          })
+        } catch (_) {}
       }
 
       sound.playStamp()
@@ -481,27 +513,41 @@ export function BatallaDadosPvP() {
           resolved_at: new Date().toISOString()
         }).eq('id', partidaId)
 
-        // Actualizar puntos de ambos participantes
-        if (ganadorId === perfil.id) {
-          // El oponente ganó: su saldo aumenta en su ganancia neta (+apuesta)
-          const saldoGanador = (perfil.puntos_total || 0) + pvpPartida.apuesta
-          const perfilActualizado = { ...perfil, puntos_total: saldoGanador }
-          setPerfil(perfilActualizado)
-          localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-          await supabase.from('profiles').update({ puntos_total: saldoGanador }).eq('id', perfil.id)
-        } else {
-          // El creador ganó: el oponente pierde su apuesta
-          const saldoPerdedor = Math.max(0, (perfil.puntos_total || 0) - pvpPartida.apuesta)
-          const perfilActualizado = { ...perfil, puntos_total: saldoPerdedor }
-          setPerfil(perfilActualizado)
-          localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-          await supabase.from('profiles').update({ puntos_total: saldoPerdedor }).eq('id', perfil.id)
+        // Liquidar bote con rake del 5% para la Banca mediante endpoint centralizado
+        const boteTotal = pvpPartida.apuesta * 2
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          try {
+            const { data: sData } = await supabase.auth.getSession()
+            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          } catch (_) {}
+          if (perfil?.id) headers['x-user-id'] = perfil.id
 
-          // El creador recibe el bote (+2 * apuesta) ya que su apuesta se dedujo al crear
-          const { data: cData } = await supabase.from('profiles').select('puntos_total').eq('id', pvpPartida.creador_id).single()
-          if (cData) {
-            await supabase.from('profiles').update({ puntos_total: (cData.puntos_total || 0) + premio }).eq('id', pvpPartida.creador_id)
+          const pvpResp = await fetch('/api/admin/comision-pvp', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              ganadorId,
+              bote: boteTotal,
+              juego: 'dados',
+              partidaId,
+              idempotency_key: `pvp_dados_${partidaId}_${ganadorId}`
+            })
+          })
+          const pvpData = await pvpResp.json()
+
+          if (ganadorId === perfil.id && pvpData?.nuevoSaldoGanador !== undefined) {
+            const perfilActualizado = { ...perfil, puntos_total: pvpData.nuevoSaldoGanador }
+            setPerfil(perfilActualizado)
+            localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
+          } else if (ganadorId !== perfil.id) {
+            const saldoPerdedor = Math.max(0, (perfil.puntos_total || 0) - pvpPartida.apuesta)
+            const perfilActualizado = { ...perfil, puntos_total: saldoPerdedor }
+            setPerfil(perfilActualizado)
+            localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
           }
+        } catch (ePvp) {
+          console.warn('Aviso liquidando comisión PvP dados:', ePvp)
         }
 
         dataResultado = {

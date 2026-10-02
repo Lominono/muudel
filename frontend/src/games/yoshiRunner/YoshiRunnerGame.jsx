@@ -326,10 +326,15 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   })
   const [monedasNuevaPartida, setMonedasNuevaPartida] = useState(0)
 
+  const sessionTokenRef = useRef(null)
+  const inicioPartidaTsRef = useRef(Date.now())
+
   // Sincronizar saldo de ruleta con servidor al montar
   useEffect(() => {
     if (perfil?.id) {
-      fetch(`/api/ruleta/yoshi-estado?user_id=${perfil.id}`)
+      fetch('/api/ruleta/yoshi-estado', {
+        headers: { 'x-user-id': perfil.id }
+      })
         .then(r => r.json())
         .then(d => {
           if (d.success && typeof d.saldoMonedas === 'number') {
@@ -473,24 +478,39 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     }
 
     const diff = DIFICULTADES_YOSHI[dificultadRef.current || 'normal'] || DIFICULTADES_YOSHI.normal
-    // Reglas 1 y 2: Las monedas recogidas en la partida pasan al saldo de ruleta de Yoshi.
-    // Las monedas de Yoshi SOLO se apuestan en esta ruleta para ganar StevenEuros.
+    // Las monedas recogidas en la partida pasan al saldo de ruleta de Yoshi
     const monedasGanadas = Math.max(0, Math.floor(coinsFinales * diff.coinMultiplier))
     setMonedasPartida(monedasGanadas)
     setMonedasNuevaPartida(monedasGanadas)
 
-    if (monedasGanadas > 0 && p) {
-      setSaldoRuleta(prev => {
-        const nuevo = Math.min(500, prev + monedasGanadas)
-        localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(nuevo))
-        return nuevo
-      })
+    const duracionPartidaMs = Date.now() - inicioPartidaTsRef.current
 
-      fetch('/api/ruleta/yoshi-acumular', {
+    if (monedasGanadas > 0 && p) {
+      const idempKey = `partida_${p.id}_${Date.now()}`
+      fetch('/api/ruleta/yoshi-finalizar-partida', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: p.id, monedas_partida: monedasGanadas })
-      }).catch(() => {})
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': p.id
+        },
+        body: JSON.stringify({
+          session_token: sessionTokenRef.current || `fallback_${Date.now()}`,
+          monedas_recogidas: monedasGanadas,
+          duracion_ms: duracionPartidaMs,
+          distancia_m: scoreFinal,
+          idempotency_key: idempKey
+        })
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && typeof d.nuevoSaldoMonedas === 'number') {
+            setSaldoRuleta(d.nuevoSaldoMonedas)
+            localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(d.nuevoSaldoMonedas))
+          }
+        })
+        .catch(() => {
+          setSaldoRuleta(prev => Math.min(1500, prev + monedasGanadas))
+        })
 
       try {
         await supabase.from('juegos_puntuaciones').insert({
@@ -511,6 +531,27 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     setPuntos(0)
     setMonedasPartida(0)
     setComboActual(1)
+
+    inicioPartidaTsRef.current = Date.now()
+    sessionTokenRef.current = null
+
+    const p = perfilRef.current
+    if (p?.id) {
+      fetch('/api/ruleta/yoshi-iniciar-partida', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': p.id
+        }
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && d.session_token) {
+            sessionTokenRef.current = d.session_token
+          }
+        })
+        .catch(() => {})
+    }
 
     const winsActuales = getWins()
     const estado = crearEstadoInicial(winsActuales, dificultadRef.current)
@@ -2006,12 +2047,11 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
         </div>
       </div>
 
-      {/* Modal interactivo de Ruleta de Yoshi (Reglas 1-8) */}
+      {/* Modal interactivo de Ruleta de Yoshi */}
       {mostrarRuleta && (
         <RuletaYoshiModal
           perfil={perfil}
           saldoMonedasRuleta={saldoRuleta}
-          monedasPartidaRecienGanadas={monedasNuevaPartida}
           esGameOver={juegoEstado === 'muerto'}
           onActualizarSaldoMonedas={(nuevo) => {
             setSaldoRuleta(nuevo)

@@ -3,6 +3,7 @@ import { useAuth } from '../App'
 import { supabase } from '../utils/supabase'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
+import { PRECIOS_TIENDA_LOCAL, obtenerPrecioItem } from '../config/tiendaPreciosConfig'
 import {
   Shield,
   Coffee,
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react'
 
 // CATÁLOGO DE PRODUCTOS 100% DIGITALES Y PODERES EXCLUSIVOS DE LA WEB
-export const CATALOGO_RECOMPENSAS = [
+const CATALOGO_RECOMPENSAS_BASE = [
   // 1. PODERES DE RACHA Y ASISTENCIA EN LA WEB
   {
     id: 'congelar_racha',
@@ -421,6 +422,12 @@ export const CATALOGO_RECOMPENSAS = [
   }
 ]
 
+// Catálogo exportado con precios oficiales rebalanceados de partida
+export const CATALOGO_RECOMPENSAS = CATALOGO_RECOMPENSAS_BASE.map(item => ({
+  ...item,
+  costo: obtenerPrecioItem(item.id, item.costo)
+}))
+
 export const SELLOS_OFICIALES = [
   { id: 'PRESENTE', etiqueta: 'PRESENTE · 15:30', clase: 'sello-tinta-rojo', desc: 'Confirmación puntual de llegada' },
   { id: 'VISTO', etiqueta: 'VISTO EN CLASE', clase: 'sello-tinta-azul', desc: 'Leído y anotado en el cuaderno' },
@@ -549,6 +556,24 @@ export function TiendaRecompensas({ onClose }) {
       return {}
     }
   })
+
+  // Precios dinámicos sincronizados con el servidor
+  const [preciosServidor, setPreciosServidor] = useState({})
+
+  useEffect(() => {
+    fetch('/api/ruleta/tienda-catalogo')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.catalogo && Array.isArray(data.catalogo)) {
+          const mapa = {}
+          data.catalogo.forEach(item => {
+            mapa[item.id] = item.precio
+          })
+          setPreciosServidor(mapa)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Escuchar actualización de stock en tiempo real
   useEffect(() => {
@@ -742,15 +767,43 @@ export function TiendaRecompensas({ onClose }) {
       transmitirEvento('actualizar_stock_tienda', { itemId: item.id, nuevoStock })
     }
 
-    // Descontar puntos
-    const perfilActualizado = { ...perfil, puntos_total: nuevosPuntos }
+    // Descontar puntos y pagar a la Banca mediante endpoint centralizado validado en servidor
+    let saldoTrasCompra = nuevosPuntos
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      try {
+        const { data: sData } = await supabase.auth.getSession()
+        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+      } catch (_) {}
+      if (perfil?.id) headers['x-user-id'] = perfil.id
+
+      const tResp = await fetch('/api/ruleta/tienda-comprar', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          itemId: item.id,
+          idempotency_key: `tienda_${perfil?.id}_${item.id}_${Date.now()}`
+        })
+      })
+      const tData = await tResp.json()
+      if (!tResp.ok) {
+        throw new Error(tData?.error || 'Error al procesar compra')
+      }
+      if (tData?.nuevoSaldo !== undefined) {
+        saldoTrasCompra = tData.nuevoSaldo
+      }
+    } catch (e) {
+      sound.playPop()
+      avisar(e.message || 'Error al procesar compra', 'error')
+      setComprandoId(null)
+      return
+    }
+
+    const perfilActualizado = { ...perfil, puntos_total: saldoTrasCompra }
     setPerfil(perfilActualizado)
     localStorage.setItem('racha_local_user', JSON.stringify(perfilActualizado))
-    window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: perfil.id } }))
-    transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos, userId: perfil.id })
-    try {
-      await supabase.from('profiles').update({ puntos_total: nuevosPuntos }).eq('id', perfil.id)
-    } catch (e) {}
+    window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: saldoTrasCompra, userId: perfil.id } }))
+    transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: saldoTrasCompra, userId: perfil.id })
 
     // Crear artículo en inventario con estado "listo"
     const nuevoItemInventario = {
@@ -944,7 +997,10 @@ export function TiendaRecompensas({ onClose }) {
     avisar(`¡"${invItem.titulo}" activado! El tiempo ya está corriendo (${invItem.duracionTexto}).`)
   }
 
-  const itemsCatalogoFiltrados = CATALOGO_RECOMPENSAS.filter(item => {
+  const itemsCatalogoFiltrados = CATALOGO_RECOMPENSAS.map(item => ({
+    ...item,
+    costo: preciosServidor[item.id] !== undefined ? preciosServidor[item.id] : item.costo
+  })).filter(item => {
     if (categoriaCatalogo === 'todos') return true
     return item.categoria === categoriaCatalogo
   })
