@@ -112,7 +112,7 @@ feedRouter.post('/publicar', async (req, res) => {
     }
 
     // Verificar si el autor existe en profiles para no violar la FK
-    const { data: autorExistente } = await supabaseAdmin
+    let { data: autorExistente } = await supabaseAdmin
       .from('profiles')
       .select('id, nombre, username, rol, color_acento, avatar_emoji')
       .eq('id', autorId)
@@ -120,13 +120,26 @@ feedRouter.post('/publicar', async (req, res) => {
 
     if (!autorExistente) {
       autorId = ADMIN_LOMINONO_ID
+      const { data: adminProf } = await supabaseAdmin
+        .from('profiles')
+        .select('id, nombre, username, rol, color_acento, avatar_emoji')
+        .eq('id', ADMIN_LOMINONO_ID)
+        .maybeSingle()
+      autorExistente = adminProf || {
+        id: ADMIN_LOMINONO_ID,
+        nombre: 'lominoño',
+        username: 'lominono',
+        rol: 'moderador',
+        color_acento: '#0A84FF',
+        avatar_emoji: '👨‍🏫'
+      }
     }
 
     const categoriaFinal = categoria || 'General'
     const tituloFinal = (titulo || contenidoLimpio.split('\n')[0].substring(0, 70)).trim()
 
-    // Insertar solo las columnas soportadas en feed_posts
-    const { data: nuevoPost, error } = await supabaseAdmin
+    // Insertar de manera directa y fiable en feed_posts
+    const { data: postCreado, error: errInsert } = await supabaseAdmin
       .from('feed_posts')
       .insert({
         user_id: autorId,
@@ -134,44 +147,19 @@ feedRouter.post('/publicar', async (req, res) => {
         titulo: tituloFinal,
         contenido: contenidoLimpio
       })
-      .select(`
-        id, user_id, categoria, titulo, contenido, likes_count, created_at,
-        profiles:profiles!feed_posts_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
-      `)
-      .maybeSingle()
+      .select('id, user_id, categoria, titulo, contenido, likes_count, created_at')
+      .single()
 
-    if (error) {
-      console.warn('Aviso insertando con join en feed_posts, reintentando insert directo:', error.message)
-      const { data: postSimple, error: simpleErr } = await supabaseAdmin
-        .from('feed_posts')
-        .insert({
-          user_id: autorId,
-          categoria: categoriaFinal,
-          titulo: tituloFinal,
-          contenido: contenidoLimpio
-        })
-        .select('id, user_id, categoria, titulo, contenido, likes_count, created_at')
-        .single()
-
-      if (simpleErr) {
-        return res.status(500).json({ error: simpleErr.message })
-      }
-
-      const postConAutor = {
-        ...postSimple,
-        es_admin: Boolean(es_admin) || autorExistente?.rol === 'moderador',
-        profiles: autorExistente || {
-          id: autorId,
-          nombre: 'Compañero SMR2',
-          rol: 'alumno'
-        }
-      }
-      return res.json({ success: true, post: postConAutor })
+    if (errInsert || !postCreado) {
+      console.error('Error insertando en feed_posts:', errInsert)
+      return res.status(500).json({ error: errInsert?.message || 'Error al guardar publicación' })
     }
 
     const postFinal = {
-      ...nuevoPost,
-      es_admin: Boolean(es_admin) || nuevoPost?.profiles?.rol === 'moderador'
+      ...postCreado,
+      profiles: autorExistente,
+      es_admin: Boolean(es_admin) || autorExistente?.rol === 'moderador' || autorId === ADMIN_LOMINONO_ID,
+      fijado: false
     }
 
     return res.json({ success: true, post: postFinal })

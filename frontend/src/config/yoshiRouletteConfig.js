@@ -13,9 +13,9 @@ export const YOSHI_ROULETTE_CONFIG = {
     SALDO_INICIAL: 5000,
     RESERVA_MINIMA: 500, // Por debajo de 500 SE entra en austeridad (pausa de grifos)
     EMISION_DIARIA: 25,  // 25 SE/día inyectados a la Banca a las 00:00 Madrid
-    MAX_AJUSTE_ADMIN_OPERACION: 50,    // Tope por operación de admin (50 SE)
-    MAX_AJUSTE_ADMIN_USUARIO_DIA: 100, // Tope por usuario al día (100 SE)
-    MAX_AJUSTE_ADMIN_TOTAL_DIA: 250,   // Tope total de ajustes admin al día (250 SE)
+    MAX_AJUSTE_ADMIN_OPERACION: 1000,   // Tope por operación de admin (1000 SE)
+    MAX_AJUSTE_ADMIN_USUARIO_DIA: 2000, // Tope por usuario al día (2000 SE)
+    MAX_AJUSTE_ADMIN_TOTAL_DIA: 10000,  // Tope total de ajustes admin al día (10000 SE)
     UMBRAL_ALERTA_CONCENTRACION: 0.30  // Alerta si un alumno concentra > 30% del circulante
   },
 
@@ -53,10 +53,10 @@ export const YOSHI_ROULETTE_CONFIG = {
     bronce: {
       id: 'bronce',
       nombre: 'Ruleta Bronce',
-      costoMonedas: 100,
+      costoMonedas: 20,
       minRacha: 0,
       minNivel: 0,
-      descripcion: 'Entrada básica para todas las carreras. Apuesta fija: 100 🪙.',
+      descripcion: 'Entrada básica para todas las carreras. Apuesta fija: 20 🪙.',
       segmentos: [
         { id: 'b_0', premioSE: 0, label: '0 SE', prob: 0.50, color: '#EF4444', textoColor: '#FFF', icono: '💀', esJackpot: false },
         { id: 'b_1', premioSE: 1, label: '+1 SE', prob: 0.30, color: '#64748B', textoColor: '#FFF', icono: '🪙', esJackpot: false },
@@ -69,10 +69,10 @@ export const YOSHI_ROULETTE_CONFIG = {
     plata: {
       id: 'plata',
       nombre: 'Ruleta Plata',
-      costoMonedas: 300,
+      costoMonedas: 60,
       minRacha: 3,
       minNivel: 2,
-      descripcion: 'Para corredores habituales (Racha ≥ 3 o Nivel ≥ 2). Apuesta fija: 300 🪙.',
+      descripcion: 'Para corredores habituales (Racha ≥ 3 o Nivel ≥ 2). Apuesta fija: 60 🪙.',
       segmentos: [
         { id: 'p_0', premioSE: 0, label: '0 SE', prob: 0.45, color: '#EF4444', textoColor: '#FFF', icono: '💀', esJackpot: false },
         { id: 'p_3', premioSE: 3, label: '+3 SE', prob: 0.30, color: '#64748B', textoColor: '#FFF', icono: '🪙', esJackpot: false },
@@ -85,10 +85,10 @@ export const YOSHI_ROULETTE_CONFIG = {
     oro: {
       id: 'oro',
       nombre: 'Ruleta Oro',
-      costoMonedas: 1000,
+      costoMonedas: 150,
       minRacha: 7,
       minNivel: 5,
-      descripcion: 'Exclusiva de veteranos (Racha ≥ 7 o Nivel ≥ 5). Apuesta fija: 1.000 🪙.',
+      descripcion: 'Exclusiva de veteranos (Racha ≥ 7 o Nivel ≥ 5). Apuesta fija: 150 🪙.',
       segmentos: [
         { id: 'o_0', premioSE: 0, label: '0 SE', prob: 0.40, color: '#EF4444', textoColor: '#FFF', icono: '💀', esJackpot: false },
         { id: 'o_10', premioSE: 10, label: '+10 SE', prob: 0.32, color: '#64748B', textoColor: '#FFF', icono: '🪙', esJackpot: false },
@@ -99,4 +99,51 @@ export const YOSHI_ROULETTE_CONFIG = {
       ]
     }
   }
+}
+
+/**
+ * Cálculo MARGINAL de premio para premios pequeños respetando los tramos diarios
+ */
+export function calcularPremioMarginal(premioBruto, ganadosHoy = 0) {
+  const tramos = YOSHI_ROULETTE_CONFIG.TRAMOS_DIARIOS_SE
+  const topeDuro = tramos.TOPE_DURO
+  if (ganadosHoy >= topeDuro) return 0
+
+  const tramo1Max = tramos.TRAMO_1_MAX
+  const tramo1Factor = tramos.TRAMO_1_FACTOR
+  const tramo2Max = tramos.TRAMO_2_MAX
+  const tramo2Factor = tramos.TRAMO_2_FACTOR
+  const tramo3Max = tramos.TRAMO_3_MAX
+  const tramo3Factor = tramos.TRAMO_3_FACTOR
+
+  let premioAcreditado = 0
+  let cursor = ganadosHoy
+  let restante = premioBruto
+
+  while (restante > 0 && cursor < topeDuro) {
+    if (cursor < tramo1Max) {
+      const capacidad = tramo1Max - cursor
+      const porcion = Math.min(restante, capacidad)
+      premioAcreditado += porcion * tramo1Factor
+      cursor += porcion * tramo1Factor
+      restante -= porcion
+    } else if (cursor < tramo2Max) {
+      const capacidad = (tramo2Max - cursor) / tramo2Factor
+      const porcion = Math.min(restante, capacidad)
+      premioAcreditado += porcion * tramo2Factor
+      cursor += porcion * tramo2Factor
+      restante -= porcion
+    } else if (cursor < tramo3Max) {
+      const capacidad = (tramo3Max - cursor) / tramo3Factor
+      const porcion = Math.min(restante, capacidad)
+      premioAcreditado += porcion * tramo3Factor
+      cursor += porcion * tramo3Factor
+      restante -= porcion
+    } else {
+      break
+    }
+  }
+
+  const premioFinal = Math.floor(premioAcreditado)
+  return Math.min(topeDuro - ganadosHoy, Math.max(0, premioFinal))
 }

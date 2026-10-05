@@ -538,9 +538,16 @@ export function PantallaHoy() {
 
       // 1. Publicación a través de la API del servidor (Service Role)
       try {
+        const headers = { 'Content-Type': 'application/json' }
+        try {
+          const { data: sData } = await supabase.auth.getSession()
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+        } catch (_) {}
+        if (perfil?.id) headers['x-user-id'] = perfil.id
+
         const resp = await fetch('/api/feed/publicar', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             user_id: perfil.id,
             categoria: categoriaPost,
@@ -550,7 +557,7 @@ export function PantallaHoy() {
           })
         })
         const json = await resp.json()
-        if (json.post) postCreado = json.post
+        if (json?.post) postCreado = json.post
       } catch (_) {}
 
       // 2. Fallback directo a Supabase
@@ -564,11 +571,8 @@ export function PantallaHoy() {
               titulo: tituloAuto,
               contenido: contenidoLimpio
             })
-            .select(`
-              id, user_id, categoria, titulo, contenido, likes_count, created_at,
-              profiles:profiles!feed_posts_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
-            `)
-            .maybeSingle()
+            .select('id, user_id, categoria, titulo, contenido, likes_count, created_at')
+            .single()
 
           if (!error && data) postCreado = data
         } catch (_) {}
@@ -666,7 +670,7 @@ export function PantallaHoy() {
     }
   }
 
-  // Like interactivo
+  // Like interactivo con backend centralizado sin fallos de RPCs
   const handleToggleLike = async (itemId, esPostReal = true) => {
     sound.playPop()
     const yaLeDi = Boolean(likesDados[itemId])
@@ -692,23 +696,16 @@ export function PantallaHoy() {
 
       if (!esPostOffline(itemId) && perfil?.id) {
         try {
-          if (!yaLeDi) {
-            await supabase.from('feed_post_likes').upsert({ post_id: itemId, user_id: perfil?.id })
-            await supabase.rpc('increment_likes_count', { post_id: itemId })
-          } else {
-            await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil?.id })
-            await supabase.rpc('decrement_likes_count', { post_id: itemId })
+          const res = await fetch('/api/feed/like', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId: itemId, userId: perfil?.id, darLike: !yaLeDi })
+          })
+          const lData = await res.json()
+          if (typeof lData?.likes === 'number') {
+            setPostsFeed(prev => prev.map(p => p.id === itemId ? { ...p, likes: lData.likes } : p))
           }
-          await supabase.from('feed_posts').update({ likes_count: nuevoCount }).eq('id', itemId)
-        } catch (_) {
-          try {
-            await fetch('/api/feed/like', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ postId: itemId, userId: perfil?.id, darLike: !yaLeDi })
-            })
-          } catch (_) {}
-        }
+        } catch (_) {}
       }
     } else {
       setRespuestasFeed(prev => prev.map(r => {
@@ -729,25 +726,13 @@ export function PantallaHoy() {
     setPostsFeed(prev => prev.filter(p => p.id !== postId))
 
     if (!esPostOffline(postId)) {
-      let borradoApi = false
       try {
-        const resp = await fetch('/api/feed/eliminar', {
+        await fetch('/api/feed/eliminar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ postId, userId: perfil?.id })
         })
-        const json = await resp.json()
-        if (json?.success) borradoApi = true
       } catch (_) {}
-
-      if (!borradoApi) {
-        try {
-          const { error: errSoft } = await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', postId)
-          if (errSoft) {
-            await supabase.from('feed_posts').delete().eq('id', postId)
-          }
-        } catch (_) {}
-      }
     }
 
     transmitirEvento('eliminar_feed_post', { postId })
@@ -1440,8 +1425,8 @@ export function PantallaHoy() {
             }}>
               <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                 {(esModerador
-                  ? ['General', 'Linux', 'Redes', 'Truco', 'Aviso']
-                  : ['General', 'Linux', 'Redes', 'Truco']
+                  ? ['General', 'Linux', 'Redes', 'Aviso']
+                  : ['General', 'Linux', 'Redes']
                 ).map(cat => {
                   const sel = categoriaPost === cat
                   return (
@@ -1450,12 +1435,12 @@ export function PantallaHoy() {
                       type="button"
                       onClick={() => setCategoriaPost(cat)}
                       style={{
-                        padding: '2px 8px',
+                        padding: '3px 9px',
                         borderRadius: 9999,
                         fontSize: 11,
                         fontWeight: 700,
                         border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                        backgroundColor: sel ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
+                        backgroundColor: sel ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface-secondary)',
                         color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
                         cursor: 'pointer'
                       }}
@@ -1466,15 +1451,26 @@ export function PantallaHoy() {
                 })}
 
                 {esModerador && (
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 4 }}>
-                    <input
-                      type="checkbox"
-                      checked={fijarPostAdmin}
-                      onChange={(e) => setFijarPostAdmin(e.target.checked)}
-                      style={{ accentColor: 'var(--color-accent)' }}
-                    />
-                    <span>📌 Fijar</span>
-                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setFijarPostAdmin(v => !v)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 9999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: fijarPostAdmin ? '1px solid #FF9500' : '1px solid var(--color-separator)',
+                      backgroundColor: fijarPostAdmin ? 'rgba(255, 149, 0, 0.12)' : 'var(--color-surface-secondary)',
+                      color: fijarPostAdmin ? '#D97706' : 'var(--color-secondary-ink)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <span>📌</span>
+                    <span>{fijarPostAdmin ? 'Fijado' : 'Fijar'}</span>
+                  </button>
                 )}
               </div>
 
@@ -1999,7 +1995,7 @@ export function PantallaHoy() {
               </h3>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {CATEGORIAS_VALIDAS.map((cat) => {
                 const activo = filtroCategoria.toLowerCase() === cat.id.toLowerCase()
                 const count = conteoCategorias[cat.id] || 0
@@ -2012,35 +2008,31 @@ export function PantallaHoy() {
                       setFiltroCategoria(activo && cat.id !== 'todas' ? 'todas' : cat.id)
                     }}
                     style={{
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: 10,
+                      gap: 5,
+                      padding: '4px 10px',
+                      borderRadius: 9999,
                       border: activo ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: activo ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+                      backgroundColor: activo ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface-secondary)',
                       color: activo ? 'var(--color-accent)' : 'var(--color-ink)',
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
-                      transition: 'all 0.12s ease',
-                      textAlign: 'left'
+                      transition: 'all 0.12s ease'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: cat.color || 'var(--color-secondary-ink)' }}>#</span>
-                      <span>{cat.label}</span>
-                    </div>
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: 'var(--color-secondary-ink)',
-                      backgroundColor: 'rgba(0,0,0,0.05)',
-                      padding: '1px 6px',
-                      borderRadius: 9999
-                    }}>
-                      {count}
-                    </span>
+                    <span>#{cat.label}</span>
+                    {count > 0 && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: 'var(--color-secondary-ink)',
+                        opacity: 0.8
+                      }}>
+                        {count}
+                      </span>
+                    )}
                   </button>
                 )
               })}
