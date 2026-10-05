@@ -10,8 +10,6 @@ import { sound, triggerConfetti } from '../utils/haptics'
 import {
   Heart,
   MessageSquare,
-  Repeat2,
-  Share2,
   Send,
   Sparkles,
   ShoppingBag,
@@ -109,7 +107,7 @@ function resolverAutorFeed(p) {
 // Posts oficiales garantizados en caso de BD vacía o primera inicialización
 const POSTS_ADMINISTRACION_OFICIALES = [
   {
-    id: 'post-admin-bienvenida',
+    id: '00000000-0000-4000-b000-000000000001',
     tipo: 'post',
     userId: ADMIN_LOMINONO_ID,
     autor: 'lominoño (Post de administración)',
@@ -129,7 +127,7 @@ const POSTS_ADMINISTRACION_OFICIALES = [
     created_at: new Date(Date.now() - 3600 * 1000 * 24).toISOString()
   },
   {
-    id: 'post-admin-linux-tip',
+    id: '00000000-0000-4000-b000-000000000002',
     tipo: 'post',
     userId: ADMIN_LOMINONO_ID,
     autor: 'lominoño (Post de administración)',
@@ -149,6 +147,8 @@ const POSTS_ADMINISTRACION_OFICIALES = [
     created_at: new Date(Date.now() - 3600 * 1000 * 2).toISOString()
   }
 ]
+
+const esPostOffline = (id) => !id || String(id).startsWith('00000000-0000-4000-b000-') || String(id).startsWith('post-admin-')
 
 export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
@@ -204,13 +204,6 @@ export function PantallaHoy() {
   const [likesDados, setLikesDados] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`muudel_feed_likes_${perfil?.id}`) || '{}')
-    } catch (e) {
-      return {}
-    }
-  })
-  const [repostsDados, setRepostsDados] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`muudel_feed_reposts_${perfil?.id}`) || '{}')
     } catch (e) {
       return {}
     }
@@ -406,23 +399,27 @@ export function PantallaHoy() {
 
       // 3. Cargar posts reales desde Supabase con fallback a API del servidor
       let rawPosts = null
-      const { data: postsData, error: errPosts } = await supabase
-        .from('feed_posts')
-        .select(`
-          id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
-          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
-        `)
-        .eq('soft_deleted', false)
-        .order('created_at', { ascending: false })
-        .limit(60)
+      try {
+        const { data: postsData, error: errPosts } = await supabase
+          .from('feed_posts')
+          .select(`
+            id, user_id, categoria, titulo, contenido, likes_count, created_at,
+            profiles:profiles!feed_posts_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
+          `)
+          .eq('soft_deleted', false)
+          .order('created_at', { ascending: false })
+          .limit(60)
 
-      if (!errPosts && postsData) {
-        rawPosts = postsData
-      } else {
+        if (!errPosts && postsData && postsData.length > 0) {
+          rawPosts = postsData
+        }
+      } catch (_) {}
+
+      if (!rawPosts) {
         try {
           const resp = await fetch('/api/feed/posts')
           const json = await resp.json()
-          if (json.posts) rawPosts = json.posts
+          if (json.posts && json.posts.length > 0) rawPosts = json.posts
         } catch (_) {}
       }
 
@@ -532,43 +529,41 @@ export function PantallaHoy() {
     try {
       let postCreado = null
 
-      // Inserción en Supabase
+      // 1. Publicación a través de la API del servidor (Service Role)
       try {
-        const { data, error } = await supabase
-          .from('feed_posts')
-          .insert({
+        const resp = await fetch('/api/feed/publicar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             user_id: perfil.id,
             categoria: categoriaPost,
             titulo: tituloAuto,
             contenido: contenidoLimpio,
-            es_admin: esModerador,
-            fijado: esModerador && fijarPostAdmin
+            es_admin: esModerador
           })
-          .select(`
-            id, categoria, titulo, contenido, likes_count, created_at, es_admin, fijado,
-            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
-          `)
-          .single()
-
-        if (!error && data) postCreado = data
+        })
+        const json = await resp.json()
+        if (json.post) postCreado = json.post
       } catch (_) {}
 
-      // Fallback a API con Service Key
+      // 2. Fallback directo a Supabase
       if (!postCreado) {
         try {
-          const resp = await fetch('/api/feed/publicar', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+          const { data, error } = await supabase
+            .from('feed_posts')
+            .insert({
               user_id: perfil.id,
               categoria: categoriaPost,
               titulo: tituloAuto,
-              contenido: contenidoLimpio,
-              es_admin: esModerador
+              contenido: contenidoLimpio
             })
-          })
-          const json = await resp.json()
-          if (json.post) postCreado = json.post
+            .select(`
+              id, user_id, categoria, titulo, contenido, likes_count, created_at,
+              profiles:profiles!feed_posts_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
+            `)
+            .maybeSingle()
+
+          if (!error && data) postCreado = data
         } catch (_) {}
       }
 
@@ -688,23 +683,25 @@ export function PantallaHoy() {
 
       transmitirEvento('like_feed_item', { itemId, nuevoCount })
 
-      try {
-        if (!yaLeDi) {
-          await supabase.from('feed_post_likes').upsert({ post_id: itemId, user_id: perfil?.id })
-          await supabase.rpc('increment_likes_count', { post_id: itemId })
-        } else {
-          await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil?.id })
-          await supabase.rpc('decrement_likes_count', { post_id: itemId })
-        }
-        await supabase.from('feed_posts').update({ likes_count: nuevoCount }).eq('id', itemId)
-      } catch (_) {
+      if (!esPostOffline(itemId) && perfil?.id) {
         try {
-          await fetch('/api/feed/like', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postId: itemId, userId: perfil?.id, darLike: !yaLeDi })
-          })
-        } catch (_) {}
+          if (!yaLeDi) {
+            await supabase.from('feed_post_likes').upsert({ post_id: itemId, user_id: perfil?.id })
+            await supabase.rpc('increment_likes_count', { post_id: itemId })
+          } else {
+            await supabase.from('feed_post_likes').delete().match({ post_id: itemId, user_id: perfil?.id })
+            await supabase.rpc('decrement_likes_count', { post_id: itemId })
+          }
+          await supabase.from('feed_posts').update({ likes_count: nuevoCount }).eq('id', itemId)
+        } catch (_) {
+          try {
+            await fetch('/api/feed/like', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ postId: itemId, userId: perfil?.id, darLike: !yaLeDi })
+            })
+          } catch (_) {}
+        }
       }
     } else {
       setRespuestasFeed(prev => prev.map(r => {
@@ -717,21 +714,6 @@ export function PantallaHoy() {
     }
   }
 
-  // Repost
-  const handleRepost = (itemId) => {
-    sound.playStamp()
-    const yaRepostee = Boolean(repostsDados[itemId])
-    setRepostsDados(prev => {
-      const copia = { ...prev }
-      if (yaRepostee) delete copia[itemId]
-      else copia[itemId] = true
-      localStorage.setItem(`muudel_feed_reposts_${perfil?.id}`, JSON.stringify(copia))
-      return copia
-    })
-    triggerConfetti()
-    avisarToast(yaRepostee ? 'Impulso cancelado' : '¡Publicación impulsada en el aula!', 'exito')
-  }
-
   // Eliminar post
   const handleEliminarPost = async (postId) => {
     if (!window.confirm('¿Seguro que deseas eliminar esta publicación del feed?')) return
@@ -739,14 +721,27 @@ export function PantallaHoy() {
 
     setPostsFeed(prev => prev.filter(p => p.id !== postId))
 
-    try {
-      await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', postId)
-      await fetch('/api/feed/eliminar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, userId: perfil?.id })
-      })
-    } catch (_) {}
+    if (!esPostOffline(postId)) {
+      let borradoApi = false
+      try {
+        const resp = await fetch('/api/feed/eliminar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ postId, userId: perfil?.id })
+        })
+        const json = await resp.json()
+        if (json?.success) borradoApi = true
+      } catch (_) {}
+
+      if (!borradoApi) {
+        try {
+          const { error: errSoft } = await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', postId)
+          if (errSoft) {
+            await supabase.from('feed_posts').delete().eq('id', postId)
+          }
+        } catch (_) {}
+      }
+    }
 
     transmitirEvento('eliminar_feed_post', { postId })
     avisarToast('Publicación eliminada correctamente.')
@@ -754,13 +749,16 @@ export function PantallaHoy() {
 
   // Cargar comentarios
   const cargarComentariosPost = async (postId) => {
+    if (esPostOffline(postId)) {
+      return
+    }
     setCargandoComentarios(prev => ({ ...prev, [postId]: true }))
     try {
       const { data, error } = await supabase
         .from('feed_post_comments')
         .select(`
           id, post_id, contenido, created_at,
-          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+          profiles:profiles!feed_post_comments_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
         `)
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
@@ -797,24 +795,23 @@ export function PantallaHoy() {
     try {
       let nuevoCom = null
 
-      try {
-        const { data, error } = await supabase
-          .from('feed_post_comments')
-          .insert({
-            post_id: postId,
-            user_id: perfil.id,
-            contenido: texto
-          })
-          .select(`
-            id, post_id, contenido, created_at,
-            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
-          `)
-          .single()
-
-        if (!error && data) nuevoCom = data
-      } catch (_) {}
-
-      if (!nuevoCom) {
+      if (esPostOffline(postId)) {
+        nuevoCom = {
+          id: 'com_' + Date.now(),
+          post_id: postId,
+          contenido: texto,
+          created_at: new Date().toISOString(),
+          profiles: {
+            id: perfil.id,
+            nombre: perfil.nombre,
+            username: perfil.username,
+            rol: perfil.rol,
+            color_acento: perfil.color_acento,
+            avatar_emoji: perfil.avatar_emoji
+          }
+        }
+      } else {
+        // 1. Probar API del servidor
         try {
           const resp = await fetch('/api/feed/comentar', {
             method: 'POST',
@@ -824,6 +821,26 @@ export function PantallaHoy() {
           const json = await resp.json()
           if (json.comentario) nuevoCom = json.comentario
         } catch (_) {}
+
+        // 2. Fallback Supabase con FK explícita
+        if (!nuevoCom) {
+          try {
+            const { data, error } = await supabase
+              .from('feed_post_comments')
+              .insert({
+                post_id: postId,
+                user_id: perfil.id,
+                contenido: texto
+              })
+              .select(`
+                id, post_id, contenido, created_at,
+                profiles:profiles!feed_post_comments_user_id_fkey (id, nombre, username, color_acento, rol, avatar_emoji)
+              `)
+              .single()
+
+            if (!error && data) nuevoCom = data
+          } catch (_) {}
+        }
       }
 
       if (nuevoCom) {
@@ -922,31 +939,13 @@ export function PantallaHoy() {
     }
   }
 
-  // Compartir publicación
-  const handleCompartirPost = async (item) => {
-    sound.playPop()
-    if (navigator?.share) {
-      try {
-        await navigator.share({
-          title: item.titulo || `Publicación de ${item.autorLimpio} en Muudel`,
-          text: item.contenido,
-          url: window.location.href
-        })
-        return
-      } catch (_) {}
-    }
-
-    if (navigator?.clipboard) {
-      navigator.clipboard.writeText(item.contenido)
-      avisarToast('Contenido copiado al portapapeles', 'exito')
-    }
-  }
-
   // Filtrado reactivo de items
   const itemsTimeline = useMemo(() => {
     let base = postsFeed
     if (tabActiva === 'tips') {
       base = postsFeed.filter(p => ['Truco', 'Linux', 'Redes', 'Comando'].includes(p.categoria))
+    } else if (tabActiva === 'avisos') {
+      base = postsFeed.filter(p => p.esAdministracion || p.categoria === 'Aviso' || p.rol === 'moderador')
     } else if (tabActiva === 'respuestas') {
       base = respuestasFeed
     }
@@ -1322,12 +1321,12 @@ export function PantallaHoy() {
             </div>
           )}
 
-          {/* Pestañas de Navegación de Timeline */}
+          {/* Pestañas de Navegación del Feed (Segmented Control Apple) */}
           <div style={{ display: 'flex', borderTop: '1px solid var(--color-separator)' }}>
             {[
-              { id: 'para_ti', label: 'Para ti', count: postsFeed.length },
+              { id: 'para_ti', label: 'Todos', count: postsFeed.length },
               { id: 'tips', label: 'Chuletas & Tips', count: postsFeed.filter(p => ['Truco', 'Linux', 'Redes', 'Comando'].includes(p.categoria)).length },
-              { id: 'respuestas', label: 'Soluciones', count: respuestasFeed.length }
+              { id: 'avisos', label: 'Avisos', count: postsFeed.filter(p => p.esAdministracion || p.categoria === 'Aviso' || p.rol === 'moderador').length }
             ].map((t) => {
               const activa = tabActiva === t.id
               return (
@@ -1337,7 +1336,7 @@ export function PantallaHoy() {
                   onClick={() => { sound.playPop(); setTabActiva(t.id) }}
                   style={{
                     flex: 1,
-                    padding: '11px 6px',
+                    padding: '11px 8px',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
@@ -1345,7 +1344,6 @@ export function PantallaHoy() {
                     fontSize: 13,
                     fontWeight: activa ? 800 : 500,
                     color: activa ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-                    transition: 'color 0.15s ease',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1357,7 +1355,7 @@ export function PantallaHoy() {
                     <span style={{
                       fontSize: 10,
                       fontWeight: 700,
-                      padding: '1px 5px',
+                      padding: '1px 6px',
                       borderRadius: 9999,
                       backgroundColor: activa ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
                       color: activa ? 'var(--color-accent)' : 'var(--color-secondary-ink)'
@@ -1381,171 +1379,11 @@ export function PantallaHoy() {
               )
             })}
           </div>
-
-          {/* Carrusel Horizontal de Categorías (Pill Selector) */}
-          <div style={{
-            display: 'flex',
-            gap: 6,
-            padding: '8px 14px',
-            overflowX: 'auto',
-            borderTop: '1px solid var(--color-separator)',
-            scrollbarWidth: 'none',
-            WebkitOverflowScrolling: 'touch'
-          }}>
-            {CATEGORIAS_VALIDAS.map((cat) => {
-              const activa = filtroCategoria.toLowerCase() === cat.id.toLowerCase()
-              const CatIcon = cat.icon
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    sound.playPop()
-                    setFiltroCategoria(activa && cat.id !== 'todas' ? 'todas' : cat.id)
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '5px 11px',
-                    borderRadius: 9999,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    border: activa ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                    backgroundColor: activa ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface-secondary)',
-                    color: activa ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <CatIcon size={12} color={activa ? 'var(--color-accent)' : cat.color || 'currentColor'} />
-                  <span>{cat.label}</span>
-                </button>
-              )
-            })}
-          </div>
         </header>
 
-        {/* WIDGET MÓVIL: CLASE EN CURSO EN 1 LÍNEA (SOLO MÓVIL) */}
-        {!esDesktop && (
-          <div
-            onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
-            role="button"
-            tabIndex={0}
-            style={{
-              padding: '8px 14px',
-              backgroundColor: estadoHorario.estado === 'en_clase' ? 'rgba(52, 199, 89, 0.08)' : 'var(--color-surface-secondary)',
-              borderBottom: '1px solid var(--color-separator)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              fontSize: 12
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <span style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                backgroundColor: estadoHorario.estado === 'en_clase' ? 'var(--color-positive)' : 'var(--color-warning)',
-                flexShrink: 0
-              }} />
-              <strong style={{ color: 'var(--color-ink)' }}>
-                {estadoHorario.claseActual?.codigo || 'SMR2'}:
-              </strong>
-              <span style={{ color: 'var(--color-secondary-ink)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {estadoHorario.claseActual?.nombre || 'Jornada escolar'}
-              </span>
-              {estadoHorario.minutosRestantes > 0 && (
-                <span style={{ color: 'var(--color-accent)', fontWeight: 700, flexShrink: 0 }}>
-                  ({estadoHorario.minutosRestantes} min)
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--color-accent)', fontWeight: 700, flexShrink: 0 }}>
-              <span>Horario</span>
-              <ChevronRight size={13} />
-            </div>
-          </div>
-        )}
-
-        {/* BANNER COMPACTO DE ASISTENCIA 15:30 */}
-        {bannerAsistenciaVisible && (
-          <div style={{
-            padding: '8px 16px',
-            borderBottom: '1px solid var(--color-separator)',
-            backgroundColor: asistenciaConfirmada ? 'rgba(52, 199, 89, 0.06)' : 'rgba(10, 132, 255, 0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, minWidth: 0 }}>
-              {asistenciaConfirmada ? (
-                <>
-                  <CheckCircle2 size={16} color="var(--color-positive)" />
-                  <span style={{ fontWeight: 600, color: 'var(--color-positive)' }}>
-                    Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} SE)
-                  </span>
-                </>
-              ) : solicitudPendiente ? (
-                <>
-                  <Clock size={16} color="var(--color-warning)" />
-                  <span style={{ fontWeight: 600, color: 'var(--color-warning)' }}>
-                    Solicitud enviada a lominoño. Esperando confirmación...
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Clock size={16} color="var(--color-accent)" />
-                  <span style={{ fontWeight: 600, color: 'var(--color-ink)' }}>
-                    Clase de las 15:30: Sella tu presencia en el aula
-                  </span>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              {!asistenciaConfirmada && !solicitudPendiente && (
-                <button
-                  type="button"
-                  onClick={handleCheckinRapido}
-                  style={{
-                    backgroundColor: 'var(--color-accent)',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    borderRadius: 9999,
-                    padding: '4px 12px',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Sellar (+{calcularPuntosGanados('checkin')} SE)
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setBannerAsistenciaVisible(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--color-secondary-ink)',
-                  padding: 4
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* COMPOSITOR DE PUBLICACIONES */}
+        {/* COMPOSITOR DE PUBLICACIONES LIGERO */}
         <section style={{
-          padding: esDesktop ? '16px 18px' : '12px 14px',
+          padding: esDesktop ? '14px 18px' : '12px 14px',
           borderBottom: '1px solid var(--color-separator)',
           backgroundColor: 'var(--color-surface)',
           display: 'flex',
@@ -1555,31 +1393,13 @@ export function PantallaHoy() {
             nombre={perfil?.nombre || 'Yo'}
             color={perfil?.color_acento || '#007AFF'}
             rol={perfil?.rol || 'alumno'}
-            size={esDesktop ? 42 : 36}
+            size={esDesktop ? 40 : 34}
           />
 
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {esModerador && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 11,
-                fontWeight: 700,
-                color: 'var(--color-accent)',
-                backgroundColor: 'rgba(10, 132, 255, 0.08)',
-                padding: '4px 10px',
-                borderRadius: 8,
-                border: '1px solid rgba(10, 132, 255, 0.2)'
-              }}>
-                <ShieldCheck size={13} />
-                <span>Publicando como: {perfil?.nombre || 'lominoño'} (Post de administración)</span>
-              </div>
-            )}
-
             <textarea
               ref={composerRef}
-              rows={textoPost.includes('\n') || (esDesktop && textoPost.length > 50) ? 3 : 2}
+              rows={textoPost.includes('\n') ? 3 : 2}
               value={textoPost}
               onChange={(e) => setTextoPost(e.target.value)}
               onKeyDown={(e) => {
@@ -1587,14 +1407,13 @@ export function PantallaHoy() {
                   handlePublicarPost(e)
                 }
               }}
-              onFocus={() => setComposerExpandidoMovil(true)}
-              placeholder={esModerador ? 'Publicar comunicado oficial o tip técnico para la clase...' : '¿Qué estás aprendiendo hoy? Comparte un comando bash, chuleta de redes o duda...'}
+              placeholder={esModerador ? 'Publicar comunicado oficial o tip técnico para la clase...' : '¿Qué estás aprendiendo hoy? Comparte un comando, tip o duda...'}
               style={{
                 width: '100%',
                 border: 'none',
                 outline: 'none',
                 backgroundColor: 'transparent',
-                fontSize: esDesktop ? 15 : 14,
+                fontSize: 14,
                 lineHeight: 1.45,
                 resize: 'none',
                 fontFamily: 'inherit',
@@ -1602,122 +1421,84 @@ export function PantallaHoy() {
               }}
             />
 
-            {/* Categorías pill selector en el compositor */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {(esModerador
-                ? ['Aviso', 'Linux', 'Redes', 'Truco', 'Duda', 'General']
-                : ['Truco', 'Linux', 'Redes', 'Duda', 'General']
-              ).map(cat => {
-                const sel = categoriaPost === cat
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategoriaPost(cat)}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: 9999,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                      backgroundColor: sel ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
-                      color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    #{cat}
-                  </button>
-                )
-              })}
-
-              {/* Botón rápido para insertar bloque de código */}
-              <button
-                type="button"
-                onClick={() => {
-                  setTextoPost(prev => prev + '\n```bash\n# comando de terminal\n\n```\n')
-                  composerRef.current?.focus()
-                }}
-                title="Insertar bloque de comandos bash / linux"
-                style={{
-                  background: 'none',
-                  border: '1px solid var(--color-separator)',
-                  borderRadius: 6,
-                  padding: '2px 7px',
-                  fontSize: 11,
-                  color: 'var(--color-secondary-ink)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}
-              >
-                <Terminal size={11} />
-                <span>+ Código</span>
-              </button>
-
-              {esModerador && (
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={fijarPostAdmin}
-                    onChange={(e) => setFijarPostAdmin(e.target.checked)}
-                    style={{ accentColor: 'var(--color-accent)' }}
-                  />
-                  <span>📌 Fijar</span>
-                </label>
-              )}
-            </div>
-
-            {/* Barra inferior del compositor */}
+            {/* Categorías y Botón de Publicación */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               borderTop: '1px solid var(--color-separator)',
               paddingTop: 8,
-              marginTop: 4,
               flexWrap: 'wrap',
               gap: 8
             }}>
-              <div>
-                {!esModerador ? (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
-                    🎁 Ganas +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} SE al publicar contenido técnico
-                  </span>
-                ) : (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-positive)' }}>
-                    ✓ Comunicado Oficial Verificado
-                  </span>
-                )}
-                {esDesktop && (
-                  <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginLeft: 8 }}>
-                    (Ctrl + Enter para enviar)
-                  </span>
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                {(esModerador
+                  ? ['General', 'Linux', 'Redes', 'Truco', 'Aviso']
+                  : ['General', 'Linux', 'Redes', 'Truco']
+                ).map(cat => {
+                  const sel = categoriaPost === cat
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategoriaPost(cat)}
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 9999,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                        backgroundColor: sel ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
+                        color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      #{cat}
+                    </button>
+                  )
+                })}
+
+                {esModerador && (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 4 }}>
+                    <input
+                      type="checkbox"
+                      checked={fijarPostAdmin}
+                      onChange={(e) => setFijarPostAdmin(e.target.checked)}
+                      style={{ accentColor: 'var(--color-accent)' }}
+                    />
+                    <span>📌 Fijar</span>
+                  </label>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={handlePublicarPost}
-                disabled={!textoPost.trim() || publicando}
-                style={{
-                  backgroundColor: textoPost.trim() ? 'var(--color-accent)' : 'rgba(10, 132, 255, 0.4)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 9999,
-                  padding: '6px 18px',
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: textoPost.trim() ? 'pointer' : 'default',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Send size={13} />
-                <span>{publicando ? 'Publicando...' : (esModerador ? 'Publicar Oficial' : 'Postear')}</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {!esModerador && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
+                    +10 SE 💶
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handlePublicarPost}
+                  disabled={!textoPost.trim() || publicando}
+                  style={{
+                    backgroundColor: textoPost.trim() ? 'var(--color-accent)' : 'rgba(10, 132, 255, 0.4)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 9999,
+                    padding: '5px 16px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: textoPost.trim() ? 'pointer' : 'default',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                >
+                  <Send size={12} />
+                  <span>{publicando ? 'Publicando...' : 'Publicar'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1783,7 +1564,6 @@ export function PantallaHoy() {
 
           {itemsTimeline.map((item) => {
             const yaLeDiLike = Boolean(likesDados[item.id])
-            const yaRepostee = Boolean(repostsDados[item.id])
             const esRespuesta = item.tipo === 'respuesta'
             const esAdminPost = item.esAdministracion || item.rol === 'moderador'
             const puedeBorrar = esModerador || item.userId === perfil?.id
@@ -1925,61 +1705,14 @@ export function PantallaHoy() {
                     {renderizarTextoConComandos(item.contenido)}
                   </div>
 
-                  {/* Fila de Interacciones (Thumb-Friendly en móvil) */}
+                  {/* Fila de Interacciones (Simple, Ligera y Apple HIG) */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    maxWidth: 380,
-                    marginTop: 6,
+                    gap: 16,
+                    marginTop: 8,
                     color: 'var(--color-secondary-ink)'
                   }}>
-                    {/* Botón Comentarios */}
-                    <button
-                      type="button"
-                      title="Ver o responder comentarios"
-                      onClick={() => handleToggleComentarios(item.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        color: comentariosAbiertosEstePost ? 'var(--color-accent)' : 'inherit',
-                        fontSize: 12,
-                        minHeight: 38,
-                        minWidth: 44,
-                        padding: '4px 6px'
-                      }}
-                    >
-                      <MessageSquare size={16} />
-                      <span>{comentariosEstePost.length}</span>
-                    </button>
-
-                    {/* Botón Repost */}
-                    <button
-                      type="button"
-                      title="Impulsar en el aula"
-                      onClick={() => handleRepost(item.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        color: yaRepostee ? 'var(--color-positive)' : 'inherit',
-                        fontSize: 12,
-                        minHeight: 38,
-                        minWidth: 44,
-                        padding: '4px 6px'
-                      }}
-                    >
-                      <Repeat2 size={16} />
-                      <span>{yaRepostee ? 1 : 0}</span>
-                    </button>
-
                     {/* Botón Me Gusta */}
                     <button
                       type="button"
@@ -1991,40 +1724,78 @@ export function PantallaHoy() {
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
+                        gap: 6,
                         color: yaLeDiLike ? '#FF3B30' : 'inherit',
-                        fontSize: 12,
-                        minHeight: 38,
-                        minWidth: 44,
-                        padding: '4px 6px',
-                        transition: 'color 0.12s ease'
+                        fontSize: 13,
+                        fontWeight: 600,
+                        minHeight: 36,
+                        padding: '4px 8px',
+                        borderRadius: 8,
+                        transition: 'background-color 0.12s ease, color 0.12s ease'
                       }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 59, 48, 0.08)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
                     >
                       <Heart size={16} fill={yaLeDiLike ? '#FF3B30' : 'none'} color={yaLeDiLike ? '#FF3B30' : 'currentColor'} />
                       <span>{item.likes || 0}</span>
                     </button>
 
-                    {/* Botón Compartir */}
+                    {/* Botón Comentarios */}
                     <button
                       type="button"
-                      title="Compartir publicación"
-                      onClick={() => handleCompartirPost(item)}
+                      title="Ver o responder comentarios"
+                      onClick={() => handleToggleComentarios(item.id)}
                       style={{
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
-                        color: 'inherit',
-                        fontSize: 12,
-                        minHeight: 38,
-                        minWidth: 44,
-                        padding: '4px 6px'
+                        gap: 6,
+                        color: comentariosAbiertosEstePost ? 'var(--color-accent)' : 'inherit',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        minHeight: 36,
+                        padding: '4px 8px',
+                        borderRadius: 8,
+                        transition: 'background-color 0.12s ease, color 0.12s ease'
                       }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 122, 255, 0.08)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
                     >
-                      <Share2 size={15} />
+                      <MessageSquare size={16} />
+                      <span>{comentariosEstePost.length}</span>
                     </button>
+
+                    {puedeBorrar && (
+                      <button
+                        type="button"
+                        title="Eliminar publicación"
+                        onClick={() => handleEliminarPost(item.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          color: 'var(--color-negative)',
+                          fontSize: 12,
+                          fontWeight: 500,
+                          minHeight: 36,
+                          padding: '4px 8px',
+                          marginLeft: 'auto',
+                          borderRadius: 8,
+                          opacity: 0.8,
+                          transition: 'opacity 0.12s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.8' }}
+                      >
+                        <Trash2 size={13} />
+                        <span>Borrar</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* HILO DE COMENTARIOS INLINE */}

@@ -13,9 +13,9 @@ export const YOSHI_ROULETTE_CONFIG = {
     SALDO_INICIAL: 5000,
     RESERVA_MINIMA: 500, // Por debajo de 500 SE entra en austeridad (pausa de grifos)
     EMISION_DIARIA: 25,  // 25 SE/día inyectados a la Banca a las 00:00 Madrid
-    MAX_AJUSTE_ADMIN_OPERACION: 50,    // Tope por operación de admin (50 SE)
-    MAX_AJUSTE_ADMIN_USUARIO_DIA: 100, // Tope por usuario al día (100 SE)
-    MAX_AJUSTE_ADMIN_TOTAL_DIA: 250,   // Tope total de ajustes admin al día (250 SE)
+    MAX_AJUSTE_ADMIN_OPERACION: 1000,   // Tope por operación de admin (1000 SE)
+    MAX_AJUSTE_ADMIN_USUARIO_DIA: 2000, // Tope por usuario al día (2000 SE)
+    MAX_AJUSTE_ADMIN_TOTAL_DIA: 10000,  // Tope total de ajustes admin al día (10000 SE)
     UMBRAL_ALERTA_CONCENTRACION: 0.30  // Alerta si un alumno concentra > 30% del circulante
   },
 

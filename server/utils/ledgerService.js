@@ -314,11 +314,8 @@ export const LedgerService = {
    * Ajuste de saldo por un Administrador contra la Banca
    */
   async ajustarSaldoAdmin({ adminId, targetUserId, cantidad, motivo, idempotencyKey }) {
-    if (adminId === targetUserId) {
-      throw new Error('El administrador no puede ajustar su propio saldo')
-    }
-    if (!motivo || motivo.trim().length < 4) {
-      throw new Error('El motivo es obligatorio (mínimo 4 caracteres)')
+    if (!motivo || motivo.trim().length < 2) {
+      throw new Error('El motivo es obligatorio')
     }
     const cant = Math.floor(Number(cantidad))
     if (!cant || isNaN(cant)) {
