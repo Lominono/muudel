@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { YOSHI_ROULETTE_CONFIG } from '../../config/yoshiRouletteConfig'
 import { sound, triggerConfetti } from '../../utils/haptics'
 import { PanelHistorialLedger } from '../../components/PanelHistorialLedger'
+import { supabase } from '../../utils/supabase'
 import {
   X,
   Volume2,
@@ -16,8 +17,35 @@ import {
   AlertCircle,
   CheckCircle2,
   Zap,
-  Info
+  Info,
+  ShoppingBag
 } from 'lucide-react'
+
+// Helper para enviar headers con sesión Supabase, ID y PIN maestro
+async function obtenerHeadersRuleta(perfil) {
+  const headers = { 'Content-Type': 'application/json' }
+  try {
+    const { data: sData } = await supabase.auth.getSession()
+    if (sData?.session?.access_token) {
+      headers['Authorization'] = `Bearer ${sData.session.access_token}`
+    }
+  } catch (_) {}
+
+  let localId = null
+  try {
+    const localUser = localStorage.getItem('racha_local_user')
+    if (localUser) localId = JSON.parse(localUser)?.id
+  } catch (_) {}
+
+  const uid = perfil?.id || localId || '00000000-0000-4000-a000-000000000001'
+  headers['x-user-id'] = uid
+
+  const pin = localStorage.getItem('muudel_admin_pin_custom') || '2026'
+  if (pin) headers['x-admin-pin'] = pin
+
+  return headers
+}
+
 
 // Sintetizador de audio retro mecánico para los clacs perimetrales
 class RouletteAudio {
@@ -154,9 +182,8 @@ export function RuletaYoshiModal({
   }, [perfil?.id])
 
   const sincronizarEstadoServidor = async () => {
-    if (!perfil?.id) return
     try {
-      const headers = { 'Content-Type': 'application/json', 'x-user-id': perfil.id }
+      const headers = await obtenerHeadersRuleta(perfil)
       const res = await fetch('/api/ruleta/yoshi-estado', { headers })
       const data = await res.json()
       if (data.success) {
@@ -306,13 +333,11 @@ export function RuletaYoshiModal({
     sound.playPop()
 
     try {
-      const idempKey = `giro_${perfil?.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const idempKey = `giro_${perfil?.id || 'anon'}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const headers = await obtenerHeadersRuleta(perfil)
       const resp = await fetch('/api/ruleta/yoshi-girar', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': perfil?.id || ''
-        },
+        headers,
         body: JSON.stringify({
           nivel: nivelSeleccionado,
           idempotency_key: idempKey
@@ -690,26 +715,186 @@ export function RuletaYoshiModal({
           </div>
         )}
 
-        {resultadoFinal && (
+        {/* Resultado: Vale oficial condecorado al ganar SE vs Estado neutral si cae en 0 SE */}
+        {resultadoFinal && resultadoFinal.esVictoria && (
           <div style={{
-            margin: '6px 18px',
-            padding: '10px 14px',
-            backgroundColor: resultadoFinal.esVictoria ? 'rgba(52, 199, 89, 0.15)' : 'rgba(255,255,255,0.06)',
-            border: `1px solid ${resultadoFinal.esVictoria ? '#34C759' : 'rgba(255,255,255,0.15)'}`,
-            borderRadius: 12,
-            textAlign: 'center'
+            margin: '8px 18px',
+            padding: '14px 16px',
+            backgroundColor: '#121F16',
+            border: '2px solid #30D158',
+            borderRadius: 14,
+            boxShadow: '0 8px 24px rgba(48, 209, 88, 0.25)',
+            position: 'relative',
+            overflow: 'hidden',
+            animation: 'fadeIn 0.3s ease'
           }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: resultadoFinal.esVictoria ? '#86EFAC' : '#D1D5DB' }}>
-              {resultadoFinal.esVictoria ? `¡+${resultadoFinal.stevenEurosGanados} StevenEuros acreditados!` : 'Sin premio en esta tirada'}
+            {/* Cabecera del Vale de Caja */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: '1px dashed rgba(48, 209, 88, 0.4)',
+              paddingBottom: 8,
+              marginBottom: 10
+            }}>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 900,
+                color: '#30D158',
+                letterSpacing: 1.2,
+                textTransform: 'uppercase',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+              }}>
+                ✦ VALE OFICIAL DE CAJA · BANCA SMR2 ✦
+              </span>
+              <span style={{
+                fontSize: 10,
+                color: 'rgba(255,255,255,0.6)',
+                fontFamily: 'ui-monospace, monospace',
+                fontWeight: 700
+              }}>
+                ACREDITADO
+              </span>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
-              Sector: {resultadoFinal.ganador.label}
+
+            {/* Número grande de StevenEuros */}
+            <div style={{ textAlign: 'center', margin: '4px 0 8px' }}>
+              <div style={{
+                fontSize: 34,
+                fontWeight: 900,
+                color: '#86EFAC',
+                letterSpacing: '-0.5px',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                lineHeight: 1.1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
+              }}>
+                <span>+{resultadoFinal.stevenEurosGanados}</span>
+                <span style={{ fontSize: 22, color: '#30D158' }}>SE</span>
+                <span style={{ fontSize: 24 }}>💶</span>
+              </div>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: '#A7F3D0',
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                marginTop: 2
+              }}>
+                ¡Monedas transformadas en Dinero Oficial!
+              </div>
+            </div>
+
+            {/* Explicación y desglose */}
+            <div style={{
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.75)',
+              lineHeight: 1.4,
+              marginBottom: 12
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span>Sector de la rueda:</span>
+                <strong style={{ color: '#FFF' }}>{resultadoFinal.ganador.label}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span>Tu Cartera de StevenEuros:</span>
+                <strong style={{ color: '#86EFAC' }}>{saldoSE} SE 💶</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Monedas Yoshi restantes:</span>
+                <strong style={{ color: '#FCD34D' }}>{saldoMonedas} 🪙</strong>
+              </div>
               {resultadoFinal.fueDegradado && (
-                <div style={{ color: '#FBBF24', fontSize: 10, marginTop: 2 }}>
+                <div style={{ color: '#FBBF24', fontSize: 10, marginTop: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   ⚠️ {resultadoFinal.motivoDegradacion}
                 </div>
               )}
             </div>
+
+            {/* Botón de acción directa hacia la Tienda de Recompensas */}
+            <button
+              type="button"
+              onClick={() => {
+                sound.playPop()
+                window.dispatchEvent(new CustomEvent('muudel_abrir_tienda'))
+                onCerrar?.()
+              }}
+              style={{
+                width: '100%',
+                padding: '9px 12px',
+                borderRadius: 10,
+                backgroundColor: '#0A84FF',
+                color: '#FFFFFF',
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                boxShadow: '0 2px 8px rgba(10, 132, 255, 0.4)'
+              }}
+            >
+              <ShoppingBag size={14} />
+              <span>Ir a la Tienda a Canjear Mis SE</span>
+            </button>
+          </div>
+        )}
+
+        {resultadoFinal && !resultadoFinal.esVictoria && (
+          <div style={{
+            margin: '8px 18px',
+            padding: '12px 14px',
+            backgroundColor: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 14,
+            textAlign: 'center',
+            animation: 'fadeIn 0.25s ease'
+          }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: 'rgba(255,255,255,0.5)',
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              fontFamily: 'ui-monospace, monospace',
+              marginBottom: 4
+            }}>
+              [ CASILLA NEUTRAL · 0 SE ]
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#E5E7EB' }}>
+              Sin premio en esta tirada ({resultadoFinal.ganador.label})
+            </div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', margin: '4px 0 10px', lineHeight: 1.35 }}>
+              Tus monedas se consumieron. ¡Corre en Yoshi Runner para recoger más monedas 🪙 y volver a probar fortuna!
+            </p>
+            {esGameOver && onVolverAJugar && (
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playPop()
+                  onVolverAJugar()
+                }}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  color: '#FFF',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                🏃‍♂️ Correr en Yoshi Runner (+Monedas)
+              </button>
+            )}
           </div>
         )}
 

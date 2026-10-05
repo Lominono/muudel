@@ -257,6 +257,23 @@ function ContenidoApp() {
       }
     })
 
+    const handleSyncMonedasYoshi = (e) => {
+      const { monedas, userId } = e.detail || {}
+      if (!userId || String(userId) === String(perfil?.id)) {
+        if (typeof monedas === 'number') {
+          setPerfil(prev => prev ? { ...prev, monedas_ruleta_yoshi: monedas } : prev)
+          const localUser = localStorage.getItem('racha_local_user')
+          if (localUser) {
+            try {
+              const parsed = JSON.parse(localUser)
+              localStorage.setItem('racha_local_user', JSON.stringify({ ...parsed, monedas_ruleta_yoshi: monedas }))
+            } catch (e) {}
+          }
+        }
+      }
+    }
+    window.addEventListener('monedas_yoshi_actualizadas', handleSyncMonedasYoshi)
+
     return () => {
       desuscribirNotif()
       desuscribirAviso()
@@ -267,6 +284,7 @@ function ContenidoApp() {
       desuscribirPuntos()
       window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
       window.removeEventListener('muudel-rt-postgres-profiles', handleRtPostgresProfiles)
+      window.removeEventListener('monedas_yoshi_actualizadas', handleSyncMonedasYoshi)
     }
   }, [perfil?.id])
 

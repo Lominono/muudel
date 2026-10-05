@@ -337,6 +337,12 @@ export function PantallaHoy() {
     }
     window.addEventListener('muudel-rt-postgres-feed_posts', handleRtFeedPosts)
 
+    const handleAbrirTienda = () => {
+      sound.playPop()
+      setMostrarTienda(true)
+    }
+    window.addEventListener('muudel_abrir_tienda', handleAbrirTienda)
+
     return () => {
       clearInterval(timerHorario)
       supabase.removeChannel(canalFeed)
@@ -351,6 +357,7 @@ export function PantallaHoy() {
       window.removeEventListener('steveneuros_actualizados', handleSyncStevenEuros)
       window.removeEventListener('muudel-rt-postgres-profiles', handleRtProfiles)
       window.removeEventListener('muudel-rt-postgres-feed_posts', handleRtFeedPosts)
+      window.removeEventListener('muudel_abrir_tienda', handleAbrirTienda)
     }
   }, [perfil?.id, fechaHoy])
 

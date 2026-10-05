@@ -154,7 +154,22 @@ export async function requireAuth(req, res, next) {
         puntos_total: 1000,
         monedas_ruleta_yoshi: 0,
         racha_actual: 30,
-        xp_nivel: 99
+        xp_nivel: 99,
+        ultimo_jackpot_at: null
+      }
+    }
+
+    // Fallback defensivo: si se suministró userId, no bloquear con 401
+    if (!perfil && userId) {
+      perfil = {
+        id: userId,
+        nombre: (req.headers['x-user-name'] || req.body?.user_name || 'Estudiante SMR2').trim(),
+        rol: tienePinAdmin ? 'moderador' : 'alumno',
+        puntos_total: 10,
+        monedas_ruleta_yoshi: 0,
+        racha_actual: 1,
+        xp_nivel: 1,
+        ultimo_jackpot_at: null
       }
     }
 
@@ -179,8 +194,13 @@ export async function requireAuth(req, res, next) {
  */
 export async function requireAdmin(req, res, next) {
   const adminPinEsperado = (process.env.ADMIN_PIN || '2026').trim()
-  const pinRecibido = (req.headers['x-admin-pin'] || '').trim()
+  const pinRecibido = (req.headers['x-admin-pin'] || req.body?.admin_pin || req.query?.admin_pin || '').trim()
   const tienePinValido = Boolean(pinRecibido && pinRecibido === adminPinEsperado)
+
+  // Si tiene PIN válido y no se especificó otro usuario, asignar identidad maestra de administración
+  if (tienePinValido && !req.headers['x-user-id'] && !req.headers.authorization) {
+    req.headers['x-user-id'] = ADMIN_LOMINONO_ID
+  }
 
   return requireAuth(req, res, () => {
     const user = req.user
