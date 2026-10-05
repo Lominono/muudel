@@ -242,21 +242,50 @@ export function useChat(canal, perfil = null) {
       }
     } catch (e) {}
 
-    // 3. Cargar mensajes con tolerancia a esquema
+    // 3. Cargar mensajes: intentar primero API del servidor
     try {
+      let mensajesCargados = null
+      try {
+        const resp = await fetch(`/api/chat/mensajes?canal=${canal}&limit=100`)
+        const json = await resp.json()
+        if (json?.success && Array.isArray(json?.mensajes) && json.mensajes.length > 0) {
+          mensajesCargados = json.mensajes.map(m => {
+            const listaLikers = likersMap[m.id] || []
+            const countReal = Math.max(m.likes_count || 0, listaLikers.length)
+            return {
+              ...m,
+              likes_count: countReal,
+              liked_by_me: misLikesSet.has(m.id),
+              likers: listaLikers
+            }
+          })
+        }
+      } catch (_) {}
+
+      if (mensajesCargados && mensajesCargados.length > 0) {
+        setMensajes(mensajesCargados)
+        try { localStorage.setItem('racha_chat_' + canal, JSON.stringify(mensajesCargados.slice(-100))) } catch (e) {}
+        setCargando(false)
+        return
+      }
+
+      // Fallback a Supabase directo con clave foránea explícita
       let res = await supabase
         .from('messages')
-        .select('*, profiles(nombre, username, color_acento, rol, digito_id, frase)')
+        .select(`
+          *,
+          profiles:profiles!messages_user_id_fkey(id, nombre, username, color_acento, rol, digito_id, frase)
+        `)
         .eq('canal', canal)
         .eq('soft_deleted', false)
         .order('created_at', { ascending: true })
         .limit(100)
 
       if (res.error) {
-        // Fallback si la columna soft_deleted no existe en la BD
+        // Fallback si la columna soft_deleted o relación falla
         res = await supabase
           .from('messages')
-          .select('*, profiles(nombre, username, color_acento, rol, digito_id, frase)')
+          .select('*')
           .eq('canal', canal)
           .order('created_at', { ascending: true })
           .limit(100)
@@ -339,14 +368,38 @@ export function useChat(canal, perfil = null) {
           schema: 'public',
           table: 'messages',
           filter: `canal=eq.${canal}`,
-        }, (payload) => {
+        }, async (payload) => {
           if (payload.new) {
+            const raw = payload.new
             setMensajes(prev => {
-              if (prev.some(m => m.id === payload.new.id)) {
-                return prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m)
+              const coincide = prev.find(m => m.id === raw.id || (m.texto === raw.texto && m.user_id === raw.user_id && Math.abs(new Date(m.created_at) - new Date(raw.created_at)) < 3000))
+              if (coincide) {
+                return prev.map(m => m.id === coincide.id ? { ...m, ...raw, nombre: m.nombre || raw.nombre } : m)
               }
-              return [...prev, payload.new]
+              return [...prev, raw]
             })
+
+            // Si el mensaje nuevo no tiene nombre de autor, consultarlo en segundo plano
+            if (!raw.nombre && raw.user_id) {
+              try {
+                const { data: p } = await supabase
+                  .from('profiles')
+                  .select('nombre, username, color_acento, rol, digito_id, frase')
+                  .eq('id', raw.user_id)
+                  .maybeSingle()
+                if (p) {
+                  setMensajes(prev => prev.map(m => m.id === raw.id ? {
+                    ...m,
+                    nombre: p.nombre,
+                    username: p.username,
+                    color_acento: p.color_acento,
+                    rol: p.rol,
+                    digito_id: p.digito_id,
+                    titulo_vip: p.frase
+                  } : m))
+                }
+              } catch (_) {}
+            }
           }
         })
         .on('postgres_changes', {
@@ -410,7 +463,7 @@ export function useChat(canal, perfil = null) {
       created_at: new Date().toISOString()
     }
 
-    // Persistir localmente para tener reactividad instantánea
+    // 1. Persistencia local inmediata (UI 0ms)
     setMensajes(prev => {
       const actualizados = [...prev, nuevoMensaje]
       try {
@@ -419,7 +472,7 @@ export function useChat(canal, perfil = null) {
       return actualizados
     })
 
-    // Transmitir en tiempo real a toda la clase por broadcast
+    // 2. Transmisión broadcast en tiempo real a compañeros
     transmitirEvento('nuevo_mensaje_chat', nuevoMensaje)
 
     // Premiar autoría técnica y humana con XP de skills
@@ -432,52 +485,87 @@ export function useChat(canal, perfil = null) {
     }
 
     try {
-      const payloadInsert = {
-        id: msgId,
-        user_id: validUserId,
-        canal,
-        texto: texto.trim(),
-        es_autoria_humana: analisis.esHumanoVerificado,
-        reply_to: replyData?.id || null
-      }
+      let confirmado = null
 
-      // Si la base de datos ya tiene las columnas reply_to_texto/nombre
-      if (replyData?.texto) {
-        payloadInsert.reply_to_texto = replyData.texto
-        payloadInsert.reply_to_nombre = replyData.nombre
-      }
+      // 3. Envío al Servidor con Service Role (previene 409 y bypasses RLS)
+      try {
+        const resp = await fetch('/api/chat/enviar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            canal,
+            texto: texto.trim(),
+            userId: validUserId,
+            nombre: perfil?.nombre,
+            replyData,
+            es_autoria_humana: analisis.esHumanoVerificado
+          })
+        })
+        const resJson = await resp.json()
+        if (resJson?.success && resJson?.message) {
+          confirmado = resJson.message
+        }
+      } catch (_) {}
 
-      let { data, error: err } = await supabase
-        .from('messages')
-        .insert(payloadInsert)
-        .select()
-        .single()
+      // 4. Fallback directo a Supabase con protección estricta contra 409
+      if (!confirmado) {
+        // Comprobar que reply_to sea un UUID seguro
+        let replyIdSeguro = null
+        if (replyData?.id && validUuidRegex.test(replyData.id)) {
+          try {
+            const { data: ex } = await supabase.from('messages').select('id').eq('id', replyData.id).maybeSingle()
+            if (ex) replyIdSeguro = replyData.id
+          } catch (_) {}
+        }
 
-      if (err) {
-        // Fallback mínimo con solo las columnas estándar garantizadas
-        const payloadMinimo = {
-          id: msgId,
-          user_id: userId,
+        const payloadSupabase = {
+          user_id: validUserId,
           canal,
           texto: texto.trim(),
-          reply_to: replyData?.id || null
+          reply_to: replyIdSeguro,
+          reply_to_texto: replyData?.texto || '',
+          reply_to_nombre: replyData?.nombre || '',
+          es_autoria_humana: analisis.esHumanoVerificado
         }
-        const fallbackRes = await supabase
+
+        const { data: dbData, error: dbErr } = await supabase
           .from('messages')
-          .insert(payloadMinimo)
+          .insert(payloadSupabase)
           .select()
-          .single()
-        if (!fallbackRes.error) {
-          data = fallbackRes.data
-          err = null
+          .maybeSingle()
+
+        if (!dbErr && dbData) {
+          confirmado = dbData
+        } else if (dbErr) {
+          // Último recurso: insert elemental sin reply_to para nunca fallar con 409
+          try {
+            const { data: minData } = await supabase
+              .from('messages')
+              .insert({
+                user_id: validUserId,
+                canal,
+                texto: texto.trim()
+              })
+              .select()
+              .maybeSingle()
+            if (minData) confirmado = minData
+          } catch (_) {}
         }
       }
 
-      if (data) {
-        setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, ...data } : m))
+      if (confirmado) {
+        setMensajes(prev => prev.map(m => m.id === msgId ? {
+          ...m,
+          ...confirmado,
+          id: confirmado.id || msgId,
+          nombre: m.nombre || confirmado.nombre,
+          username: m.username || confirmado.username,
+          color_acento: m.color_acento || confirmado.color_acento,
+          rol: m.rol || confirmado.rol
+        } : m))
       }
 
-      return { data: data || nuevoMensaje, error: err || null }
+      return { data: confirmado || nuevoMensaje, error: null }
     } catch (e) {
       return { data: nuevoMensaje, error: null }
     }

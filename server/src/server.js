@@ -7,6 +7,7 @@ import { apuntesRouter } from '../routes/apuntes.js'
 import { ruletaRouter } from '../routes/ruleta.js'
 import { adminRouter } from '../routes/admin.js'
 import { feedRouter } from '../routes/feed.js'
+import { chatRouter } from '../routes/chat.js'
 
 const app = express()
 
@@ -17,6 +18,7 @@ app.use('/api/ruleta', ruletaRouter)
 app.use('/api/admin', adminRouter)
 app.use('/admin', adminRouter)
 app.use('/api/feed', feedRouter)
+app.use('/api/chat', chatRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ estado: 'ok' })

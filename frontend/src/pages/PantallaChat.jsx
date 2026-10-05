@@ -1,5 +1,6 @@
 // frontend/src/pages/PantallaChat.jsx
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { useChat } from '../hooks/useChat'
 import { useDirectMessages } from '../hooks/useDirectMessages'
@@ -20,6 +21,7 @@ import {
   Smile,
   ExternalLink,
   ChevronDown,
+  ChevronLeft,
   CheckCircle2,
   Zap,
   Sparkles,
@@ -70,9 +72,11 @@ const SELLOS_RAPIDOS = [
 ]
 
 export function PantallaChat() {
+  const navigate = useNavigate()
   const { perfil, setPerfil } = useAuth()
   const [canal, setCanal] = useState('general')
   const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
   const [likedId, setLikedId] = useState(null)
 
   // Detección de ancho móvil vs PC
@@ -278,13 +282,14 @@ export function PantallaChat() {
 
   const manejarEnvio = async (e) => {
     if (e) e.preventDefault()
-    if (!texto.trim() || !perfil) return
+    if (!texto.trim() || !perfil || enviando) return
 
     if (chatSilenciado && perfil.rol !== 'moderador') {
       sound.playPop()
       return
     }
 
+    setEnviando(true)
     const contenido = texto
     setTexto('')
     if (textareaRef.current) {
@@ -301,8 +306,13 @@ export function PantallaChat() {
 
     setMensajeAResponder(null)
     sound.playPop()
-    await enviar(contenido, perfil.id, perfil, replyData)
-    setTimeout(() => scrollToBottom(true), 50)
+
+    try {
+      await enviar(contenido, perfil.id, perfil, replyData)
+    } finally {
+      setEnviando(false)
+      setTimeout(() => scrollToBottom(true), 50)
+    }
   }
 
   const manejarLike = async (id) => {
@@ -541,8 +551,8 @@ export function PantallaChat() {
         <header style={{
           paddingTop: 'max(10px, env(safe-area-inset-top, 10px))',
           paddingBottom: 10,
-          paddingLeft: 14,
-          paddingRight: 14,
+          paddingLeft: 10,
+          paddingRight: 12,
           backgroundColor: 'var(--color-surface)',
           borderBottom: '1px solid var(--color-separator)',
           display: 'flex',
@@ -550,30 +560,58 @@ export function PantallaChat() {
           justifyContent: 'space-between',
           zIndex: 40
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            {/* Botón Volver al Aula/Inicio */}
+            <button
+              type="button"
+              onClick={() => {
+                sound.playPop()
+                navigate('/')
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-accent)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+                fontSize: 15,
+                fontWeight: 600,
+                padding: '4px 6px 4px 0',
+                minHeight: 36
+              }}
+              aria-label="Volver a Inicio"
+            >
+              <ChevronLeft size={20} strokeWidth={2.4} />
+              <span>Inicio</span>
+            </button>
+
             <div style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
+              width: 30,
+              height: 30,
+              borderRadius: 8,
               backgroundColor: 'rgba(0, 122, 255, 0.12)',
               color: 'var(--color-accent)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontWeight: 800
+              fontWeight: 800,
+              flexShrink: 0
             }}>
-              <Hash size={18} />
+              <Hash size={16} />
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <h1 className="apple-headline" style={{ fontSize: 16, margin: 0 }}>
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <h1 className="apple-headline" style={{ fontSize: 15, margin: 0 }}>
                   #{canal}
                 </h1>
-                <span className="apple-badge apple-badge-positive" style={{ fontSize: 10, padding: '1px 6px' }}>
+                <span className="apple-badge apple-badge-positive" style={{ fontSize: 9, padding: '1px 5px' }}>
                   En vivo
                 </span>
               </div>
-              <p className="apple-caption" style={{ margin: 0, fontSize: 11 }}>
+              <p className="apple-caption" style={{ margin: 0, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>
                 {CANALES.find(c => c.id === canal)?.desc}
               </p>
             </div>
@@ -1081,73 +1119,82 @@ export function PantallaChat() {
               paddingBottom: tecladoDesfase > 0 ? '8px' : 'max(8px, env(safe-area-inset-bottom, 8px))',
               backgroundColor: 'var(--color-surface)',
               borderTop: '1px solid var(--color-separator)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
               zIndex: 40
             }}>
-              <button
-                type="button"
-                onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
+              <form
+                onSubmit={manejarEnvio}
                 style={{
-                  minWidth: 44,
-                  minHeight: 44,
-                  borderRadius: 12,
-                  border: '1px solid var(--color-separator)',
-                  backgroundColor: mostrarMenuSellos ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                  color: mostrarMenuSellos ? '#FFF' : 'var(--color-ink)',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
+                  gap: 8,
+                  width: '100%'
                 }}
-                aria-label="Abrir sellos de clase"
               >
-                <Stamp size={18} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarMenuSellos(!mostrarMenuSellos)}
+                  style={{
+                    minWidth: 42,
+                    minHeight: 42,
+                    borderRadius: 12,
+                    border: '1px solid var(--color-separator)',
+                    backgroundColor: mostrarMenuSellos ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: mostrarMenuSellos ? '#FFF' : 'var(--color-ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0
+                  }}
+                  aria-label="Abrir sellos de clase"
+                >
+                  <Stamp size={18} />
+                </button>
 
-              <input
-                type="text"
-                value={texto}
-                disabled={estaBloqueadoEnvio}
-                onChange={(e) => setTexto(e.target.value)}
-                placeholder={
-                  estaBloqueadoEnvio
-                    ? '🔒 Chat silenciado'
-                    : mensajeAResponder
-                    ? `Respondiendo a @${mensajeAResponder.nombre}...`
-                    : `Mensaje en #${canal}...`
-                }
-                className="apple-input"
-                style={{
-                  flex: 1,
-                  minHeight: 44,
-                  fontSize: 16,
-                  borderRadius: 22,
-                  padding: '8px 16px'
-                }}
-              />
+                <input
+                  type="text"
+                  value={texto}
+                  disabled={estaBloqueadoEnvio || enviando}
+                  onChange={(e) => setTexto(e.target.value)}
+                  placeholder={
+                    estaBloqueadoEnvio
+                      ? '🔒 Chat silenciado'
+                      : mensajeAResponder
+                      ? `Respondiendo a @${mensajeAResponder.nombre}...`
+                      : `Mensaje en #${canal}...`
+                  }
+                  className="apple-input"
+                  style={{
+                    flex: 1,
+                    minHeight: 42,
+                    fontSize: 15,
+                    borderRadius: 21,
+                    padding: '8px 14px'
+                  }}
+                />
 
-              <button
-                type="button"
-                disabled={!texto.trim() || estaBloqueadoEnvio}
-                onClick={manejarEnvio}
-                style={{
-                  minWidth: 44,
-                  minHeight: 44,
-                  borderRadius: 22,
-                  border: 'none',
-                  backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                  color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: texto.trim() && !estaBloqueadoEnvio ? 'pointer' : 'default'
-                }}
-                aria-label="Enviar mensaje"
-              >
-                <ArrowUp size={20} strokeWidth={2.6} />
-              </button>
+                <button
+                  type="submit"
+                  disabled={!texto.trim() || estaBloqueadoEnvio || enviando}
+                  style={{
+                    minWidth: 42,
+                    minHeight: 42,
+                    borderRadius: 21,
+                    border: 'none',
+                    backgroundColor: texto.trim() && !estaBloqueadoEnvio && !enviando ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                    color: texto.trim() && !estaBloqueadoEnvio && !enviando ? '#FFFFFF' : 'var(--color-tertiary-ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: texto.trim() && !estaBloqueadoEnvio && !enviando ? 'pointer' : 'default',
+                    flexShrink: 0,
+                    transition: 'all 0.12s ease'
+                  }}
+                  aria-label="Enviar mensaje"
+                >
+                  <ArrowUp size={20} strokeWidth={2.6} />
+                </button>
+              </form>
             </footer>
 
             {/* Action Sheet Móvil al Mantener Pulsado (Long Press) */}
@@ -1938,7 +1985,7 @@ export function PantallaChat() {
 
                   <button
                     type="button"
-                    disabled={!texto.trim() || estaBloqueadoEnvio}
+                    disabled={!texto.trim() || estaBloqueadoEnvio || enviando}
                     onClick={manejarEnvio}
                     title="Enviar mensaje (Enter)"
                     style={{
@@ -1946,12 +1993,12 @@ export function PantallaChat() {
                       height: 42,
                       borderRadius: 12,
                       border: 'none',
-                      backgroundColor: texto.trim() && !estaBloqueadoEnvio ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
-                      color: texto.trim() && !estaBloqueadoEnvio ? '#FFFFFF' : 'var(--color-tertiary-ink)',
+                      backgroundColor: texto.trim() && !estaBloqueadoEnvio && !enviando ? 'var(--color-accent)' : 'var(--color-fill-secondary)',
+                      color: texto.trim() && !estaBloqueadoEnvio && !enviando ? '#FFFFFF' : 'var(--color-tertiary-ink)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      cursor: texto.trim() && !estaBloqueadoEnvio ? 'pointer' : 'default',
+                      cursor: texto.trim() && !estaBloqueadoEnvio && !enviando ? 'pointer' : 'default',
                       flexShrink: 0
                     }}
                   >

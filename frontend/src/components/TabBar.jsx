@@ -1,10 +1,17 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { Newspaper, Trophy, Gamepad2, MessageSquare, User, ClipboardList } from 'lucide-react'
 import { useAuth } from '../App'
 import { sound } from '../utils/haptics'
 
 export function TabBar() {
   const { perfil } = useAuth()
+  const location = useLocation()
+
+  // En móviles, la pantalla de chat tiene su propia vista dedicada a pantalla completa con botón Volver
+  // para que el input de mensajes y el teclado virtual aprovechen el 100% de la superficie útil sin solaparse
+  if (location.pathname === '/chat' && typeof window !== 'undefined' && window.innerWidth <= 768) {
+    return null
+  }
 
   const tabs = [
     { to: '/', label: 'Feed', icon: Newspaper },
