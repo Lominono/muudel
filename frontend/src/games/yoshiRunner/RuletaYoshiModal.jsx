@@ -377,6 +377,16 @@ export function RuletaYoshiModal({
           onActualizarSaldoMonedas?.(nuevoSaldoMonedas)
           onActualizarStevenEuros?.(nuevosPuntosTotal)
 
+          try {
+            localStorage.setItem(`muudel_yoshi_ruleta_saldo_${perfil?.id}`, String(nuevoSaldoMonedas))
+            window.dispatchEvent(new CustomEvent('monedas_yoshi_actualizadas', {
+              detail: { monedas: nuevoSaldoMonedas, userId: perfil?.id }
+            }))
+            window.dispatchEvent(new CustomEvent('steveneuros_actualizados', {
+              detail: { puntos: nuevosPuntosTotal, userId: perfil?.id }
+            }))
+          } catch (_) {}
+
           setCooldownRestante(Math.ceil(YOSHI_ROULETTE_CONFIG.SPIN_COOLDOWN_MS / 1000))
 
           setResultadoFinal({
@@ -654,8 +664,10 @@ export function RuletaYoshiModal({
             width={340}
             height={340}
             style={{
-              width: 320,
-              height: 320,
+              width: '100%',
+              maxWidth: 290,
+              height: 'auto',
+              aspectRatio: '1 / 1',
               borderRadius: '50%',
               display: 'block'
             }}

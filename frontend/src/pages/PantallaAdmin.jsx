@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../App'
+import { ADMIN_LOMINONO_ID } from '../context/AuthContext'
+import { fetchAdmin } from '../utils/apiAuth'
 import { supabase } from '../utils/supabase'
 import { InsigniaIniciales } from '../components/InsigniaIniciales'
 import { sound, triggerConfetti } from '../utils/haptics'
@@ -56,7 +58,8 @@ import {
   Sliders,
   DollarSign,
   Zap,
-  Newspaper
+  Newspaper,
+  Building
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { conOneSignal } from '../utils/oneSignal'
@@ -200,9 +203,19 @@ const TIEMPO_BLOQUEO_SEGUNDOS = 60
 const TIEMPO_INACTIVIDAD_MS = 10 * 60 * 1000 // 10 minutos de inactividad
 
 export function PantallaAdmin() {
-  const { perfil } = useAuth()
+  const { perfil, cargando: authCargando } = useAuth()
   const navigate = useNavigate()
   const [relojTick, setRelojTick] = useState(0)
+
+  // Guardia estricta de seguridad: si no es moderador ni admin, expulsar de inmediato sin mostrar PIN
+  const esAdminAutenticado = Boolean(
+    perfil &&
+    (perfil.rol === 'moderador' || perfil.rol === 'admin' || perfil.id === ADMIN_LOMINONO_ID)
+  )
+
+  if (!authCargando && !esAdminAutenticado) {
+    return <Navigate to="/" replace />
+  }
 
   // 1. Estado de Seguridad por PIN de Moderador
   const [desbloqueado, setDesbloqueado] = useState(() => {
@@ -221,8 +234,25 @@ export function PantallaAdmin() {
   const [errorCambioPin, setErrorCambioPin] = useState('')
 
   // 2. Navegación entre pestañas del Panel
-  const [tab, setTab] = useState('asistencia') // 'asistencia' | 'archivos' | 'chat' | 'canjes' | 'alumnos' | 'retos' | 'seguridad'
+  const [tab, setTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const tabParam = params.get('tab')
+      if (tabParam && ['economia', 'asistencia', 'alumnos', 'canjes', 'retos', 'chat', 'feed', 'archivos', 'seguridad'].includes(tabParam)) {
+        return tabParam
+      }
+    } catch (_) {}
+    return 'economia'
+  })
   const [cargando, setCargando] = useState(true)
+
+  // Métricas de Salud Económica y Banca Central para el ticker superior
+  const [saludEconomia, setSaludEconomia] = useState({
+    saldoBanca: 50000,
+    reservaEstado: 'optima',
+    solvenciaRatio: 1.0,
+    cargando: false
+  })
 
   // 3. Gestión y Administración de Archivos y Materiales del Aula
   const [archivosClase, setArchivosClase] = useState([])
@@ -511,6 +541,25 @@ export function PantallaAdmin() {
       setArchivosClase((prev) => prev.filter(a => a.id !== id))
     })
 
+    // 8. Escuchar cambios de liquidez o reservas de la Banca Central
+    const desuscribirBanca = suscribirEvento('banca_actualizada', (datos) => {
+      if (datos?.nuevoSaldo !== undefined) {
+        setSaludEconomia(prev => ({ ...prev, saldoBanca: datos.nuevoSaldo }))
+      } else {
+        cargarDatos()
+      }
+    })
+
+    const handleSyncBancaWindow = (e) => {
+      const nuevoSaldo = e.detail?.nuevoSaldo
+      if (nuevoSaldo !== undefined) {
+        setSaludEconomia(prev => ({ ...prev, saldoBanca: nuevoSaldo }))
+      } else {
+        cargarDatos()
+      }
+    }
+    window.addEventListener('banca_actualizada', handleSyncBancaWindow)
+
     return () => {
       desuscribirSol()
       desuscribirCanjes()
@@ -525,6 +574,8 @@ export function PantallaAdmin() {
       desuscribirMega()
       desuscribirApuntes()
       desuscribirArchivoBorrado()
+      desuscribirBanca()
+      window.removeEventListener('banca_actualizada', handleSyncBancaWindow)
     }
   }, [desbloqueado, fechaHoy])
 
@@ -750,6 +801,22 @@ export function PantallaAdmin() {
         const cfgSrv = await cargarConfigRecompensasDesdeServidor()
         if (cfgSrv) setConfigRecompensas(cfgSrv)
       } catch (_) {}
+
+      // 11. Sincronizar Métricas de Salud Económica y Banca Central para ticker superior
+      try {
+        const ecoResp = await fetchAdmin('/api/admin/salud-economia')
+        if (ecoResp.ok) {
+          const ecoData = await ecoResp.json()
+          if (ecoData.success && ecoData.bancaCentral) {
+            setSaludEconomia({
+              saldoBanca: ecoData.bancaCentral.saldo ?? 50000,
+              reservaEstado: ecoData.reservaEstado || 'optima',
+              solvenciaRatio: ecoData.solvenciaRatio ?? 1.0,
+              cargando: false
+            })
+          }
+        }
+      } catch (_) {}
     } catch (err) {
       console.warn('Error al cargar datos administrativos:', err)
     } finally {
@@ -926,9 +993,8 @@ export function PantallaAdmin() {
 
         // 1. Borrar vía API del backend con Service Key (Garantiza borrado real sin bloqueos de RLS ni FK)
         try {
-          const resp = await fetch('/api/admin/eliminar-usuario', {
+          const resp = await fetchAdmin('/api/admin/eliminar-usuario', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: alumno.id })
           })
           if (resp.ok) {
@@ -1006,7 +1072,7 @@ export function PantallaAdmin() {
       if (!error && posts) {
         setPostsFeedAdmin(posts)
       } else {
-        const resp = await fetch('/api/feed/posts')
+        const resp = await fetchAdmin('/api/feed/posts')
         const json = await resp.json()
         if (json.posts) setPostsFeedAdmin(json.posts)
       }
@@ -1049,9 +1115,8 @@ export function PantallaAdmin() {
       } catch (_) {}
 
       if (!creado) {
-        const resp = await fetch('/api/feed/publicar', {
+        const resp = await fetchAdmin('/api/feed/publicar', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: perfil?.id,
             categoria: nuevoPostCategoria,
@@ -1093,9 +1158,8 @@ export function PantallaAdmin() {
         sound.playPop()
         try {
           await supabase.from('feed_posts').update({ soft_deleted: true }).eq('id', post.id)
-          await fetch('/api/feed/eliminar', {
+          await fetchAdmin('/api/feed/eliminar', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ postId: post.id, userId: perfil?.id })
           })
         } catch (_) {}
@@ -1248,16 +1312,8 @@ export function PantallaAdmin() {
         if (alumno) {
           let nuevosPuntos = (alumno.puntos_total || 0) + canje.costo
           try {
-            const headers = { 'Content-Type': 'application/json' }
-            try {
-              const { data: sData } = await supabase.auth.getSession()
-              if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-            } catch (_) {}
-            if (perfil?.id) headers['x-user-id'] = perfil.id
-
-            const rResp = await fetch('/api/admin/ajustar-saldo', {
+            const rResp = await fetchAdmin('/api/admin/ajustar-saldo', {
               method: 'POST',
-              headers,
               body: JSON.stringify({
                 targetUserId: canje.userId,
                 cantidad: canje.costo,
@@ -1497,16 +1553,8 @@ export function PantallaAdmin() {
     setAccionEnCurso(alumnoId)
     try {
       if (deltaSE !== 0) {
-        const headers = { 'Content-Type': 'application/json' }
-        try {
-          const { data: sData } = await supabase.auth.getSession()
-          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-        } catch (_) {}
-        if (perfil?.id) headers['x-user-id'] = perfil.id
-
-        const resp = await fetch('/api/admin/ajustar-saldo', {
+        const resp = await fetchAdmin('/api/admin/ajustar-saldo', {
           method: 'POST',
-          headers,
           body: JSON.stringify({
             targetUserId: alumnoId,
             cantidad: deltaSE,
@@ -1523,10 +1571,11 @@ export function PantallaAdmin() {
         }
       }
 
+      const nuevaRachaVal = Math.max(0, Number(rachaExacta) || 0)
       if (modificarRacha) {
         try {
           await supabase.from('profiles').update({
-            racha_actual: Math.max(0, Number(rachaExacta) || 0),
+            racha_actual: nuevaRachaVal,
             updated_at: new Date().toISOString()
           }).eq('id', alumnoId)
         } catch (_) {}
@@ -1538,7 +1587,7 @@ export function PantallaAdmin() {
           return {
             ...a,
             puntos_total: nuevoPuntaje,
-            ...(modificarRacha ? { racha_actual: payloadUpdate.racha_actual } : {})
+            ...(modificarRacha ? { racha_actual: nuevaRachaVal } : {})
           }
         }
         return a
@@ -1553,7 +1602,7 @@ export function PantallaAdmin() {
             const act = {
               ...parsed,
               puntos_total: nuevoPuntaje,
-              ...(modificarRacha ? { racha_actual: payloadUpdate.racha_actual } : {})
+              ...(modificarRacha ? { racha_actual: nuevaRachaVal } : {})
             }
             localStorage.setItem('racha_local_user', JSON.stringify(act))
           }
@@ -1563,7 +1612,7 @@ export function PantallaAdmin() {
       sound.playStamp()
       triggerConfetti()
       avisar(`StevenEuros de ${alumno.nombre} establecidos en ${nuevoPuntaje} SE 💶.`)
-      registrarAuditoria('Ajuste de StevenEuros', `${alumno.nombre} fijado a ${nuevoPuntaje} SE 💶 ${modificarRacha ? `(racha: ${payloadUpdate.racha_actual}d)` : ''} · Motivo: ${motivo}`)
+      registrarAuditoria('Ajuste de StevenEuros', `${alumno.nombre} fijado a ${nuevoPuntaje} SE 💶 ${modificarRacha ? `(racha: ${nuevaRachaVal}d)` : ''} · Motivo: ${motivo}`)
       transmitirEvento('puntos_actualizados', { alumnoId, nuevosPuntos: nuevoPuntaje, userId: alumnoId })
       transmitirEvento('steveneuros_actualizados', { alumnoId, nuevosPuntos: nuevoPuntaje, userId: alumnoId })
       window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoPuntaje, userId: alumnoId } }))
@@ -1590,16 +1639,8 @@ export function PantallaAdmin() {
     let nuevosPuntos = (alumno?.puntos_total || 0) + puntos
 
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      try {
-        const { data: sData } = await supabase.auth.getSession()
-        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-      } catch (_) {}
-      if (perfil?.id) headers['x-user-id'] = perfil.id
-
-      const rResp = await fetch('/api/admin/ajustar-saldo', {
+      const rResp = await fetchAdmin('/api/admin/ajustar-saldo', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           targetUserId: entrega.userId,
           cantidad: puntos,
@@ -1725,16 +1766,8 @@ export function PantallaAdmin() {
     }
 
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      try {
-        const { data: sData } = await supabase.auth.getSession()
-        if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-      } catch (_) {}
-      if (perfil?.id) headers['x-user-id'] = perfil.id
-
-      const resp = await fetch('/api/admin/ajustar-saldo', {
+      const resp = await fetchAdmin('/api/admin/ajustar-saldo', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           targetUserId: alumnoId,
           cantidad: deltaPuntos,
@@ -2239,6 +2272,11 @@ export function PantallaAdmin() {
     return true
   })
 
+  // Métricas agregadas en tiempo real para el ticker superior
+  const circulanteTotal = todosAlumnos.reduce((acc, a) => acc + (Number(a.puntos_total) || 0), 0)
+  const canjesPendientesCount = canjesPedidos.filter(c => c.estado === 'pendiente').length
+  const entregasPendientesCount = entregasRetos.filter(e => e.estado === 'pendiente').length
+
   return (
     <main className="app-container" style={{ maxWidth: 880 }}>
       {/* Cabecera del Panel */}
@@ -2305,7 +2343,7 @@ export function PantallaAdmin() {
         </div>
 
         <p className="apple-subheadline" style={{ fontSize: 13 }}>
-          Gestión de asistencia 15:30, moderación de chat, canjes de puntos y auditoría.
+          Gestión de economía del aula, asistencia 15:30, moderación y control institucional.
         </p>
 
         {/* Notificación flotante */}
@@ -2328,25 +2366,251 @@ export function PantallaAdmin() {
           </div>
         )}
 
-        {/* Selector de Pestañas con scroll suave */}
+        {/* Ticker de Estado KPI Superior (Visión General en Tiempo Real) */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gap: 10,
+          marginTop: 14,
+          marginBottom: 16
+        }}>
+          {/* Card 1: Banca Central */}
+          <button
+            type="button"
+            onClick={() => setTab('economia')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: tab === 'economia' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+              border: tab === 'economia' ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Banca Central
+              </span>
+              <Building size={14} color="var(--color-accent)" />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {saludEconomia.saldoBanca.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>SE</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+              <span style={{
+                display: 'inline-block',
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                backgroundColor: saludEconomia.reservaEstado === 'optima' ? 'var(--color-positive)' : saludEconomia.reservaEstado === 'prudente' ? 'var(--color-warning)' : 'var(--color-negative)'
+              }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: saludEconomia.reservaEstado === 'optima' ? 'var(--color-positive)' : saludEconomia.reservaEstado === 'prudente' ? 'var(--color-warning)' : 'var(--color-negative)' }}>
+                {saludEconomia.reservaEstado === 'optima' ? 'Solvente' : saludEconomia.reservaEstado === 'prudente' ? 'Prudente' : 'Alerta'}
+              </span>
+            </div>
+          </button>
+
+          {/* Card 2: Circulante Alumnos */}
+          <button
+            type="button"
+            onClick={() => setTab('economia')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: tab === 'economia' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+              border: tab === 'economia' ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Circulante Aula
+              </span>
+              <Coins size={14} color="var(--color-warning)" />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {circulanteTotal.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>SE</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+              {todosAlumnos.length} estudiantes
+            </div>
+          </button>
+
+          {/* Card 3: Asistencia 15:30 */}
+          <button
+            type="button"
+            onClick={() => setTab('asistencia')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: tab === 'asistencia' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+              border: tab === 'asistencia' ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Asistencia 15:30
+              </span>
+              <Clock size={14} color={solicitudesHoy.length > 0 ? 'var(--color-accent)' : 'var(--color-secondary-ink)'} />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: solicitudesHoy.length > 0 ? 'var(--color-accent)' : 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {solicitudesHoy.length} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>pend.</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+              {checkinsHoy.length} sellados hoy
+            </div>
+          </button>
+
+          {/* Card 4: Canjes Tienda */}
+          <button
+            type="button"
+            onClick={() => setTab('canjes')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: tab === 'canjes' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+              border: tab === 'canjes' ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Canjes Tienda
+              </span>
+              <ShoppingBag size={14} color={canjesPendientesCount > 0 ? 'var(--color-accent)' : 'var(--color-secondary-ink)'} />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: canjesPendientesCount > 0 ? 'var(--color-accent)' : 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {canjesPendientesCount} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>pend.</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+              {canjesPedidos.length} tickets totales
+            </div>
+          </button>
+
+          {/* Card 5: Retos & Tareas */}
+          <button
+            type="button"
+            onClick={() => setTab('retos')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: tab === 'retos' ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+              border: tab === 'retos' ? '1.5px solid var(--color-accent)' : '1px solid var(--color-separator)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Retos Aula
+              </span>
+              <Target size={14} color={entregasPendientesCount > 0 ? 'var(--color-accent)' : 'var(--color-secondary-ink)'} />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: entregasPendientesCount > 0 ? 'var(--color-accent)' : 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {entregasPendientesCount} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-secondary-ink)' }}>pend.</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+              {retosActivos.length} activos
+            </div>
+          </button>
+        </div>
+
+        {/* Selector de Pestañas con scroll suave y jerarquía institucional */}
         <div style={{
           display: 'flex',
           gap: 6,
-          marginTop: 16,
           overflowX: 'auto',
           paddingBottom: 4,
           scrollbarWidth: 'none'
         }}>
           {[
-            { id: 'asistencia', label: `Asistencia (${solicitudesHoy.length})`, icon: Calendar },
-            { id: 'feed', label: postsFeedAdmin.length > 0 ? `Feed (${postsFeedAdmin.length})` : 'Feed Oficial', icon: Newspaper },
-            { id: 'archivos', label: archivosClase.length > 0 ? `Archivos (${archivosClase.length})` : 'Archivos', icon: Folder },
-            { id: 'chat', label: 'Control del Chat', icon: MessageSquare },
-            { id: 'canjes', label: `Canjes (${canjesPedidos.filter(c => c.estado === 'pendiente').length})`, icon: ShoppingBag },
-            { id: 'economia', label: 'StevenEuros (SE 💶)', icon: Coins },
-            { id: 'alumnos', label: `Comunidad (${todosAlumnos.length})`, icon: Users },
-            { id: 'retos', label: entregasRetos.filter(e => e.estado === 'pendiente').length > 0 ? `Retos (${entregasRetos.filter(e => e.estado === 'pendiente').length} pend.)` : `Retos (${retosActivos.length})`, icon: Target },
-            { id: 'seguridad', label: 'Auditoría', icon: ShieldAlert }
+            {
+              id: 'economia',
+              label: 'Economía & Banca',
+              icon: Coins,
+              badge: `${saludEconomia.saldoBanca.toLocaleString()} SE`,
+              badgeColor: 'var(--color-warning)'
+            },
+            {
+              id: 'asistencia',
+              label: 'Asistencia 15:30',
+              icon: Calendar,
+              badge: solicitudesHoy.length > 0 ? `${solicitudesHoy.length}` : null,
+              badgeColor: 'var(--color-negative)'
+            },
+            {
+              id: 'alumnos',
+              label: 'Comunidad',
+              icon: Users,
+              badge: `${todosAlumnos.length}`,
+              badgeColor: 'var(--color-secondary-ink)'
+            },
+            {
+              id: 'canjes',
+              label: 'Canjes Tienda',
+              icon: ShoppingBag,
+              badge: canjesPendientesCount > 0 ? `${canjesPendientesCount}` : null,
+              badgeColor: 'var(--color-negative)'
+            },
+            {
+              id: 'retos',
+              label: 'Retos de Clase',
+              icon: Target,
+              badge: entregasPendientesCount > 0 ? `${entregasPendientesCount} pend.` : `${retosActivos.length}`,
+              badgeColor: entregasPendientesCount > 0 ? 'var(--color-accent)' : 'var(--color-secondary-ink)'
+            },
+            {
+              id: 'chat',
+              label: 'Control Chat',
+              icon: MessageSquare,
+              badge: chatSilenciadoHasta ? 'Silenciado' : null,
+              badgeColor: 'var(--color-warning)'
+            },
+            {
+              id: 'feed',
+              label: 'Feed Oficial',
+              icon: Newspaper,
+              badge: postsFeedAdmin.length > 0 ? `${postsFeedAdmin.length}` : null,
+              badgeColor: 'var(--color-secondary-ink)'
+            },
+            {
+              id: 'archivos',
+              label: 'Materiales',
+              icon: Folder,
+              badge: archivosClase.length > 0 ? `${archivosClase.length}` : null,
+              badgeColor: 'var(--color-secondary-ink)'
+            },
+            {
+              id: 'seguridad',
+              label: 'Auditoría',
+              icon: ShieldAlert,
+              badge: logsAuditoria.length > 0 ? `${logsAuditoria.length}` : null,
+              badgeColor: 'var(--color-secondary-ink)'
+            }
           ].map((t) => {
             const Icono = t.icon
             const activo = tab === t.id
@@ -2373,6 +2637,19 @@ export function PantallaAdmin() {
               >
                 <Icono size={14} />
                 <span>{t.label}</span>
+                {t.badge && (
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: 9999,
+                    backgroundColor: activo ? 'rgba(255, 255, 255, 0.25)' : 'var(--color-surface-secondary)',
+                    color: activo ? '#FFFFFF' : t.badgeColor,
+                    border: activo ? 'none' : '1px solid var(--color-separator)'
+                  }}>
+                    {t.badge}
+                  </span>
+                )}
               </button>
             )
           })}

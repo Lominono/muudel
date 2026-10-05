@@ -1,5 +1,6 @@
 // frontend/src/games/yoshiRunner/YoshiRunnerGame.jsx
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useAuth } from '../../App'
 import { SPRITES_DATA_URI } from './yoshiAssets'
 import { RuletaYoshiModal } from './RuletaYoshiModal'
 import { sound, triggerConfetti } from '../../utils/haptics'
@@ -318,6 +319,8 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   const [retoSuperadoEnPartida, setRetoSuperadoEnPartida] = useState(false)
   const [dificultad, setDificultad] = useState(() => localStorage.getItem('muudel_yoshi_dificultad') || 'normal')
 
+  const { setPerfil } = useAuth()
+
   // Ruleta de Yoshi (Reglas 1-8)
   const [mostrarRuleta, setMostrarRuleta] = useState(false)
   const [saldoRuleta, setSaldoRuleta] = useState(() => {
@@ -332,17 +335,37 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
   // Sincronizar saldo de ruleta con servidor al montar
   useEffect(() => {
     if (perfil?.id) {
-      fetch('/api/ruleta/yoshi-estado', {
-        headers: { 'x-user-id': perfil.id }
-      })
-        .then(r => r.json())
-        .then(d => {
-          if (d.success && typeof d.saldoMonedas === 'number') {
-            setSaldoRuleta(d.saldoMonedas)
-            localStorage.setItem('muudel_yoshi_ruleta_saldo_' + perfil.id, String(d.saldoMonedas))
-          }
+      const headers = { 'Content-Type': 'application/json', 'x-user-id': perfil.id }
+      try {
+        supabase.auth.getSession().then(({ data: sData }) => {
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          fetch('/api/ruleta/yoshi-estado', { headers })
+            .then(r => r.json())
+            .then(d => {
+              if (d.success && typeof d.saldoMonedas === 'number') {
+                setSaldoRuleta(d.saldoMonedas)
+                localStorage.setItem('muudel_yoshi_ruleta_saldo_' + perfil.id, String(d.saldoMonedas))
+                if (setPerfil) {
+                  setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: d.saldoMonedas }))
+                }
+              }
+            })
+            .catch(() => {})
         })
-        .catch(() => {})
+      } catch (_) {
+        fetch('/api/ruleta/yoshi-estado', { headers })
+          .then(r => r.json())
+          .then(d => {
+            if (d.success && typeof d.saldoMonedas === 'number') {
+              setSaldoRuleta(d.saldoMonedas)
+              localStorage.setItem('muudel_yoshi_ruleta_saldo_' + perfil.id, String(d.saldoMonedas))
+              if (setPerfil) {
+                setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: d.saldoMonedas }))
+              }
+            }
+          })
+          .catch(() => {})
+      }
     }
   }, [perfil?.id])
 
@@ -487,39 +510,72 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
     if (monedasGanadas > 0 && p) {
       const idempKey = `partida_${p.id}_${Date.now()}`
-      fetch('/api/ruleta/yoshi-finalizar-partida', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': p.id
-        },
-        body: JSON.stringify({
-          session_token: sessionTokenRef.current || `fallback_${Date.now()}`,
-          monedas_recogidas: monedasGanadas,
-          duracion_ms: duracionPartidaMs,
-          distancia_m: scoreFinal,
-          idempotency_key: idempKey
-        })
-      })
-        .then(r => r.json())
-        .then(d => {
+      const headers = { 'Content-Type': 'application/json', 'x-user-id': p.id }
+
+      const ejecutarFinalizar = async () => {
+        try {
+          const { data: sData } = await supabase.auth.getSession()
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+        } catch (_) {}
+
+        try {
+          const resp = await fetch('/api/ruleta/yoshi-finalizar-partida', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              session_token: sessionTokenRef.current || `fallback_${p.id}_${Date.now()}`,
+              monedas_recogidas: monedasGanadas,
+              duracion_ms: duracionPartidaMs,
+              distancia_m: scoreFinal,
+              idempotency_key: idempKey
+            })
+          })
+          const d = await resp.json()
           if (d.success && typeof d.nuevoSaldoMonedas === 'number') {
             setSaldoRuleta(d.nuevoSaldoMonedas)
             localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(d.nuevoSaldoMonedas))
+            if (setPerfil) {
+              setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: d.nuevoSaldoMonedas }))
+            }
+            onMonedasGanadas?.(d.nuevoSaldoMonedas)
+            window.dispatchEvent(new CustomEvent('monedas_yoshi_actualizadas', {
+              detail: { monedas: d.nuevoSaldoMonedas, userId: p.id }
+            }))
+            transmitirEvento('monedas_yoshi_actualizadas', {
+              userId: p.id,
+              monedas: d.nuevoSaldoMonedas
+            })
+          } else {
+            // Acreditación local optimista si hubo delay de red
+            const saldoOpt = Math.min(1500, saldoRuleta + monedasGanadas)
+            setSaldoRuleta(saldoOpt)
+            localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(saldoOpt))
+            if (setPerfil) {
+              setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: saldoOpt }))
+            }
+            onMonedasGanadas?.(saldoOpt)
           }
-        })
-        .catch(() => {
-          setSaldoRuleta(prev => Math.min(1500, prev + monedasGanadas))
-        })
+        } catch (e) {
+          const saldoOpt = Math.min(1500, saldoRuleta + monedasGanadas)
+          setSaldoRuleta(saldoOpt)
+          localStorage.setItem(`muudel_yoshi_ruleta_saldo_${p.id}`, String(saldoOpt))
+          if (setPerfil) {
+            setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: saldoOpt }))
+          }
+          onMonedasGanadas?.(saldoOpt)
+        }
+      }
+
+      ejecutarFinalizar()
 
       try {
-        await supabase.from('juegos_puntuaciones').insert({
+        supabase.from('juegos_puntuaciones').insert({
           user_id: p.id, juego: 'yoshi_runner',
           puntos: scoreFinal, monedas_ganadas: monedasGanadas
         })
       } catch (_) {}
     }
-  }, [mejorPuntuacion])
+  }, [mejorPuntuacion, saldoRuleta, setPerfil, onMonedasGanadas])
 
   // ─── Iniciar partida ──────────────────────────────────────────────────────
   const iniciarPartida = useCallback(() => {
@@ -533,24 +589,40 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     setComboActual(1)
 
     inicioPartidaTsRef.current = Date.now()
-    sessionTokenRef.current = null
-
     const p = perfilRef.current
+    const localToken = 'yoshi_' + (p?.id ? p.id.slice(0, 8) : 'guest') + '_' + Date.now()
+    sessionTokenRef.current = localToken
+
     if (p?.id) {
-      fetch('/api/ruleta/yoshi-iniciar-partida', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': p.id
-        }
-      })
-        .then(r => r.json())
-        .then(d => {
-          if (d.success && d.session_token) {
-            sessionTokenRef.current = d.session_token
-          }
+      const headers = { 'Content-Type': 'application/json', 'x-user-id': p.id }
+      try {
+        supabase.auth.getSession().then(({ data: sData }) => {
+          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+          fetch('/api/ruleta/yoshi-iniciar-partida', {
+            method: 'POST',
+            headers
+          })
+            .then(r => r.json())
+            .then(d => {
+              if (d.success && d.session_token) {
+                sessionTokenRef.current = d.session_token
+              }
+            })
+            .catch(() => {})
         })
-        .catch(() => {})
+      } catch (_) {
+        fetch('/api/ruleta/yoshi-iniciar-partida', {
+          method: 'POST',
+          headers
+        })
+          .then(r => r.json())
+          .then(d => {
+            if (d.success && d.session_token) {
+              sessionTokenRef.current = d.session_token
+            }
+          })
+          .catch(() => {})
+      }
     }
 
     const winsActuales = getWins()
@@ -1773,7 +1845,16 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
       </div>
 
       {/* Canvas */}
-      <div style={{ position: 'relative', width: '100%', height: CANVAS_H, overflow: 'hidden' }}>
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        aspectRatio: '760 / 230',
+        maxHeight: 'min(240px, 46vh)',
+        borderRadius: 14,
+        overflow: 'hidden',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        backgroundColor: '#5C94FC'
+      }}>
         <canvas
           ref={canvasRef}
           onMouseDown={() => {
@@ -1874,14 +1955,17 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
             <div style={{
               fontSize: 11,
-              color: 'rgba(255,255,255,0.85)',
-              backgroundColor: 'rgba(251, 191, 36, 0.15)',
-              border: '1px solid rgba(251, 191, 36, 0.35)',
-              padding: '4px 10px',
-              borderRadius: 8,
+              color: 'rgba(255,255,255,0.92)',
+              backgroundColor: 'rgba(251, 191, 36, 0.16)',
+              border: '1px solid rgba(251, 191, 36, 0.4)',
+              padding: '6px 12px',
+              borderRadius: 10,
               maxWidth: 340
             }}>
-              🪙 Saldo de Ruleta: <strong>{saldoRuleta} monedas</strong> (Límite 500 máx)
+              🪙 Saldo acumulado: <strong>{saldoRuleta} monedas</strong> (Tope 1.500 máx)
+              <div style={{ fontSize: 10, color: saldoRuleta >= 100 ? '#86EFAC' : '#FBBF24', marginTop: 2, fontWeight: 700 }}>
+                {saldoRuleta >= 100 ? '✅ ¡Tienes monedas suficientes para girar la Ruleta!' : `Faltan ${Math.max(0, 100 - saldoRuleta)} 🪙 para la Ruleta Bronce`}
+              </div>
             </div>
 
             {retoSuperadoEnPartida && (
@@ -2056,9 +2140,17 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           onActualizarSaldoMonedas={(nuevo) => {
             setSaldoRuleta(nuevo)
             setMonedasNuevaPartida(0)
+            if (setPerfil) {
+              setPerfil(prev => ({ ...prev, monedas_ruleta_yoshi: nuevo }))
+            }
+            onMonedasGanadas?.(nuevo)
+            window.dispatchEvent(new CustomEvent('monedas_yoshi_actualizadas', { detail: { monedas: nuevo, userId: perfil?.id } }))
           }}
           onActualizarStevenEuros={(nuevosPuntos) => {
             if (perfil) perfil.puntos_total = nuevosPuntos
+            if (setPerfil) {
+              setPerfil(prev => ({ ...prev, puntos_total: nuevosPuntos }))
+            }
             window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevosPuntos, userId: perfil?.id } }))
           }}
           onCerrar={() => {

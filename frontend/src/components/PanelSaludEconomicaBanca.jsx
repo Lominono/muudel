@@ -4,6 +4,7 @@ import {
   Shield,
   Coins,
   TrendingUp,
+  TrendingDown,
   AlertTriangle,
   CheckCircle2,
   RefreshCw,
@@ -19,10 +20,21 @@ import {
   DollarSign,
   ArrowRight,
   Eye,
-  Info
+  Info,
+  Gift,
+  Building,
+  ArrowDownRight,
+  ArrowUpRight,
+  Zap,
+  ShoppingBag,
+  Swords,
+  Award,
+  Filter
 } from 'lucide-react'
 import { sound, triggerConfetti } from '../utils/haptics'
 import { InsigniaIniciales } from './InsigniaIniciales'
+import { fetchAdmin } from '../utils/apiAuth'
+import { transmitirEvento } from '../utils/realtimeHub'
 
 export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onActualizarAlumno }) {
   const [datosSalud, setDatosSalud] = useState(null)
@@ -31,21 +43,36 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
   const [auditando, setAuditando] = useState(false)
   const [mostrarModalAuditoria, setMostrarModalAuditoria] = useState(false)
 
-  // Estado para el modal de ajuste contable con confirmación
+  // 1. Estado para el Live Global Ledger Feed (Transacciones en tiempo real)
+  const [ledgerGlobal, setLedgerGlobal] = useState([])
+  const [cargandoLedger, setCargandoLedger] = useState(false)
+  const [filtroTipoLedger, setFiltroTipoLedger] = useState('todos')
+
+  // 2. Estado para intervención de fondos de la Banca (Inyección / Extracción)
+  const [modalBancaIntervencion, setModalBancaIntervencion] = useState(null) // { tipo: 'inyeccion' | 'extraccion', cantidad: 100, motivo: '' }
+  const [enviandoBanca, setEnviandoBanca] = useState(false)
+  const [errorBanca, setErrorBanca] = useState(null)
+
+  // 3. Estado para Estímulo Masivo a la clase (Bono para todos)
+  const [modalEstimuloMasivo, setModalEstimuloMasivo] = useState(null) // { cantidadPorAlumno: 10, motivo: '' }
+  const [enviandoEstimulo, setEnviandoEstimulo] = useState(false)
+  const [errorEstimulo, setErrorEstimulo] = useState(null)
+
+  // 4. Estado para el modal de ajuste contable individual con confirmación
   const [alumnoAjuste, setAlumnoAjuste] = useState(null)
   const [cantidadAjuste, setCantidadAjuste] = useState(10)
   const [motivoAjuste, setMotivoAjuste] = useState('')
   const [enviandoAjuste, setEnviandoAjuste] = useState(false)
   const [errorAjuste, setErrorAjuste] = useState(null)
 
-  // Estado para ver historial contable de un alumno específico
+  // 5. Estado para ver historial contable individual de un alumno específico
   const [alumnoHistorial, setAlumnoHistorial] = useState(null)
   const [historialCargado, setHistorialCargado] = useState([])
   const [cargandoHistorial, setCargandoHistorial] = useState(false)
 
   const [busquedaAlumno, setBusquedaAlumno] = useState('')
 
-  // Estado para gestión y análisis de precios de tienda
+  // 6. Estado para gestión y análisis de precios de tienda
   const [analisisTienda, setAnalisisTienda] = useState([])
   const [historialPrecios, setHistorialPrecios] = useState([])
   const [cargandoTiendaPrecios, setCargandoTiendaPrecios] = useState(false)
@@ -59,67 +86,13 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
   useEffect(() => {
     cargarSaludEconomica()
     cargarAnalisisTienda()
+    cargarLedgerGlobal('todos')
   }, [])
-
-  const cargarAnalisisTienda = async () => {
-    setCargandoTiendaPrecios(true)
-    try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-      const res = await fetch('/api/admin/tienda-analisis-precios', { headers })
-      const data = await res.json()
-      if (data.success) {
-        setAnalisisTienda(data.analisis || [])
-        setHistorialPrecios(data.historial || [])
-      }
-    } catch (_) {}
-    finally {
-      setCargandoTiendaPrecios(false)
-    }
-  }
-
-  const handleGuardarPrecio = async () => {
-    if (!itemEditando) return
-    const precio = Number(nuevoPrecioEdit)
-    if (isNaN(precio) || precio <= 0) {
-      setErrorPrecioEdit('Introduce un precio válido en StevenEuros.')
-      return
-    }
-    setGuardandoPrecio(true)
-    setErrorPrecioEdit(null)
-    try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-      const res = await fetch('/api/admin/tienda-editar-precio', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          itemId: itemEditando.id,
-          nuevoPrecio: precio,
-          motivo: motivoPrecioEdit || 'Ajuste de equilibrio de aula'
-        })
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Error al guardar precio')
-      }
-      sound.playWin()
-      setItemEditando(null)
-      cargarAnalisisTienda()
-    } catch (e) {
-      setErrorPrecioEdit(e.message)
-    } finally {
-      setGuardandoPrecio(false)
-    }
-  }
 
   const cargarSaludEconomica = async () => {
     setCargandoSalud(true)
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const res = await fetch('/api/admin/salud-economia', { headers })
+      const res = await fetchAdmin('/api/admin/salud-economia')
       const data = await res.json()
       if (data.success) {
         setDatosSalud(data)
@@ -131,17 +104,47 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
     }
   }
 
+  const cargarAnalisisTienda = async () => {
+    setCargandoTiendaPrecios(true)
+    try {
+      const res = await fetchAdmin('/api/admin/tienda-analisis-precios')
+      const data = await res.json()
+      if (data.success) {
+        setAnalisisTienda(data.analisis || [])
+        setHistorialPrecios(data.historial || [])
+      }
+    } catch (_) {}
+    finally {
+      setCargandoTiendaPrecios(false)
+    }
+  }
+
+  const cargarLedgerGlobal = async (tipo = filtroTipoLedger) => {
+    setCargandoLedger(true)
+    try {
+      const queryTipo = tipo && tipo !== 'todos' ? `&tipo=${tipo}` : ''
+      const res = await fetchAdmin(`/api/admin/ledger-global?limit=50${queryTipo}`)
+      const data = await res.json()
+      if (data.success) {
+        setLedgerGlobal(data.ledger || [])
+      }
+    } catch (e) {
+      console.warn('Error cargando ledger global:', e)
+    } finally {
+      setCargandoLedger(false)
+    }
+  }
+
+  const handleCambiarFiltroLedger = (nuevoFiltro) => {
+    setFiltroTipoLedger(nuevoFiltro)
+    cargarLedgerGlobal(nuevoFiltro)
+  }
+
   const handleEjecutarAuditoria = async () => {
     setAuditando(true)
     try {
       sound.playPop()
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const res = await fetch('/api/admin/auditar-economia', {
-        method: 'POST',
-        headers
-      })
+      const res = await fetchAdmin('/api/admin/auditar-economia', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         setResultadoAuditoria(data.auditoria)
@@ -162,12 +165,8 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         [clave]: !valorActual,
         motivo: `Modificado por ${perfilAdmin?.nombre || 'Administrador'}`
       }
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const res = await fetch('/api/admin/interruptor-emergencia', {
+      const res = await fetchAdmin('/api/admin/interruptor-emergencia', {
         method: 'POST',
-        headers,
         body: JSON.stringify(nuevoEstado)
       })
       const data = await res.json()
@@ -191,13 +190,9 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
     setEnviandoAjuste(true)
     setErrorAjuste(null)
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const idempKey = `admin_${perfilAdmin.id}_${alumnoAjuste.id}_${Date.now()}`
-      const res = await fetch('/api/admin/ajustar-saldo', {
+      const idempKey = `admin_${perfilAdmin?.id || 'adm'}_${alumnoAjuste.id}_${Date.now()}`
+      const res = await fetchAdmin('/api/admin/ajustar-saldo', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           targetUserId: alumnoAjuste.id,
           cantidad: Number(cantidadAjuste),
@@ -213,14 +208,117 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
 
       sound.playWin()
       triggerConfetti()
-      onActualizarAlumno?.(alumnoAjuste.id, data.resultado.nuevo_saldo_usuario)
+      const nuevoSaldo = data.resultado?.nuevo_saldo_usuario ?? data.resultado?.nuevoSaldoUsuario
+      if (nuevoSaldo !== undefined) {
+        onActualizarAlumno?.(alumnoAjuste.id, nuevoSaldo)
+        transmitirEvento('steveneuros_actualizados', { alumnoId: alumnoAjuste.id, userId: alumnoAjuste.id, nuevosPuntos: nuevoSaldo })
+        transmitirEvento('puntos_actualizados', { alumnoId: alumnoAjuste.id, userId: alumnoAjuste.id, nuevosPuntos: nuevoSaldo })
+        window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { alumnoId: alumnoAjuste.id, nuevosPuntos: nuevoSaldo } }))
+      }
+      if (data.resultado?.nuevo_saldo_banca !== undefined) {
+        transmitirEvento('banca_actualizada', { nuevoSaldo: data.resultado.nuevo_saldo_banca })
+        window.dispatchEvent(new CustomEvent('banca_actualizada', { detail: { nuevoSaldo: data.resultado.nuevo_saldo_banca } }))
+      }
       setAlumnoAjuste(null)
       setMotivoAjuste('')
       cargarSaludEconomica()
+      cargarLedgerGlobal()
     } catch (err) {
       setErrorAjuste(err.message)
     } finally {
       setEnviandoAjuste(false)
+    }
+  }
+
+  const handleConfirmarIntervencionBanca = async () => {
+    if (!modalBancaIntervencion) return
+    const { tipo, cantidad, motivo } = modalBancaIntervencion
+    const cantNum = Math.floor(Number(cantidad))
+
+    if (!cantNum || isNaN(cantNum) || cantNum <= 0) {
+      setErrorBanca('Introduce una cantidad mayor a 0.')
+      return
+    }
+    if (!motivo || motivo.trim().length < 4) {
+      setErrorBanca('El motivo de auditoría es obligatorio (mínimo 4 caracteres).')
+      return
+    }
+
+    const cantidadFinal = tipo === 'inyeccion' ? cantNum : -cantNum
+    setEnviandoBanca(true)
+    setErrorBanca(null)
+
+    try {
+      const res = await fetchAdmin('/api/admin/ajustar-banca', {
+        method: 'POST',
+        body: JSON.stringify({
+          cantidad: cantidadFinal,
+          motivo: motivo.trim(),
+          idempotency_key: `banca_adj_${Date.now()}`
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error al aplicar ajuste a la Banca')
+      }
+
+      sound.playWin()
+      triggerConfetti()
+      setModalBancaIntervencion(null)
+      cargarSaludEconomica()
+      cargarLedgerGlobal()
+      transmitirEvento('banca_actualizada', { nuevoSaldo: data.resultado?.nuevoSaldoBanca })
+      window.dispatchEvent(new CustomEvent('banca_actualizada', { detail: { nuevoSaldo: data.resultado?.nuevoSaldoBanca } }))
+    } catch (err) {
+      setErrorBanca(err.message)
+    } finally {
+      setEnviandoBanca(false)
+    }
+  }
+
+  const handleConfirmarEstimuloMasivo = async () => {
+    if (!modalEstimuloMasivo) return
+    const { cantidadPorAlumno, motivo } = modalEstimuloMasivo
+    const cantNum = Math.floor(Number(cantidadPorAlumno))
+
+    if (!cantNum || isNaN(cantNum) || cantNum <= 0 || cantNum > 100) {
+      setErrorEstimulo('La cantidad debe ser entre 1 y 100 SE por alumno.')
+      return
+    }
+
+    setEnviandoEstimulo(true)
+    setErrorEstimulo(null)
+
+    try {
+      const res = await fetchAdmin('/api/admin/estimulo-masivo', {
+        method: 'POST',
+        body: JSON.stringify({
+          cantidad: cantNum,
+          motivo: motivo?.trim() || 'Estímulo de clase otorgado por administración',
+          idempotency_key: `estimulo_global_${Date.now()}`
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error al emitir estímulo masivo')
+      }
+
+      sound.playWin()
+      triggerConfetti()
+      setModalEstimuloMasivo(null)
+      cargarSaludEconomica()
+      cargarLedgerGlobal()
+      transmitirEvento('ajuste_masivo_puntos', { cantidad: cantNum })
+      transmitirEvento('banca_actualizada', { nuevoSaldo: data.nuevoSaldoBanca })
+      transmitirEvento('steveneuros_actualizados', {})
+      window.dispatchEvent(new CustomEvent('steveneuros_actualizados'))
+      window.dispatchEvent(new CustomEvent('banca_actualizada', { detail: { nuevoSaldo: data.nuevoSaldoBanca } }))
+    } catch (err) {
+      setErrorEstimulo(err.message)
+    } finally {
+      setEnviandoEstimulo(false)
     }
   }
 
@@ -229,10 +327,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
     setCargandoHistorial(true)
     setHistorialCargado([])
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const res = await fetch(`/api/admin/usuario-historial?user_id=${alumno.id}`, { headers })
+      const res = await fetchAdmin(`/api/admin/usuario-historial?user_id=${alumno.id}`)
       const data = await res.json()
       if (data.success) {
         setHistorialCargado(data.historial || [])
@@ -246,12 +341,8 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
   const handleRevertirMovimiento = async (item) => {
     if (!confirm(`¿Deseas revertir este movimiento de ${item.cantidad > 0 ? '+' : ''}${item.cantidad} SE?`)) return
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      if (perfilAdmin?.id) headers['x-user-id'] = perfilAdmin.id
-
-      const res = await fetch('/api/admin/revertir-ajuste', {
+      const res = await fetchAdmin('/api/admin/revertir-ajuste', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           targetUserId: alumnoHistorial.id,
           cantidadOriginal: item.cantidad,
@@ -264,6 +355,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         alert('Movimiento revertido correctamente con contrapartida bancaria.')
         handleVerHistorialAlumno(alumnoHistorial)
         cargarSaludEconomica()
+        cargarLedgerGlobal()
       } else {
         alert(data.error || 'Error al revertir')
       }
@@ -272,48 +364,117 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
     }
   }
 
+  const handleGuardarPrecio = async () => {
+    if (!itemEditando) return
+    const precio = Number(nuevoPrecioEdit)
+    if (isNaN(precio) || precio <= 0) {
+      setErrorPrecioEdit('Introduce un precio válido en StevenEuros.')
+      return
+    }
+    setGuardandoPrecio(true)
+    setErrorPrecioEdit(null)
+    try {
+      const res = await fetchAdmin('/api/admin/tienda-editar-precio', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: itemEditando.id,
+          nuevoPrecio: precio,
+          motivo: motivoPrecioEdit || 'Ajuste de equilibrio de aula'
+        })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error al guardar precio')
+      }
+      sound.playWin()
+      setItemEditando(null)
+      cargarAnalisisTienda()
+    } catch (e) {
+      setErrorPrecioEdit(e.message)
+    } finally {
+      setGuardandoPrecio(false)
+    }
+  }
+
   const saldoBanca = datosSalud?.banca?.saldo ?? 5000
   const reservaMinima = datosSalud?.banca?.reservaMinima ?? 500
   const enAusteridad = datosSalud?.banca?.enAusteridad
   const circulante = datosSalud?.circulanteUsuarios ?? 0
   const suministro = datosSalud?.suministroTotal ?? (saldoBanca + circulante)
+  const solvenciaRatio = datosSalud?.banca?.solvenciaRatio ?? (circulante > 0 ? (saldoBanca / circulante).toFixed(2) : '1.00')
+  const flujo7d = datosSalud?.flujo7Dias || { recaudadoBanca: 0, emitidoPremiosBanca: 0, balanceNeto7d: 0 }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* 1. CABECERA Y BOTÓN DE AUDITORÍA */}
+      {/* 1. CABECERA PRINCIPAL Y ACCIONES MONETARIAS */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: 12,
-        padding: '16px 18px',
-        borderRadius: 16,
-        backgroundColor: 'var(--color-surface-secondary)',
+        padding: '16px 20px',
+        borderRadius: 18,
+        backgroundColor: 'var(--color-surface, #1C1C1E)',
         border: '1px solid var(--color-separator)'
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Shield size={20} color="var(--color-accent)" />
-            <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>
-              Banca del Sistema & Control Económico
-            </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Building size={22} color="var(--color-accent)" />
+            <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--color-ink)' }}>
+              Banca Central & Monitoreo de Economía (SE 💶)
+            </h2>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 800,
+              padding: '2px 8px',
+              borderRadius: 9999,
+              backgroundColor: enAusteridad ? 'rgba(239, 68, 68, 0.15)' : 'rgba(52, 199, 89, 0.15)',
+              color: enAusteridad ? '#EF4444' : '#34C759',
+              border: `1px solid ${enAusteridad ? 'rgba(239, 68, 68, 0.3)' : 'rgba(52, 199, 89, 0.3)'}`
+            }}>
+              {enAusteridad ? 'AUSTERIDAD' : 'SOLVENTE'}
+            </span>
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', margin: '4px 0 0 0' }}>
-            Partida doble, reserva mínima de liquidez e invariante contable en tiempo real.
+            Partida doble estricta, balance de liquidez e invariante contable en tiempo real.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={cargarSaludEconomica}
+            onClick={() => {
+              sound.playPop()
+              cargarSaludEconomica()
+              cargarLedgerGlobal()
+            }}
             disabled={cargandoSalud}
             className="btn-secondary"
             style={{ padding: '7px 12px', fontSize: 12, fontWeight: 700 }}
           >
-            <RefreshCw size={14} className={cargandoSalud ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={cargandoSalud ? 'animate-spin' : ''} />
             <span>Refrescar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setModalBancaIntervencion({ tipo: 'inyeccion', cantidad: 100, motivo: '' })}
+            className="btn-secondary"
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderColor: 'rgba(255, 215, 0, 0.4)' }}
+          >
+            <Coins size={13} color="#FBBF24" />
+            <span>Ajustar Banca</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setModalEstimuloMasivo({ cantidadPorAlumno: 10, motivo: '' })}
+            className="btn-secondary"
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderColor: 'rgba(52, 199, 89, 0.4)' }}
+          >
+            <Gift size={13} color="#34C759" />
+            <span>Estímulo Masivo</span>
           </button>
 
           <button
@@ -330,98 +491,364 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
             }}
           >
             <FileCheck size={14} />
-            <span>{auditando ? 'Auditando...' : 'Auditar Contabilidad'}</span>
+            <span>{auditando ? 'Auditando...' : 'Auditar Invariante'}</span>
           </button>
         </div>
       </div>
 
-      {/* 2. TARJETAS DE SALUD ECONÓMICA DE LA BANCA */}
+      {/* 2. TABLERO DE MÉTRICAS ECONÓMICAS CLAVE (KPIs) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
         gap: 12
       }}>
         {/* Saldo de la Banca */}
-        <div className="card" style={{ padding: '14px 16px', position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 700 }}>
-            <span style={{ fontSize: 16 }}>🏛️</span>
-            <span>Saldo de la Banca</span>
+        <div className="card" style={{ padding: '16px', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 700 }}>
+              <span style={{ fontSize: 18 }}>🏛️</span>
+              <span>Banca Central</span>
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 800,
+              padding: '2px 6px',
+              borderRadius: 6,
+              backgroundColor: enAusteridad ? 'rgba(239, 68, 68, 0.15)' : 'rgba(251, 191, 36, 0.15)',
+              color: enAusteridad ? '#EF4444' : '#FBBF24'
+            }}>
+              {enAusteridad ? 'Crítico' : 'Reserva OK'}
+            </span>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: enAusteridad ? '#EF4444' : '#FBBF24' }}>
+          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8, color: enAusteridad ? '#EF4444' : '#FBBF24' }}>
             {saldoBanca.toLocaleString()} SE 💶
           </div>
-          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-            {enAusteridad ? '⚠️ En reserva mínima (< 500 SE)' : `Reserva mínima: ${reservaMinima} SE`}
+          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 4 }}>
+            Reserva Mínima Obligatoria: <strong>{reservaMinima} SE</strong>
           </div>
         </div>
 
         {/* Circulante de los Estudiantes */}
-        <div className="card" style={{ padding: '14px 16px' }}>
+        <div className="card" style={{ padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 700 }}>
-            <Coins size={16} color="var(--color-warning)" />
-            <span>Circulante de Estudiantes</span>
+            <Coins size={16} color="var(--color-accent)" />
+            <span>Circulante de Alumnos</span>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-ink)' }}>
+          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8, color: 'var(--color-ink)' }}>
             {circulante.toLocaleString()} SE 💶
           </div>
-          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-            Total en manos de los alumnos
+          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 4 }}>
+            Dinero líquido en manos de la clase
           </div>
         </div>
 
         {/* Suministro Total del Ecosistema */}
-        <div className="card" style={{ padding: '14px 16px' }}>
+        <div className="card" style={{ padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 700 }}>
-            <Activity size={16} color="var(--color-accent)" />
+            <Activity size={16} color="var(--color-positive)" />
             <span>Suministro Total</span>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-accent)' }}>
+          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8, color: 'var(--color-positive)' }}>
             {suministro.toLocaleString()} SE 💶
           </div>
-          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-            Invariante: Alumnos + Banca
+          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 4 }}>
+            Banca ({saldoBanca}) + Alumnos ({circulante})
           </div>
         </div>
 
-        {/* Emisión Diaria Configurada */}
-        <div className="card" style={{ padding: '14px 16px' }}>
+        {/* Coeficiente de Solvencia */}
+        <div className="card" style={{ padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-secondary-ink)', fontSize: 12, fontWeight: 700 }}>
-            <TrendingUp size={16} color="var(--color-positive)" />
-            <span>Inyección a Banca</span>
+            <TrendingUp size={16} color="#30D158" />
+            <span>Ratio de Solvencia</span>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, marginTop: 6, color: 'var(--color-positive)' }}>
-            +{datosSalud?.banca?.emisionDiaria || 25} SE / día
+          <div style={{ fontSize: 26, fontWeight: 900, marginTop: 8, color: Number(solvenciaRatio) >= 1 ? '#30D158' : '#F59E0B' }}>
+            {solvenciaRatio}x
           </div>
-          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-            A las 00:00h (Europe/Madrid)
+          <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 4 }}>
+            Emisión Diaria Auto: +{datosSalud?.banca?.emisionDiaria || 25} SE/día
           </div>
         </div>
       </div>
 
-      {/* 3. ALERTAS DE CONCENTRACIÓN DE RIQUEZA (SI APLICA) */}
-      {datosSalud?.alertasConcentracion && datosSalud.alertasConcentracion.length > 0 && (
-        <div style={{
-          padding: '12px 16px',
-          borderRadius: 14,
-          backgroundColor: 'rgba(234, 179, 8, 0.12)',
-          border: '1px solid rgba(234, 179, 8, 0.35)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#D97706', fontSize: 13, fontWeight: 800 }}>
-            <AlertTriangle size={16} />
-            <span>Alerta de Concentración de StevenEuros (&gt; 30% del circulante)</span>
+      {/* 3. BALANCE DE FLUJOS (FAUCETS VS SINKS / EMISIÓN VS ABSORCIÓN 7D) */}
+      <section className="card" style={{ padding: '18px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={18} color="var(--color-accent)" />
+            <h3 className="apple-headline" style={{ fontSize: 15 }}>
+              Balance Monetario Semanal (Grifos vs Sumideros)
+            </h3>
           </div>
-          {datosSalud.alertasConcentracion.map((alerta, i) => (
-            <div key={i} style={{ fontSize: 12, color: 'var(--color-ink)', paddingLeft: 24 }}>
-              • {alerta}
-            </div>
-          ))}
+          <div style={{
+            fontSize: 12,
+            fontWeight: 800,
+            padding: '3px 10px',
+            borderRadius: 8,
+            backgroundColor: flujo7d.balanceNeto7d >= 0 ? 'rgba(52, 199, 89, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+            color: flujo7d.balanceNeto7d >= 0 ? '#34C759' : '#EF4444'
+          }}>
+            Balance Neto 7d: {flujo7d.balanceNeto7d >= 0 ? `+${flujo7d.balanceNeto7d}` : flujo7d.balanceNeto7d} SE 💶
+          </div>
         </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: 14
+        }}>
+          {/* Sumideros / Absorción hacia la Banca */}
+          <div style={{
+            padding: '14px 16px',
+            borderRadius: 14,
+            backgroundColor: 'var(--color-surface-secondary)',
+            border: '1px solid var(--color-separator)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#34C759' }}>
+                <ArrowDownRight size={16} />
+                <span>Absorción a la Banca (Sumideros)</span>
+              </div>
+              <strong style={{ fontSize: 16, color: '#34C759' }}>+{flujo7d.recaudadoBanca || 0} SE</strong>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--color-secondary-ink)', margin: 0 }}>
+              Compras en la tienda escolar, comisiones de duelos PvP (rake 5%) y beneficios del casino.
+            </p>
+          </div>
+
+          {/* Grifos / Emisión desde la Banca */}
+          <div style={{
+            padding: '14px 16px',
+            borderRadius: 14,
+            backgroundColor: 'var(--color-surface-secondary)',
+            border: '1px solid var(--color-separator)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#EF4444' }}>
+                <ArrowUpRight size={16} />
+                <span>Emisión al Aula (Grifos)</span>
+              </div>
+              <strong style={{ fontSize: 16, color: '#EF4444' }}>-{flujo7d.emitidoPremiosBanca || 0} SE</strong>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--color-secondary-ink)', margin: 0 }}>
+              Pase de lista (15:30), retos verificados, tiradas de la Ruleta Yoshi y bonos de bienvenida.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. CONCENTRACIÓN DE RIQUEZA & TOP TENEDORES */}
+      {datosSalud?.topTenedores && datosSalud.topTenedores.length > 0 && (
+        <section className="card" style={{ padding: '18px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Award size={18} color="#FBBF24" />
+              <h3 className="apple-headline" style={{ fontSize: 15 }}>
+                Distribución de Capital & Mayores Tenedores
+              </h3>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+              Top alumnos con mayor liquidez en StevenEuros
+            </span>
+          </div>
+
+          {datosSalud.alertasConcentracion && datosSalud.alertasConcentracion.length > 0 && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              backgroundColor: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 12,
+              color: '#F59E0B',
+              fontSize: 12,
+              fontWeight: 700
+            }}>
+              <AlertTriangle size={16} />
+              <span>{datosSalud.alertasConcentracion[0]}</span>
+            </div>
+          )}
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 10
+          }}>
+            {datosSalud.topTenedores.slice(0, 4).map((tenedor, index) => {
+              const esCritico = tenedor.porcentajeCirculante >= 30
+              return (
+                <div
+                  key={tenedor.id}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    border: esCritico ? '1.5px solid #F59E0B' : '1px solid var(--color-separator)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{tenedor.avatar_emoji || '🧑‍🎓'}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        #{index + 1} {tenedor.nombre}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
+                        {tenedor.porcentajeCirculante}% del circulante
+                      </div>
+                    </div>
+                  </div>
+                  <strong style={{ fontSize: 14, color: 'var(--color-warning)' }}>
+                    {tenedor.puntos_total} SE
+                  </strong>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
 
-      {/* 4. INTERRUPTORES DE EMERGENCIA */}
+      {/* 5. LIVE GLOBAL LEDGER FEED (MOVIMIENTOS ECONÓMICOS DE CLASE EN VIVO) */}
+      <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--color-separator)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <History size={18} color="var(--color-accent)" />
+              <h3 className="apple-headline" style={{ fontSize: 16 }}>
+                Ledger Global en Vivo (Transacciones del Aula)
+              </h3>
+            </div>
+            <p className="apple-caption" style={{ marginTop: 2 }}>
+              Registro inmutable de todas las compras, apuestas, tiradas y emisiones del sistema.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'tienda', label: '🛍️ Tienda' },
+                { id: 'ruleta_yoshi', label: '🎰 Ruleta' },
+                { id: 'apuesta_pvp', label: '🎲 Duelos' },
+                { id: 'ajuste_admin', label: '⚖️ Ajustes' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => handleCambiarFiltroLedger(f.id)}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: 9999,
+                    border: '1px solid var(--color-separator)',
+                    backgroundColor: filtroTipoLedger === f.id ? 'var(--color-accent)' : 'var(--color-surface-secondary)',
+                    color: filtroTipoLedger === f.id ? '#FFF' : 'var(--color-secondary-ink)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => cargarLedgerGlobal()}
+              disabled={cargandoLedger}
+              className="btn-secondary"
+              style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <RefreshCw size={12} className={cargandoLedger ? 'animate-spin' : ''} />
+              <span>Actualizar</span>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {cargandoLedger && (
+            <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+              Cargando transacciones en vivo del ledger...
+            </div>
+          )}
+
+          {!cargandoLedger && ledgerGlobal.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+              No hay movimientos recientes en esta categoría.
+            </div>
+          )}
+
+          {!cargandoLedger && ledgerGlobal.map((tx, idx, arr) => {
+            const esCredito = tx.cantidad > 0
+            const esBanca = tx.user_id === LedgerService?.getBancaId?.() || tx.user_nombre === 'BANCA SISTEMA'
+            return (
+              <div
+                key={tx.id || idx}
+                style={{
+                  padding: '11px 18px',
+                  borderBottom: idx < arr.length - 1 ? '1px solid var(--color-separator)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  transition: 'background-color 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <span style={{ fontSize: 18 }}>{tx.user_avatar || (esBanca ? '🏛️' : '🧑‍🎓')}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{tx.user_nombre}</span>
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        backgroundColor: 'var(--color-fill-secondary)',
+                        color: 'var(--color-secondary-ink)',
+                        textTransform: 'uppercase'
+                      }}>
+                        {tx.tipo?.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 420 }}>
+                      {tx.motivo}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{
+                    fontSize: 14,
+                    fontWeight: 900,
+                    color: esCredito ? '#34C759' : '#EF4444'
+                  }}>
+                    {esCredito ? `+${tx.cantidad}` : tx.cantidad} {tx.moneda === 'monedas_yoshi' ? '🪙' : 'SE 💶'}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--color-tertiary-ink)' }}>
+                    {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* 6. INTERRUPTORES DE EMERGENCIA */}
       <section className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <AlertCircle size={18} color="#FF9500" />
@@ -430,7 +857,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           </h3>
         </div>
         <p className="apple-caption" style={{ marginBottom: 14 }}>
-          Pausa temporalmente las salidas de StevenEuros ante mantenimiento o comportamientos sospechosos.
+          Pausa temporalmente las salidas de StevenEuros ante mantenimiento o conductas sospechosas.
         </p>
 
         <div style={{
@@ -527,10 +954,10 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         </div>
       </section>
 
-      {/* 5. GESTOR DE AJUSTES CONTABLES DE ALUMNOS (CONTRA LA BANCA) */}
+      {/* 7. GESTOR DE AJUSTES CONTABLES DE ALUMNOS (CONTRA LA BANCA) */}
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{
-          padding: '14px 18px',
+          padding: '16px 20px',
           borderBottom: '1px solid var(--color-separator)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -540,23 +967,23 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         }}>
           <div>
             <h3 className="apple-headline" style={{ fontSize: 16 }}>
-              Ajustes Contables Oficiales (Contra la Banca)
+              Ajustes Contables Oficiales por Estudiante
             </h3>
             <p className="apple-caption" style={{ marginTop: 2 }}>
-              Toda modificación queda registrada en el ledger. Límite máximo: ±50 SE por operación.
+              Partida doble contra la Banca. Límite máximo: ±50 SE por operación.
             </p>
           </div>
 
-          <div style={{ position: 'relative', width: 220 }}>
+          <div style={{ position: 'relative', width: 230 }}>
             <input
               type="text"
               className="apple-input"
               placeholder="Buscar estudiante..."
               value={busquedaAlumno}
               onChange={(e) => setBusquedaAlumno(e.target.value)}
-              style={{ width: '100%', paddingLeft: 30, fontSize: 12, height: 32 }}
+              style={{ width: '100%', paddingLeft: 30, fontSize: 12, height: 34 }}
             />
-            <Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--color-secondary-ink)' }} />
+            <Search size={14} style={{ position: 'absolute', left: 9, top: 10, color: 'var(--color-secondary-ink)' }} />
           </div>
         </div>
 
@@ -574,7 +1001,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 <div
                   key={alumno.id}
                   style={{
-                    padding: '12px 18px',
+                    padding: '12px 20px',
                     borderBottom: idx < arr.length - 1 ? '1px solid var(--color-separator)' : 'none',
                     display: 'flex',
                     alignItems: 'center',
@@ -635,7 +1062,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         </div>
       </section>
 
-      {/* 6. GESTIÓN Y AUDITORÍA DE PRECIOS DE TIENDA */}
+      {/* 8. GESTIÓN Y AUDITORÍA DE PRECIOS DE TIENDA */}
       <section className="card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -702,7 +1129,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 .map(item => {
                   const colorTramo = item.tramo === 'legendario' ? '#FBBF24' : item.tramo === 'epico' ? '#BF5AF2' : item.tramo === 'raro' ? '#0A84FF' : '#8E8E93'
                   return (
-                    <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <tr key={item.id} style={{ borderBottom: '1px solid var(--color-separator)' }}>
                       <td style={{ padding: '8px 6px', fontWeight: 700, color: 'var(--color-ink)' }}>
                         {item.titulo}
                       </td>
@@ -771,26 +1198,256 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         )}
       </section>
 
-      {/* 7. DOCUMENTACIÓN FASE 2: EDITOR DE PROBABILIDADES */}
-      <section className="card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <Sliders size={18} color="var(--color-accent)" />
-          <h3 className="apple-headline" style={{ fontSize: 15 }}>
-            Fase 2: Editor Dinámico de Probabilidades (Documentación)
-          </h3>
-        </div>
-        <p className="apple-caption" style={{ marginBottom: 10 }}>
-          Especificación de control para la próxima actualización de balance económico:
-        </p>
-        <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', display: 'flex', flexDirection: 'column', gap: 6, lineHeight: 1.5 }}>
-          <div><strong>1. Validación de Invariante Probabilística:</strong> La suma de los pesos de probabilidad debe ser exactamente 100.0% ($\sum p_i = 1.0$).</div>
-          <div><strong>2. Techo de Valor Esperado (EV):</strong> El EV por tirada no podrá exceder de 1.5 SE en Bronce, 5.0 SE en Plata ni 22.0 SE en Oro para evitar descapitalización de la Banca.</div>
-          <div><strong>3. Simulación Previa Obligatoria:</strong> Antes de guardar cambios, el servidor ejecutará una simulación Monte Carlo de 5.000 iteraciones en segundo plano para verificar solvencia.</div>
-          <div><strong>4. Historial Inmutable:</strong> Toda versión de probabilidades quedará firmada y versionada cronológicamente.</div>
-        </div>
-      </section>
+      {/* ─── MODALES DE INTERVENCIÓN Y AUDITORÍA ─── */}
 
-      {/* MODAL DE CONFIRMACIÓN DE AJUSTE CONTABLE */}
+      {/* MODAL 1: INTERVENCIÓN DE FONDOS DE LA BANCA */}
+      {modalBancaIntervencion && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.76)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10001,
+          padding: 16
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: 440,
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
+            borderRadius: 20,
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
+            padding: 22,
+            color: 'var(--color-ink)'
+          }}>
+            <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 8px 0' }}>
+              Intervención de Liquidez: Banca Central
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginBottom: 14 }}>
+              Inyecta fondos de respaldo o drena excedentes directamente del banco del aula.
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <button
+                type="button"
+                onClick={() => setModalBancaIntervencion(prev => ({ ...prev, tipo: 'inyeccion' }))}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  borderRadius: 10,
+                  border: modalBancaIntervencion.tipo === 'inyeccion' ? '1.5px solid #34C759' : '1px solid var(--color-separator)',
+                  backgroundColor: modalBancaIntervencion.tipo === 'inyeccion' ? 'rgba(52, 199, 89, 0.15)' : 'var(--color-fill-secondary)',
+                  color: modalBancaIntervencion.tipo === 'inyeccion' ? '#34C759' : 'var(--color-ink)',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  cursor: 'pointer'
+                }}
+              >
+                Inyectar Fondos (+)
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalBancaIntervencion(prev => ({ ...prev, tipo: 'extraccion' }))}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  borderRadius: 10,
+                  border: modalBancaIntervencion.tipo === 'extraccion' ? '1.5px solid #EF4444' : '1px solid var(--color-separator)',
+                  backgroundColor: modalBancaIntervencion.tipo === 'extraccion' ? 'rgba(239, 68, 68, 0.15)' : 'var(--color-fill-secondary)',
+                  color: modalBancaIntervencion.tipo === 'extraccion' ? '#EF4444' : 'var(--color-ink)',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  cursor: 'pointer'
+                }}
+              >
+                Extraer Fondos (-)
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Cantidad (StevenEuros)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  className="apple-input"
+                  value={modalBancaIntervencion.cantidad}
+                  onChange={(e) => setModalBancaIntervencion(prev => ({ ...prev, cantidad: e.target.value }))}
+                  style={{ width: '100%', fontSize: 15, fontWeight: 800 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Motivo oficial para auditoría en Ledger
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Inyección de liquidez para torneo / Recalibración"
+                  className="apple-input"
+                  value={modalBancaIntervencion.motivo}
+                  onChange={(e) => setModalBancaIntervencion(prev => ({ ...prev, motivo: e.target.value }))}
+                  style={{ width: '100%', fontSize: 13 }}
+                />
+              </div>
+            </div>
+
+            {errorBanca && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', fontSize: 12, marginBottom: 12 }}>
+                {errorBanca}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setModalBancaIntervencion(null)}
+                className="btn-secondary"
+                disabled={enviandoBanca}
+                style={{ padding: '8px 14px', fontSize: 12 }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarIntervencionBanca}
+                disabled={enviandoBanca}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: 12, fontWeight: 800 }}
+              >
+                {enviandoBanca ? 'Aplicando...' : 'Confirmar en Ledger'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: ESTÍMULO MASIVO PARA EL AULA */}
+      {modalEstimuloMasivo && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.76)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10001,
+          padding: 16
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: 440,
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
+            borderRadius: 20,
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
+            padding: 22,
+            color: 'var(--color-ink)'
+          }}>
+            <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 8px 0' }}>
+              Estímulo Masivo para Toda la Clase
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginBottom: 14 }}>
+              Emite StevenEuros desde la Banca para todos los estudiantes registrados simultáneamente.
+            </p>
+
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              backgroundColor: 'var(--color-surface-secondary)',
+              fontSize: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              marginBottom: 14
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Estudiantes receptores:</span>
+                <strong>{todosAlumnos.filter(a => a.rol !== 'sistema' && a.id !== '00000000-0000-4000-a000-000000000000').length} alumnos</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Costo total a debitar de Banca:</span>
+                <strong style={{ color: '#FBBF24' }}>
+                  {todosAlumnos.filter(a => a.rol !== 'sistema' && a.id !== '00000000-0000-4000-a000-000000000000').length * (Number(modalEstimuloMasivo.cantidadPorAlumno) || 0)} SE
+                </strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Saldo Banca resultante:</span>
+                <span>
+                  {saldoBanca - (todosAlumnos.filter(a => a.rol !== 'sistema' && a.id !== '00000000-0000-4000-a000-000000000000').length * (Number(modalEstimuloMasivo.cantidadPorAlumno) || 0))} SE
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Cantidad por Alumno (1 a 100 SE)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  className="apple-input"
+                  value={modalEstimuloMasivo.cantidadPorAlumno}
+                  onChange={(e) => setModalEstimuloMasivo(prev => ({ ...prev, cantidadPorAlumno: e.target.value }))}
+                  style={{ width: '100%', fontSize: 15, fontWeight: 800 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                  Motivo de celebración o evento escolar
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Bonificación especial viernes / Logro colectivo"
+                  className="apple-input"
+                  value={modalEstimuloMasivo.motivo}
+                  onChange={(e) => setModalEstimuloMasivo(prev => ({ ...prev, motivo: e.target.value }))}
+                  style={{ width: '100%', fontSize: 13 }}
+                />
+              </div>
+            </div>
+
+            {errorEstimulo && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', fontSize: 12, marginBottom: 12 }}>
+                {errorEstimulo}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setModalEstimuloMasivo(null)}
+                className="btn-secondary"
+                disabled={enviandoEstimulo}
+                style={{ padding: '8px 14px', fontSize: 12 }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarEstimuloMasivo}
+                disabled={enviandoEstimulo}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: 12, fontWeight: 800, backgroundColor: '#34C759' }}
+              >
+                {enviandoEstimulo ? 'Emitiendo...' : 'Distribuir Estímulo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: AJUSTE CONTABLE INDIVIDUAL */}
       {alumnoAjuste && (
         <div style={{
           position: 'fixed',
@@ -806,12 +1463,12 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           <div style={{
             width: '100%',
             maxWidth: 440,
-            backgroundColor: '#1C1C1E',
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
             borderRadius: 20,
-            border: '1px solid rgba(255,255,255,0.15)',
+            border: '1px solid var(--color-separator)',
             boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
             padding: 20,
-            color: '#FFF'
+            color: 'var(--color-ink)'
           }}>
             <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 12px 0' }}>
               Confirmar Ajuste Contable contra la Banca
@@ -820,7 +1477,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
             <div style={{
               padding: '12px 14px',
               borderRadius: 12,
-              backgroundColor: 'rgba(255,255,255,0.05)',
+              backgroundColor: 'var(--color-surface-secondary)',
               fontSize: 12,
               display: 'flex',
               flexDirection: 'column',
@@ -828,22 +1485,22 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
               marginBottom: 14
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Alumno receptor:</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Alumno receptor:</span>
                 <strong>{alumnoAjuste.nombre}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Saldo actual del alumno:</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Saldo actual del alumno:</span>
                 <span>{alumnoAjuste.puntos_total || 0} SE</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Saldo tras la acción:</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Saldo tras la acción:</span>
                 <strong style={{ color: Number(cantidadAjuste) >= 0 ? '#34C759' : '#EF4444' }}>
                   {Math.max(0, (alumnoAjuste.puntos_total || 0) + Number(cantidadAjuste))} SE
                 </strong>
               </div>
-              <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', margin: '2px 0' }} />
+              <div style={{ height: 1, backgroundColor: 'var(--color-separator)', margin: '2px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Contrapartida (Banca):</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Contrapartida (Banca):</span>
                 <span>{saldoBanca} SE → <strong>{saldoBanca - Number(cantidadAjuste)} SE</strong></span>
               </div>
             </div>
@@ -857,18 +1514,10 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                   type="number"
                   min="-50"
                   max="50"
+                  className="apple-input"
                   value={cantidadAjuste}
                   onChange={(e) => setCantidadAjuste(Number(e.target.value) || 0)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    backgroundColor: '#2C2C2E',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    color: '#FFF',
-                    fontSize: 14,
-                    fontWeight: 800
-                  }}
+                  style={{ width: '100%', fontSize: 14, fontWeight: 800 }}
                 />
               </div>
 
@@ -879,17 +1528,10 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 <input
                   type="text"
                   placeholder="Ej: Corrección práctica, premio torneo..."
+                  className="apple-input"
                   value={motivoAjuste}
                   onChange={(e) => setMotivoAjuste(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    backgroundColor: '#2C2C2E',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    color: '#FFF',
-                    fontSize: 13
-                  }}
+                  style={{ width: '100%', fontSize: 13 }}
                 />
               </div>
             </div>
@@ -938,7 +1580,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         </div>
       )}
 
-      {/* MODAL DE EDICIÓN DE PRECIO DE TIENDA */}
+      {/* MODAL 4: EDICIÓN DE PRECIO DE TIENDA */}
       {itemEditando && (
         <div style={{
           position: 'fixed',
@@ -954,12 +1596,12 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           <div style={{
             width: '100%',
             maxWidth: 420,
-            backgroundColor: '#1C1C1E',
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
             borderRadius: 20,
-            border: '1px solid rgba(255,255,255,0.15)',
+            border: '1px solid var(--color-separator)',
             boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
             padding: 20,
-            color: '#FFF'
+            color: 'var(--color-ink)'
           }}>
             <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 12px 0' }}>
               Editar Precio Oficial: {itemEditando.titulo}
@@ -968,7 +1610,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
             <div style={{
               padding: '12px 14px',
               borderRadius: 12,
-              backgroundColor: 'rgba(255,255,255,0.05)',
+              backgroundColor: 'var(--color-surface-secondary)',
               fontSize: 12,
               display: 'flex',
               flexDirection: 'column',
@@ -976,56 +1618,41 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
               marginBottom: 14
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Tramo actual:</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Tramo actual:</span>
                 <span style={{ textTransform: 'uppercase', fontWeight: 800 }}>{itemEditando.tramo}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Precio vigente:</span>
+                <span style={{ color: 'var(--color-secondary-ink)' }}>Precio vigente:</span>
                 <strong>{itemEditando.precio} SE</strong>
               </div>
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4, color: 'rgba(255,255,255,0.8)' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
                 Nuevo Precio (StevenEuros):
               </label>
               <input
                 type="number"
                 min="1"
                 max="5000"
+                className="apple-input"
                 value={nuevoPrecioEdit}
                 onChange={e => setNuevoPrecioEdit(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#FFF',
-                  fontSize: 14,
-                  fontWeight: 700
-                }}
+                style={{ width: '100%', fontSize: 14, fontWeight: 800 }}
               />
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4, color: 'rgba(255,255,255,0.8)' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
                 Motivo del cambio (obligatorio):
               </label>
               <input
                 type="text"
                 placeholder="Ej. Rebalanceo por inflación / Evento"
+                className="apple-input"
                 value={motivoPrecioEdit}
                 onChange={e => setMotivoPrecioEdit(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#FFF',
-                  fontSize: 13
-                }}
+                style={{ width: '100%', fontSize: 13 }}
               />
             </div>
 
@@ -1039,17 +1666,8 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
               <button
                 type="button"
                 onClick={() => setItemEditando(null)}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  backgroundColor: 'rgba(255,255,255,0.1)',
-                  border: 'none',
-                  color: '#FFF',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
+                className="btn-secondary"
+                style={{ flex: 1, padding: '10px 14px', fontSize: 13 }}
               >
                 Cancelar
               </button>
@@ -1057,17 +1675,8 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 type="button"
                 onClick={handleGuardarPrecio}
                 disabled={guardandoPrecio}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  backgroundColor: '#0A84FF',
-                  border: 'none',
-                  color: '#FFF',
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: guardandoPrecio ? 'not-allowed' : 'pointer'
-                }}
+                className="btn-primary"
+                style={{ flex: 1, padding: '10px 14px', fontSize: 13, fontWeight: 800 }}
               >
                 {guardandoPrecio ? 'Guardando...' : 'Guardar Precio'}
               </button>
@@ -1076,7 +1685,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         </div>
       )}
 
-      {/* MODAL DE RESULTADO DE AUDITORÍA */}
+      {/* MODAL 5: RESULTADO DE AUDITORÍA DE INVARIANTE */}
       {mostrarModalAuditoria && resultadoAuditoria && (
         <div style={{
           position: 'fixed',
@@ -1092,12 +1701,12 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           <div style={{
             width: '100%',
             maxWidth: 480,
-            backgroundColor: '#1C1C1E',
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
             borderRadius: 20,
-            border: '1px solid rgba(255,255,255,0.15)',
+            border: '1px solid var(--color-separator)',
             boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
             padding: 20,
-            color: '#FFF'
+            color: 'var(--color-ink)'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               {resultadoAuditoria.invariante_valida ? (
@@ -1106,11 +1715,11 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 <AlertTriangle size={24} color="#EF4444" />
               )}
               <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>
-                {resultadoAuditoria.invariante_valida ? 'Invariante Contable Válida' : 'Discrepancias Encontradas'}
+                {resultadoAuditoria.invariante_valida ? 'Invariante Contable Verificada' : 'Discrepancias Encontradas'}
               </h3>
             </div>
 
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', lineHeight: 1.6, marginBottom: 14 }}>
               <div>• Suministro Total: <strong>{resultadoAuditoria.suministro_total_ecosistema} SE</strong></div>
               <div>• Saldo en Banca: <strong>{resultadoAuditoria.saldo_banca_se} SE</strong></div>
               <div>• Circulante en Alumnos: <strong>{resultadoAuditoria.circulante_usuarios_se} SE</strong></div>
@@ -1150,7 +1759,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
         </div>
       )}
 
-      {/* MODAL DE HISTORIAL CONTABLE DE ALUMNO Y REVERSIÓN */}
+      {/* MODAL 6: HISTORIAL CONTABLE DE ALUMNO Y REVERSIÓN */}
       {alumnoHistorial && (
         <div style={{
           position: 'fixed',
@@ -1166,12 +1775,12 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           <div style={{
             width: '100%',
             maxWidth: 540,
-            backgroundColor: '#1C1C1E',
+            backgroundColor: 'var(--color-surface, #1C1C1E)',
             borderRadius: 20,
-            border: '1px solid rgba(255,255,255,0.15)',
+            border: '1px solid var(--color-separator)',
             boxShadow: '0 24px 48px rgba(0,0,0,0.7)',
             padding: 20,
-            color: '#FFF',
+            color: 'var(--color-ink)',
             maxHeight: '85vh',
             display: 'flex',
             flexDirection: 'column'
@@ -1179,16 +1788,16 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>
-                  Ledger de {alumnoHistorial.nombre}
+                  Ledger Individual de {alumnoHistorial.nombre}
                 </h3>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)' }}>
                   Historial inmutable con opción de reversión por contrapartida
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setAlumnoHistorial(null)}
-                style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--color-ink)', cursor: 'pointer' }}
               >
                 ✕
               </button>
@@ -1196,12 +1805,12 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
 
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4 }}>
               {cargandoHistorial && (
-                <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+                <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'var(--color-secondary-ink)' }}>
                   Cargando ledger...
                 </div>
               )}
               {!cargandoHistorial && historialCargado.length === 0 && (
-                <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+                <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'var(--color-secondary-ink)' }}>
                   No hay movimientos registrados para este usuario.
                 </div>
               )}
@@ -1211,8 +1820,8 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.06)',
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    border: '1px solid var(--color-separator)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -1221,7 +1830,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                 >
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{item.motivo}</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
                       {new Date(item.created_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })} · Saldo: {item.saldo_posterior}
                     </div>
                   </div>
@@ -1232,7 +1841,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
                       fontSize: 13,
                       color: item.cantidad >= 0 ? '#30D158' : '#EF4444'
                     }}>
-                      {item.cantidad >= 0 ? `+${item.cantidad}` : item.cantidad} {item.moneda === 'steveneuros' ? 'SE' : '🪙'}
+                      {item.cantidad >= 0 ? `+${item.cantidad}` : item.cantidad} {item.moneda === 'steveneuros' ? 'SE 💶' : '🪙'}
                     </div>
 
                     {item.tipo === 'ajuste_admin' && (

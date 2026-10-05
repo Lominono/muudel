@@ -98,6 +98,14 @@ adminRouter.get('/salud-economia', requireAdmin, async (_req, res) => {
       }
     } catch (_) {}
 
+    const solvenciaRatio = circulanteUsuarios > 0
+      ? Number((saldoBanca / circulanteUsuarios).toFixed(2))
+      : 1.0
+    const reservaEstado = saldoBanca >= 1500 ? 'optima' : saldoBanca >= YOSHI_ROULETTE_CONFIG.BANCA.RESERVA_MINIMA ? 'estable' : 'critica'
+    const velocidadMonetaria = suministroTotal > 0
+      ? Number(((totalEntradas7d + totalSalidas7d) / suministroTotal).toFixed(3))
+      : 0
+
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -106,10 +114,13 @@ adminRouter.get('/salud-economia', requireAdmin, async (_req, res) => {
         saldo: saldoBanca,
         reservaMinima: YOSHI_ROULETTE_CONFIG.BANCA.RESERVA_MINIMA,
         enAusteridad: saldoBanca < YOSHI_ROULETTE_CONFIG.BANCA.RESERVA_MINIMA,
+        reservaEstado,
+        solvenciaRatio,
         emisionDiaria: YOSHI_ROULETTE_CONFIG.BANCA.EMISION_DIARIA
       },
       circulanteUsuarios,
       suministroTotal,
+      velocidadMonetaria,
       invarianteSuministro: `${circulanteUsuarios} SE (alumnos) + ${saldoBanca} SE (banca) = ${suministroTotal} SE`,
       flujo7Dias: {
         recaudadoBanca: totalEntradas7d,
@@ -123,6 +134,241 @@ adminRouter.get('/salud-economia', requireAdmin, async (_req, res) => {
   } catch (err) {
     console.error('Error en /salud-economia:', err)
     return res.status(500).json({ error: err.message || 'Error al obtener salud de la economía' })
+  }
+})
+
+/**
+ * GET /api/admin/ledger-global
+ * Obtiene el historial global de transacciones económicas de la clase en tiempo real
+ */
+adminRouter.get('/ledger-global', requireAdmin, async (req, res) => {
+  try {
+    const supabase = getSupabaseAdmin()
+    const limit = Math.min(200, Math.max(10, Number(req.query.limit) || 60))
+    const tipoFiltro = req.query.tipo
+
+    let query = supabase
+      .from('steven_ledger')
+      .select('id, user_id, contrapartida_id, tipo, moneda, cantidad, saldo_anterior, saldo_posterior, actor_id, motivo, created_at, detalles')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (tipoFiltro && tipoFiltro !== 'todos') {
+      query = query.eq('tipo', tipoFiltro)
+    }
+
+    const { data: entries, error } = await query
+    if (error) {
+      return res.json({ success: true, ledger: [], total: 0 })
+    }
+
+    const userIds = new Set()
+    for (const e of entries || []) {
+      if (e.user_id) userIds.add(e.user_id)
+      if (e.contrapartida_id) userIds.add(e.contrapartida_id)
+      if (e.actor_id) userIds.add(e.actor_id)
+    }
+
+    let mapProfiles = new Map()
+    if (userIds.size > 0) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, nombre, username, avatar_emoji, rol')
+        .in('id', Array.from(userIds))
+
+      for (const p of profs || []) {
+        mapProfiles.set(p.id, p)
+      }
+    }
+
+    const bancaId = LedgerService.getBancaId()
+    const ledgerEnriquecido = (entries || []).map(entry => {
+      const u = mapProfiles.get(entry.user_id)
+      const c = mapProfiles.get(entry.contrapartida_id)
+      const a = mapProfiles.get(entry.actor_id)
+      return {
+        ...entry,
+        user_nombre: u?.nombre || (entry.user_id === bancaId ? 'BANCA SISTEMA' : 'Estudiante'),
+        user_avatar: u?.avatar_emoji || (entry.user_id === bancaId ? '🏛️' : '🧑‍🎓'),
+        user_rol: u?.rol || 'alumno',
+        contrapartida_nombre: c?.nombre || (entry.contrapartida_id === bancaId ? 'BANCA SISTEMA' : null),
+        actor_nombre: a?.nombre || null
+      }
+    })
+
+    return res.json({
+      success: true,
+      ledger: ledgerEnriquecido,
+      total: ledgerEnriquecido.length
+    })
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Error al obtener ledger global' })
+  }
+})
+
+/**
+ * POST /api/admin/ajustar-banca
+ * Inyección o extracción de liquidez directa a la Banca del Sistema con registro contable
+ */
+adminRouter.post('/ajustar-banca', requireAdmin, async (req, res) => {
+  try {
+    const adminUser = req.user
+    const { cantidad, motivo, idempotency_key } = req.body
+
+    const cant = Math.floor(Number(cantidad))
+    if (!cant || isNaN(cant)) {
+      return res.status(400).json({ error: 'La cantidad debe ser un número entero diferente de cero.' })
+    }
+    if (!motivo || motivo.trim().length < 4) {
+      return res.status(400).json({ error: 'El motivo es obligatorio (mínimo 4 caracteres explicativos).' })
+    }
+
+    const supabase = getSupabaseAdmin()
+    const bancaId = LedgerService.getBancaId()
+
+    const { data: bancaProf } = await supabase.from('profiles').select('puntos_total').eq('id', bancaId).single()
+    const saldoBancaAnt = Number(bancaProf?.puntos_total ?? YOSHI_ROULETTE_CONFIG.BANCA.SALDO_INICIAL)
+    const saldoBancaPost = saldoBancaAnt + cant
+
+    if (saldoBancaPost < 0) {
+      return res.status(400).json({ error: 'La Banca no puede quedar con saldo negativo.' })
+    }
+
+    await supabase.from('profiles').update({
+      puntos_total: saldoBancaPost,
+      updated_at: new Date().toISOString()
+    }).eq('id', bancaId)
+
+    const idempKey = idempotency_key || `adj_banca_${Date.now()}`
+    try {
+      await supabase.from('steven_ledger').insert({
+        user_id: bancaId,
+        contrapartida_id: adminUser?.id,
+        tipo: 'ajuste_admin',
+        moneda: 'steveneuros',
+        cantidad: cant,
+        saldo_anterior: saldoBancaAnt,
+        saldo_posterior: saldoBancaPost,
+        actor_id: adminUser?.id,
+        motivo: `[BANCA CENTRAL] ${cant > 0 ? 'Inyección' : 'Extracción'} de liquidez: ${motivo.trim()}`,
+        idempotency_key: idempKey,
+        detalles: { operacion: cant > 0 ? 'inyeccion' : 'extraccion', admin: adminUser?.nombre }
+      })
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      mensaje: `Fondos de la Banca actualizados: ${cant > 0 ? '+' : ''}${cant} SE`,
+      saldoAnterior: saldoBancaAnt,
+      nuevoSaldoBanca: saldoBancaPost
+    })
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Error al ajustar fondos de la banca' })
+  }
+})
+
+/**
+ * POST /api/admin/estimulo-masivo
+ * Otorga un bono general de StevenEuros a todos los alumnos activos financiado por la Banca
+ */
+adminRouter.post('/estimulo-masivo', requireAdmin, async (req, res) => {
+  try {
+    const adminUser = req.user
+    const { cantidad, motivo, idempotency_key } = req.body
+
+    const cantPorAlumno = Math.floor(Number(cantidad))
+    if (!cantPorAlumno || cantPorAlumno <= 0 || cantPorAlumno > 100) {
+      return res.status(400).json({ error: 'La cantidad por alumno debe estar entre 1 y 100 SE.' })
+    }
+    const motivoTexto = (motivo || 'Estímulo general de aula').trim()
+
+    const supabase = getSupabaseAdmin()
+    const bancaId = LedgerService.getBancaId()
+
+    // 1. Obtener alumnos registrados (excluyendo banca y cuentas de sistema)
+    const { data: alumnos, error: aErr } = await supabase
+      .from('profiles')
+      .select('id, nombre, puntos_total')
+      .neq('id', bancaId)
+      .neq('rol', 'sistema')
+
+    if (aErr || !alumnos || alumnos.length === 0) {
+      return res.status(400).json({ error: 'No se encontraron alumnos registrados.' })
+    }
+
+    const totalNecesario = alumnos.length * cantPorAlumno
+
+    // 2. Comprobar liquidez de la Banca
+    const { data: bancaProf } = await supabase.from('profiles').select('puntos_total').eq('id', bancaId).single()
+    const saldoBancaAnt = Number(bancaProf?.puntos_total ?? YOSHI_ROULETTE_CONFIG.BANCA.SALDO_INICIAL)
+
+    if (saldoBancaAnt - totalNecesario < YOSHI_ROULETTE_CONFIG.BANCA.RESERVA_MINIMA) {
+      return res.status(400).json({
+        error: `Fondos insuficientes en la Banca. Se requieren ${totalNecesario} SE y la Banca debe mantener al menos ${YOSHI_ROULETTE_CONFIG.BANCA.RESERVA_MINIMA} SE de reserva mínima.`
+      })
+    }
+
+    const saldoBancaPost = saldoBancaAnt - totalNecesario
+
+    // 3. Debitar de la Banca
+    await supabase.from('profiles').update({
+      puntos_total: saldoBancaPost,
+      updated_at: new Date().toISOString()
+    }).eq('id', bancaId)
+
+    // 4. Acreditar a cada alumno e insertar doble partida en el ledger
+    const ledgerRows = [
+      {
+        user_id: bancaId,
+        contrapartida_id: null,
+        tipo: 'ajuste_admin',
+        moneda: 'steveneuros',
+        cantidad: -totalNecesario,
+        saldo_anterior: saldoBancaAnt,
+        saldo_posterior: saldoBancaPost,
+        actor_id: adminUser?.id,
+        motivo: `[ESTÍMULO GENERAL] Emisión de ${cantPorAlumno} SE a ${alumnos.length} estudiantes: ${motivoTexto}`,
+        idempotency_key: idempotency_key ? `${idempotency_key}_banca` : `estimulo_banca_${Date.now()}`,
+        detalles: { cantidadPorAlumno: cantPorAlumno, totalAlumnos: alumnos.length, totalEmitido: totalNecesario }
+      }
+    ]
+
+    for (const al of alumnos) {
+      const sAnt = Number(al.puntos_total || 0)
+      const sPost = sAnt + cantPorAlumno
+      await supabase.from('profiles').update({
+        puntos_total: sPost,
+        updated_at: new Date().toISOString()
+      }).eq('id', al.id)
+
+      ledgerRows.push({
+        user_id: al.id,
+        contrapartida_id: bancaId,
+        tipo: 'ajuste_admin',
+        moneda: 'steveneuros',
+        cantidad: cantPorAlumno,
+        saldo_anterior: sAnt,
+        saldo_posterior: sPost,
+        actor_id: adminUser?.id,
+        motivo: `Bono colectivo de clase: ${motivoTexto} (+${cantPorAlumno} SE)`,
+        idempotency_key: idempotency_key ? `${idempotency_key}_al_${al.id}` : `estimulo_al_${al.id}_${Date.now()}`
+      })
+    }
+
+    try {
+      await supabase.from('steven_ledger').insert(ledgerRows)
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      mensaje: `Estímulo otorgado con éxito: +${cantPorAlumno} SE acreditados a ${alumnos.length} alumnos (${totalNecesario} SE emitidos desde la Banca).`,
+      totalAlumnos: alumnos.length,
+      cantidadPorAlumno: cantPorAlumno,
+      totalEmitido: totalNecesario,
+      nuevoSaldoBanca: saldoBancaPost
+    })
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Error al emitir estímulo masivo' })
   }
 })
 

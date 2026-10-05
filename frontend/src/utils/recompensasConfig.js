@@ -2,6 +2,8 @@
 import { supabase } from './supabase'
 import { transmitirEvento, suscribirEvento } from './realtimeHub'
 
+import { fetchAdmin } from './apiAuth'
+
 export const DEFAULT_RECOMPENSAS = {
   puntosCheckin: 10,
   puntosReto: 25,
@@ -25,9 +27,9 @@ export function obtenerConfigRecompensas() {
 
 // Sincroniza con el endpoint del servidor o Supabase
 export async function cargarConfigRecompensasDesdeServidor() {
-  // 1. Consultar endpoint API del servidor express (garantizado sin 404)
+  // 1. Consultar endpoint API del servidor express
   try {
-    const res = await fetch('/api/admin/config-recompensas')
+    const res = await fetchAdmin('/api/admin/config-recompensas')
     if (res.ok) {
       const json = await res.json()
       if (json.config) {
@@ -73,11 +75,10 @@ export async function guardarConfigRecompensas(nuevaConfig) {
     }, { onConflict: 'clave' })
   } catch (_) {}
 
-  // Guardar en API Express
+  // Guardar en API Express con autenticación segura
   try {
-    await fetch('/api/admin/config-recompensas', {
+    await fetchAdmin('/api/admin/config-recompensas', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config: merged })
     })
   } catch (_) {}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { AuthProvider, useAuth } from './context/AuthContext'
+import { AuthProvider, useAuth, ADMIN_LOMINONO_ID } from './context/AuthContext'
 import { TabBar } from './components/TabBar'
 import { PantallaInicio } from './pages/PantallaInicio'
 import { PantallaHoy } from './pages/PantallaHoy'
@@ -624,7 +624,7 @@ function ContenidoApp() {
             <Route path="/juegos" element={<PantallaJuegos />} />
             <Route path="/chat" element={<PantallaChat />} />
             <Route path="/perfil" element={<PantallaPerfil />} />
-            {perfil?.rol === 'moderador' && (
+            {(perfil?.rol === 'moderador' || perfil?.rol === 'admin' || perfil?.id === ADMIN_LOMINONO_ID) && (
               <Route path="/admin" element={<PantallaAdmin />} />
             )}
             <Route path="*" element={<Navigate to="/" />} />

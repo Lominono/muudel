@@ -79,6 +79,7 @@ export async function requireAuth(req, res, next) {
 
     req.user = perfil
     req.userId = perfil.id
+    req.authViaToken = Boolean(token)
     next()
   } catch (err) {
     console.error('Error en requireAuth:', err)
@@ -88,14 +89,26 @@ export async function requireAuth(req, res, next) {
 
 /**
  * Middleware para exigir rol de administrador o moderador en servidor
+ * Implementa defensa en profundidad: verificación de rol + validación de PIN si no hay JWT criptográfico
  */
 export async function requireAdmin(req, res, next) {
   return requireAuth(req, res, () => {
     const user = req.user
-    const esAdmin = user?.rol === 'moderador' || user?.rol === 'admin' || user?.id === ADMIN_LOMINONO_ID
+    const esAdminRol = user?.rol === 'moderador' || user?.rol === 'admin' || user?.id === ADMIN_LOMINONO_ID
 
-    if (!esAdmin) {
+    if (!esAdminRol) {
       return res.status(403).json({ error: 'Acceso denegado: se requieren permisos de administración.' })
+    }
+
+    // Si la autenticación no vino por JWT criptográfico firmado de Supabase,
+    // se exige de forma obligatoria el PIN maestro de administración en headers
+    const adminPinEsperado = (process.env.ADMIN_PIN || '2026').trim()
+    const pinRecibido = (req.headers['x-admin-pin'] || '').trim()
+
+    if (!req.authViaToken && pinRecibido !== adminPinEsperado) {
+      return res.status(403).json({
+        error: 'Acceso restringido: se requiere PIN maestro de administración válido.'
+      })
     }
 
     next()

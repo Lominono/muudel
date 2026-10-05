@@ -34,7 +34,19 @@ feedRouter.get('/posts', async (req, res) => {
       .limit(60)
 
     if (error) {
-      console.warn('Aviso al leer feed_posts en API:', error.message)
+      console.warn('Aviso al leer feed_posts en API, intentando fallback sin soft_deleted:', error.message)
+      const { data: postsFallback, error: errFallback } = await supabaseAdmin
+        .from('feed_posts')
+        .select(`
+          id, categoria, titulo, contenido, likes_count, created_at, es_admin,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(60)
+
+      if (!errFallback && postsFallback) {
+        return res.json({ success: true, posts: postsFallback })
+      }
       return res.status(500).json({ error: error.message })
     }
 
@@ -190,7 +202,16 @@ feedRouter.get('/comentarios/:postId', async (req, res) => {
       .order('created_at', { ascending: true })
 
     if (error) {
-      return res.json({ success: true, comentarios: [] })
+      const { data: cFallback } = await supabaseAdmin
+        .from('feed_post_comments')
+        .select(`
+          id, post_id, contenido, created_at,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true })
+
+      return res.json({ success: true, comentarios: cFallback || [] })
     }
 
     return res.json({ success: true, comentarios: comentarios || [] })

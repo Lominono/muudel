@@ -155,13 +155,29 @@ router.post('/yoshi-finalizar-partida', requireAuth, async (req, res) => {
     const userId = req.userId
     const { session_token, monedas_recogidas, duracion_ms, distancia_m, idempotency_key } = req.body
 
-    if (!session_token) {
-      return res.status(400).json({ error: 'Falta session_token de la partida' })
+    const supabase = getSupabaseAdmin()
+    let session = activeGameSessions.get(session_token)
+
+    // Si no está en memoria local (Vercel serverless / diferentes instancias), consultar Supabase
+    if (!session && session_token && !session_token.startsWith('fallback_')) {
+      try {
+        const { data: dbSes } = await supabase
+          .from('yoshi_sesiones')
+          .select('*')
+          .eq('session_token', session_token)
+          .maybeSingle()
+        if (dbSes) {
+          session = {
+            userId: dbSes.user_id,
+            startedAt: new Date(dbSes.started_at).getTime(),
+            sessionToken: dbSes.session_token
+          }
+        }
+      } catch (_) {}
     }
 
-    const session = activeGameSessions.get(session_token)
     const now = Date.now()
-    let duracionRealMs = duracion_ms
+    let duracionRealMs = Number(duracion_ms) || 0
 
     if (session) {
       duracionRealMs = Math.max(100, now - session.startedAt)
@@ -172,7 +188,7 @@ router.post('/yoshi-finalizar-partida', requireAuth, async (req, res) => {
 
     const monedas = Math.max(0, Math.floor(Number(monedas_recogidas || 0)))
 
-    // 1. Anti-cheat: Si recogió monedas, duración mínima
+    // 1. Anti-cheat: Si recogió monedas, duración mínima (1.2s para no castigar partidas legítimas cortas)
     if (monedas > 0 && duracionRealMs < YOSHI_ROULETTE_CONFIG.DURACION_MINIMA_PARTIDA_MS) {
       return res.status(400).json({
         error: 'Partida sospechosamente corta para las monedas recogidas (duración mínima no cumplida).'
@@ -204,7 +220,6 @@ router.post('/yoshi-finalizar-partida', requireAuth, async (req, res) => {
 
     // Consumir sesión (un solo uso)
     activeGameSessions.delete(session_token)
-    const supabase = getSupabaseAdmin()
     try {
       await supabase.from('yoshi_sesiones').update({
         estado: 'finalizada',

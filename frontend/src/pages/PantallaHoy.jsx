@@ -1,5 +1,5 @@
-// frontend/src/pages/PantallaHoy.jsx (Feed de Clase estilo X / Twitter)
-import { useState, useEffect, useRef } from 'react'
+// frontend/src/pages/PantallaHoy.jsx (Feed de Clase SMR2 - Responsive Desktop & Mobile)
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { AvatarUsuario } from '../components/AvatarUsuario'
@@ -29,7 +29,19 @@ import {
   ShieldCheck,
   Trash2,
   Pin,
-  CornerDownRight
+  CornerDownRight,
+  Search,
+  RefreshCw,
+  Copy,
+  Hash,
+  Laptop,
+  Smartphone,
+  SlidersHorizontal,
+  ExternalLink,
+  Award,
+  Zap,
+  TrendingUp,
+  BookOpen
 } from 'lucide-react'
 import { transmitirEvento, suscribirEvento } from '../utils/realtimeHub'
 import { analizarTextoAntiIA } from '../utils/antiAiDetector'
@@ -44,7 +56,17 @@ const NOMBRES_INVENTADOS = [
   'admin', 'profesor', 'lominoño', 'sistema', 'moderador'
 ]
 
-// Resolver autor: si es usuario inventado, moderador o del sistema, se muestra como (Post de administración)
+const CATEGORIAS_VALIDAS = [
+  { id: 'todas', label: 'Todos', icon: Hash },
+  { id: 'Aviso', label: 'Avisos', icon: Megaphone, color: '#FF9500' },
+  { id: 'Linux', label: 'Linux / Bash', icon: Terminal, color: '#0A84FF' },
+  { id: 'Redes', label: 'Redes / Cisco', icon: Code2, color: '#34C759' },
+  { id: 'Truco', label: 'Chuletas & Tips', icon: Sparkles, color: '#AF52DE' },
+  { id: 'Duda', label: 'Dudas Aula', icon: HelpCircle, color: '#FF2D55' },
+  { id: 'General', label: 'General', icon: BookOpen, color: '#8E8E93' }
+]
+
+// Resolver autor del post: distingue alumnos reales de administración
 function resolverAutorFeed(p) {
   const prof = p?.profiles
   const nombreRaw = (prof?.nombre || '').trim()
@@ -84,7 +106,7 @@ function resolverAutorFeed(p) {
   }
 }
 
-// Posts oficiales de la administración garantizados en caso de tabla vacía o desconexión
+// Posts oficiales garantizados en caso de BD vacía o primera inicialización
 const POSTS_ADMINISTRACION_OFICIALES = [
   {
     id: 'post-admin-bienvenida',
@@ -103,7 +125,8 @@ const POSTS_ADMINISTRACION_OFICIALES = [
     tiempoHace: 'Fijado',
     likes: 5,
     liked: false,
-    fijado: true
+    fijado: true,
+    created_at: new Date(Date.now() - 3600 * 1000 * 24).toISOString()
   },
   {
     id: 'post-admin-linux-tip',
@@ -118,11 +141,12 @@ const POSTS_ADMINISTRACION_OFICIALES = [
     esAdministracion: true,
     categoria: 'Linux',
     titulo: 'Chuleta de Permisos Octales y Diagnóstico de Red',
-    contenido: `Para el examen de administración de sistemas, memorizad estas equivalencias octales:\nchmod 755 -> rwxr-xr-x (scripts ejecutables para todos)\nchmod 644 -> rw-r--r-- (archivos de configuración)\nchmod 600 -> rw------- (claves SSH id_rsa privadas)\n\nDiagnóstico de red: ss -tulpn && ip -br a`,
+    contenido: "Para el examen de administración de sistemas, memorizad estas equivalencias octales:\n```bash\nchmod 755 script.sh # rwxr-xr-x (scripts ejecutables para todos)\nchmod 644 config.conf # rw-r--r-- (archivos de configuración)\nchmod 600 id_rsa # rw------- (claves SSH privadas)\n\n# Diagnóstico de puertos y red:\nss -tulpn && ip -br a\n```",
     tiempoHace: '2h',
     likes: 8,
     liked: false,
-    fijado: false
+    fijado: false,
+    created_at: new Date(Date.now() - 3600 * 1000 * 2).toISOString()
   }
 ]
 
@@ -130,10 +154,31 @@ export function PantallaHoy() {
   const { perfil, setPerfil } = useAuth()
   const navigate = useNavigate()
 
-  // Tabs estilo X: 'para_ti' | 'tips' | 'respuestas'
+  // Detección reactiva de pantalla ancha (PC / Laptop Desktop >= 1024px)
+  const [esDesktop, setEsDesktop] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const handleResize = () => {
+      setEsDesktop(window.innerWidth >= 1024)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Pestañas principales de Timeline: 'para_ti' | 'tips' | 'respuestas'
   const [tabActiva, setTabActiva] = useState('para_ti')
 
-  // Modales
+  // Filtro por categoría y búsqueda en tiempo real
+  const [filtroCategoria, setFiltroCategoria] = useState('todas')
+  const [busquedaQuery, setBusquedaQuery] = useState('')
+  const [busquedaAbiertaMovil, setBusquedaAbiertaMovil] = useState(false)
+
+  // Modales interactivos
   const [mostrarTienda, setMostrarTienda] = useState(false)
   const [mostrarModalHorario, setMostrarModalHorario] = useState(false)
   const [avisoHoy, setAvisoHoy] = useState(() => localStorage.getItem('racha_aviso_hoy') || '')
@@ -141,21 +186,21 @@ export function PantallaHoy() {
   // Estado del horario oficial y clase en curso en tiempo real
   const [estadoHorario, setEstadoHorario] = useState(() => getEstadoHorarioCompleto())
 
-  // Compositor inline estilo X
+  // Compositor de publicaciones
   const [textoPost, setTextoPost] = useState('')
-  const [categoriaPost, setCategoriaPost] = useState('Truco') // 'Aviso' | 'Truco' | 'Linux' | 'Redes' | 'Duda' | 'General'
+  const [categoriaPost, setCategoriaPost] = useState('Truco')
   const [fijarPostAdmin, setFijarPostAdmin] = useState(false)
   const [publicando, setPublicando] = useState(false)
+  const [composerExpandidoMovil, setComposerExpandidoMovil] = useState(false)
   const composerRef = useRef(null)
 
-  // Posts del feed — cargados desde Supabase tabla feed_posts
+  // Posts del feed y respuestas a retos
   const [postsFeed, setPostsFeed] = useState([])
   const [cargandoPosts, setCargandoPosts] = useState(true)
-
-  // Respuestas a retos de alumnos
+  const [refrescando, setRefrescando] = useState(false)
   const [respuestasFeed, setRespuestasFeed] = useState([])
 
-  // Likes interactivos
+  // Likes y Reposts locales
   const [likesDados, setLikesDados] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`muudel_feed_likes_${perfil?.id}`) || '{}')
@@ -163,8 +208,6 @@ export function PantallaHoy() {
       return {}
     }
   })
-
-  // Reposts dados localmente
   const [repostsDados, setRepostsDados] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`muudel_feed_reposts_${perfil?.id}`) || '{}')
@@ -173,44 +216,53 @@ export function PantallaHoy() {
     }
   })
 
-  // Comentarios interactivos por post
+  // Hilo de comentarios
   const [comentariosAbiertos, setComentariosAbiertos] = useState({})
   const [comentariosPorPost, setComentariosPorPost] = useState({})
   const [cargandoComentarios, setCargandoComentarios] = useState({})
   const [nuevoComentarioTexto, setNuevoComentarioTexto] = useState({})
   const [enviandoComentario, setEnviandoComentario] = useState(false)
 
-  // Estado compacto de asistencia 15:30
+  // Estado de Asistencia 15:30
   const [asistenciaConfirmada, setAsistenciaConfirmada] = useState(null)
   const [solicitudPendiente, setSolicitudPendiente] = useState(null)
   const [bannerAsistenciaVisible, setBannerAsistenciaVisible] = useState(true)
 
-  // Configuración de economía / ganancias de la clase
+  // Configuración de economía y ganancias
   const [configRec, setConfigRec] = useState(() => obtenerConfigRecompensas())
+  const [toastNotif, setToastNotif] = useState(null)
 
   const fechaHoy = new Date().toISOString().split('T')[0]
+  const esModerador = perfil?.rol === 'moderador' || perfil?.rol === 'admin' || perfil?.id === ADMIN_LOMINONO_ID
+
+  const avisarToast = (mensaje, tipo = 'info') => {
+    setToastNotif({ mensaje, tipo })
+    setTimeout(() => setToastNotif(null), 3500)
+  }
 
   // Carga inicial y suscripciones en tiempo real
   useEffect(() => {
     cargarFeedCompleto()
 
-    // Intervalo en vivo para actualizar la clase actual y minutos restantes
     const timerHorario = setInterval(() => {
       setEstadoHorario(getEstadoHorarioCompleto())
     }, 15000)
 
-    // Suscripción en tiempo real a nuevos posts
+    // Suscripción Supabase Realtime a publicaciones
     const canalFeed = supabase
       .channel('feed-posts-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_posts' }, () => {
-        cargarFeedCompleto()
+        cargarFeedCompleto(false)
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_post_comments' }, () => {
-        // Actualizar comentarios en vivo si están abiertos
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_post_comments' }, (payload) => {
+        const comNuevo = payload.new
+        if (comNuevo && comNuevo.post_id) {
+          cargarComentariosPost(comNuevo.post_id)
+        }
       })
       .subscribe()
 
-    // Suscripciones de eventos Broadcast de clase
+    // Suscripciones broadcast por realtimeHub
     const desNuevoPost = suscribirEvento('nuevo_feed_post', (nuevoPost) => {
       setPostsFeed(prev => {
         if (prev.some(p => p.id === nuevoPost.id)) return prev
@@ -249,7 +301,6 @@ export function PantallaHoy() {
       if (nuevaCfg) setConfigRec(nuevaCfg)
     })
 
-    // Sincronización en vivo del saldo de StevenEuros
     const desStevenEuros = suscribirEvento('steveneuros_actualizados', (datos) => {
       const { alumnoId, userId, nuevosPuntos } = datos || {}
       const targetId = userId || alumnoId
@@ -289,7 +340,7 @@ export function PantallaHoy() {
     window.addEventListener('muudel-rt-postgres-profiles', handleRtProfiles)
 
     const handleRtFeedPosts = () => {
-      cargarFeedCompleto()
+      cargarFeedCompleto(false)
     }
     window.addEventListener('muudel-rt-postgres-feed_posts', handleRtFeedPosts)
 
@@ -324,10 +375,11 @@ export function PantallaHoy() {
     } catch (_) {}
   }
 
-  const cargarFeedCompleto = async () => {
-    setCargandoPosts(true)
+  const cargarFeedCompleto = async (mostrarCargador = true) => {
+    if (mostrarCargador) setCargandoPosts(true)
+    setRefrescando(true)
     try {
-      // 1. Cargar estado de check-in del usuario de hoy
+      // 1. Cargar estado de check-in de hoy
       if (perfil) {
         const { data: miChk } = await supabase
           .from('checkins')
@@ -336,12 +388,10 @@ export function PantallaHoy() {
           .eq('fecha', fechaHoy)
           .maybeSingle()
 
-        if (miChk) {
-          setAsistenciaConfirmada(miChk)
-        }
+        if (miChk) setAsistenciaConfirmada(miChk)
       }
 
-      // Cargar mis likes
+      // 2. Cargar likes del usuario actual
       let likedSet = {}
       if (perfil) {
         const { data: misLikes } = await supabase
@@ -354,7 +404,7 @@ export function PantallaHoy() {
       }
       setLikesDados(likedSet)
 
-      // 2. Cargar posts reales desde la tabla feed_posts
+      // 3. Cargar posts reales desde Supabase con fallback a API del servidor
       let rawPosts = null
       const { data: postsData, error: errPosts } = await supabase
         .from('feed_posts')
@@ -369,7 +419,6 @@ export function PantallaHoy() {
       if (!errPosts && postsData) {
         rawPosts = postsData
       } else {
-        // Fallback a API del backend
         try {
           const resp = await fetch('/api/feed/posts')
           const json = await resp.json()
@@ -378,7 +427,6 @@ export function PantallaHoy() {
       }
 
       if (rawPosts && rawPosts.length > 0) {
-        // Mapear cada post resolviendo de forma explícita si es alumno o (Post de administración)
         const mapeados = rawPosts.map(p => {
           const autorInfo = resolverAutorFeed(p)
           return {
@@ -398,16 +446,16 @@ export function PantallaHoy() {
             fijado: Boolean(p.fijado),
             tiempoHace: calcularTiempoRelativo(p.created_at),
             likes: p.likes_count || 0,
-            liked: Boolean(likedSet[p.id])
+            liked: Boolean(likedSet[p.id]),
+            created_at: p.created_at
           }
         })
         setPostsFeed(mapeados)
       } else {
-        // Si aún no hay posts creados en la base de datos, mostrar los oficiales de administración
         setPostsFeed(POSTS_ADMINISTRACION_OFICIALES)
       }
 
-      // 3. Cargar respuestas y retos validados de alumnos reales desde Supabase
+      // 4. Cargar respuestas a retos técnicos completados
       try {
         const { data: entregasData } = await supabase
           .from('reto_completado')
@@ -443,7 +491,8 @@ export function PantallaHoy() {
                 estado: 'aprobado',
                 tiempoHace: calcularTiempoRelativo(e.created_at),
                 likes: 0,
-                liked: false
+                liked: false,
+                created_at: e.created_at
               }
             })
           setRespuestasFeed(respuestasMapeadas)
@@ -458,10 +507,11 @@ export function PantallaHoy() {
       setPostsFeed(POSTS_ADMINISTRACION_OFICIALES)
     } finally {
       setCargandoPosts(false)
+      setRefrescando(false)
     }
   }
 
-  // Enviar post desde el compositor inline estilo X
+  // Publicar post desde el compositor
   const handlePublicarPost = async (e) => {
     if (e && e.preventDefault) e.preventDefault()
     const contenidoLimpio = textoPost.trim()
@@ -470,7 +520,6 @@ export function PantallaHoy() {
     setPublicando(true)
     sound.playStamp()
 
-    const esModerador = perfil.rol === 'moderador'
     let tituloAuto = contenidoLimpio.split('\n')[0].substring(0, 65).trim()
     if (tituloAuto.length < 3) {
       tituloAuto = esModerador
@@ -483,7 +532,7 @@ export function PantallaHoy() {
     try {
       let postCreado = null
 
-      // 1. Intentar inserción directa en Supabase
+      // Inserción en Supabase
       try {
         const { data, error } = await supabase
           .from('feed_posts')
@@ -501,12 +550,10 @@ export function PantallaHoy() {
           `)
           .single()
 
-        if (!error && data) {
-          postCreado = data
-        }
+        if (!error && data) postCreado = data
       } catch (_) {}
 
-      // 2. Fallback a API con Service Key
+      // Fallback a API con Service Key
       if (!postCreado) {
         try {
           const resp = await fetch('/api/feed/publicar', {
@@ -556,14 +603,16 @@ export function PantallaHoy() {
           tiempoHace: 'ahora mismo',
           likes: 0,
           liked: false,
-          antiAi: analisisAntiIA
+          created_at: new Date().toISOString()
         }
 
         setPostsFeed(prev => [nuevo, ...prev])
         transmitirEvento('nuevo_feed_post', nuevo)
         setTextoPost('')
         setFijarPostAdmin(false)
+        setComposerExpandidoMovil(false)
         triggerConfetti()
+        avisarToast('¡Publicación compartida con el aula!', 'exito')
 
         // Premiar StevenEuros si es alumno
         if (!esModerador) {
@@ -572,6 +621,7 @@ export function PantallaHoy() {
           const ratio = analisisAntiIA.esGenuino ? 1.0 : 0.5
           const ptsExtra = Math.max(1, Math.round(baseFeed * ratio * mult))
           let nuevoSaldo = (perfil.puntos_total || 0) + ptsExtra
+
           try {
             const headers = { 'Content-Type': 'application/json' }
             try {
@@ -600,7 +650,6 @@ export function PantallaHoy() {
           window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
           transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
 
-          // Otorgar XP técnica
           let skillKey = 'autoria_tecnica'
           if (categoriaPost === 'Truco' || categoriaPost === 'Linux') skillKey = 'linux_bash'
           else if (categoriaPost === 'Redes') skillKey = 'redes_vlans'
@@ -609,17 +658,17 @@ export function PantallaHoy() {
       }
     } catch (err) {
       console.warn('Error al publicar post:', err)
+      avisarToast('No se pudo publicar. Inténtalo de nuevo.', 'error')
     } finally {
       setPublicando(false)
     }
   }
 
-  // Like reactivo estilo X
+  // Like interactivo
   const handleToggleLike = async (itemId, esPostReal = true) => {
     sound.playPop()
     const yaLeDi = Boolean(likesDados[itemId])
 
-    // Optimistic UI update
     setLikesDados(prev => {
       const copia = { ...prev }
       if (yaLeDi) delete copia[itemId]
@@ -633,9 +682,7 @@ export function PantallaHoy() {
       const nuevoCount = Math.max(0, (postActual?.likes || 0) + (yaLeDi ? -1 : 1))
 
       setPostsFeed(prev => prev.map(p => {
-        if (p.id === itemId) {
-          return { ...p, likes: nuevoCount, liked: !yaLeDi }
-        }
+        if (p.id === itemId) return { ...p, likes: nuevoCount, liked: !yaLeDi }
         return p
       }))
 
@@ -651,7 +698,6 @@ export function PantallaHoy() {
         }
         await supabase.from('feed_posts').update({ likes_count: nuevoCount }).eq('id', itemId)
       } catch (_) {
-        // Fallback a API
         try {
           await fetch('/api/feed/like', {
             method: 'POST',
@@ -671,7 +717,7 @@ export function PantallaHoy() {
     }
   }
 
-  // Repost / Impulsar post
+  // Repost
   const handleRepost = (itemId) => {
     sound.playStamp()
     const yaRepostee = Boolean(repostsDados[itemId])
@@ -683,9 +729,10 @@ export function PantallaHoy() {
       return copia
     })
     triggerConfetti()
+    avisarToast(yaRepostee ? 'Impulso cancelado' : '¡Publicación impulsada en el aula!', 'exito')
   }
 
-  // Eliminar post del feed (por autor o moderador)
+  // Eliminar post
   const handleEliminarPost = async (postId) => {
     if (!window.confirm('¿Seguro que deseas eliminar esta publicación del feed?')) return
     sound.playPop()
@@ -702,42 +749,44 @@ export function PantallaHoy() {
     } catch (_) {}
 
     transmitirEvento('eliminar_feed_post', { postId })
+    avisarToast('Publicación eliminada correctamente.')
   }
 
-  // Desplegar / cerrar hilo de comentarios de un post
-  const handleToggleComentarios = async (postId) => {
-    const estaAbierto = Boolean(comentariosAbiertos[postId])
-    setComentariosAbiertos(prev => ({ ...prev, [postId]: !estaAbierto }))
+  // Cargar comentarios
+  const cargarComentariosPost = async (postId) => {
+    setCargandoComentarios(prev => ({ ...prev, [postId]: true }))
+    try {
+      const { data, error } = await supabase
+        .from('feed_post_comments')
+        .select(`
+          id, post_id, contenido, created_at,
+          profiles (id, nombre, username, color_acento, rol, avatar_emoji)
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true })
 
-    if (!estaAbierto && !comentariosPorPost[postId]) {
-      setCargandoComentarios(prev => ({ ...prev, [postId]: true }))
-      try {
-        const { data, error } = await supabase
-          .from('feed_post_comments')
-          .select(`
-            id, post_id, contenido, created_at,
-            profiles (id, nombre, username, color_acento, rol, avatar_emoji)
-          `)
-          .eq('post_id', postId)
-          .eq('soft_deleted', false)
-          .order('created_at', { ascending: true })
-
-        if (!error && data) {
-          setComentariosPorPost(prev => ({ ...prev, [postId]: data }))
-        } else {
-          const resp = await fetch(`/api/feed/comentarios/${postId}`)
-          const json = await resp.json()
-          setComentariosPorPost(prev => ({ ...prev, [postId]: json.comentarios || [] }))
-        }
-      } catch (_) {
-        setComentariosPorPost(prev => ({ ...prev, [postId]: [] }))
-      } finally {
-        setCargandoComentarios(prev => ({ ...prev, [postId]: false }))
+      if (!error && data) {
+        setComentariosPorPost(prev => ({ ...prev, [postId]: data }))
+      } else {
+        const resp = await fetch(`/api/feed/comentarios/${postId}`)
+        const json = await resp.json()
+        setComentariosPorPost(prev => ({ ...prev, [postId]: json.comentarios || [] }))
       }
+    } catch (_) {
+      setComentariosPorPost(prev => ({ ...prev, [postId]: [] }))
+    } finally {
+      setCargandoComentarios(prev => ({ ...prev, [postId]: false }))
     }
   }
 
-  // Enviar comentario a un post
+  const handleToggleComentarios = (postId) => {
+    const estaAbierto = Boolean(comentariosAbiertos[postId])
+    setComentariosAbiertos(prev => ({ ...prev, [postId]: !estaAbierto }))
+    if (!estaAbierto && !comentariosPorPost[postId]) {
+      cargarComentariosPost(postId)
+    }
+  }
+
   const handleEnviarComentario = async (postId) => {
     const texto = (nuevoComentarioTexto[postId] || '').trim()
     if (!texto || !perfil || enviandoComentario) return
@@ -751,12 +800,17 @@ export function PantallaHoy() {
       try {
         const { data, error } = await supabase
           .from('feed_post_comments')
-          .insert({ post_id: postId, user_id: perfil.id, contenido: texto })
+          .insert({
+            post_id: postId,
+            user_id: perfil.id,
+            contenido: texto
+          })
           .select(`
             id, post_id, contenido, created_at,
             profiles (id, nombre, username, color_acento, rol, avatar_emoji)
           `)
           .single()
+
         if (!error && data) nuevoCom = data
       } catch (_) {}
 
@@ -772,60 +826,45 @@ export function PantallaHoy() {
         } catch (_) {}
       }
 
-      if (!nuevoCom) {
-        nuevoCom = {
-          id: 'com_' + Date.now(),
-          post_id: postId,
-          contenido: texto,
-          created_at: new Date().toISOString(),
-          profiles: {
-            id: perfil.id,
-            nombre: perfil.nombre,
-            username: perfil.username,
-            rol: perfil.rol,
-            color_acento: perfil.color_acento,
-            avatar_emoji: perfil.avatar_emoji
-          }
-        }
-      }
+      if (nuevoCom) {
+        setComentariosPorPost(prev => ({
+          ...prev,
+          [postId]: [...(prev[postId] || []), nuevoCom]
+        }))
+        setNuevoComentarioTexto(prev => ({ ...prev, [postId]: '' }))
+        transmitirEvento('nuevo_feed_comentario', { postId, comentario: nuevoCom })
+        triggerConfetti()
 
-      setComentariosPorPost(prev => ({
-        ...prev,
-        [postId]: [...(prev[postId] || []), nuevoCom]
-      }))
-      setNuevoComentarioTexto(prev => ({ ...prev, [postId]: '' }))
-      transmitirEvento('nuevo_feed_comentario', { postId, comentario: nuevoCom })
-
-      // Micro-recompensa por comentar (+2 SE 💶 desde la Banca)
-      if (perfil.rol !== 'moderador') {
-        let nuevoSaldo = (perfil.puntos_total || 0) + 2
-        try {
-          const headers = { 'Content-Type': 'application/json' }
+        if (!esModerador) {
+          let nuevoSaldo = (perfil.puntos_total || 0) + 2
           try {
-            const { data: sData } = await supabase.auth.getSession()
-            if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-          } catch (_) {}
-          if (perfil?.id) headers['x-user-id'] = perfil.id
+            const headers = { 'Content-Type': 'application/json' }
+            try {
+              const { data: sData } = await supabase.auth.getSession()
+              if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
+            } catch (_) {}
+            if (perfil?.id) headers['x-user-id'] = perfil.id
 
-          const cResp = await fetch('/api/ruleta/feed-recompensa', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              puntos: 2,
-              motivo: 'Comentario en feed',
-              idempotency_key: `feed_com_${perfil.id}_${Date.now()}`
+            const cResp = await fetch('/api/ruleta/feed-recompensa', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                puntos: 2,
+                motivo: 'Comentario en feed',
+                idempotency_key: `feed_com_${perfil.id}_${Date.now()}`
+              })
             })
-          })
-          const cData = await cResp.json()
-          if (cData?.nuevoSaldo !== undefined) {
-            nuevoSaldo = cData.nuevoSaldo
-          }
-        } catch (_) {}
+            const cData = await cResp.json()
+            if (cData?.nuevoSaldo !== undefined) {
+              nuevoSaldo = cData.nuevoSaldo
+            }
+          } catch (_) {}
 
-        setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
-        localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
-        window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
-        transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
+          setPerfil(p => ({ ...p, puntos_total: nuevoSaldo }))
+          localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo }))
+          window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
+          transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
+        }
       }
     } catch (err) {
       console.warn('Error al enviar comentario:', err)
@@ -865,885 +904,1424 @@ export function PantallaHoy() {
         setPerfil(p => ({ ...p, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
         localStorage.setItem('racha_local_user', JSON.stringify({ ...perfil, puntos_total: nuevoSaldo, racha_actual: nuevaRacha }))
         triggerConfetti()
+        avisarToast(`¡Asistencia sellada! +${ptsCheckin} SE acreditados.`, 'exito')
       }
     } catch (_) {
       setSolicitudPendiente(solicitud)
       transmitirEvento('solicitud_asistencia', solicitud)
+      avisarToast('Solicitud de presencia enviada a lominoño.')
     }
   }
 
-  // Filtrado de items
-  const itemsTimeline = (() => {
-    if (tabActiva === 'tips') {
-      return postsFeed.filter(p => p.categoria === 'Truco' || p.categoria === 'Linux' || p.categoria === 'Redes')
+  // Copiar código o comando al portapapeles
+  const handleCopiarComando = (codigo) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(codigo)
+      sound.playPop()
+      avisarToast('Comando copiado al portapapeles', 'exito')
     }
-    if (tabActiva === 'respuestas') {
-      return respuestasFeed
-    }
-    return postsFeed
-  })()
+  }
 
-  const esModerador = perfil?.rol === 'moderador'
+  // Compartir publicación
+  const handleCompartirPost = async (item) => {
+    sound.playPop()
+    if (navigator?.share) {
+      try {
+        await navigator.share({
+          title: item.titulo || `Publicación de ${item.autorLimpio} en Muudel`,
+          text: item.contenido,
+          url: window.location.href
+        })
+        return
+      } catch (_) {}
+    }
+
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(item.contenido)
+      avisarToast('Contenido copiado al portapapeles', 'exito')
+    }
+  }
+
+  // Filtrado reactivo de items
+  const itemsTimeline = useMemo(() => {
+    let base = postsFeed
+    if (tabActiva === 'tips') {
+      base = postsFeed.filter(p => ['Truco', 'Linux', 'Redes', 'Comando'].includes(p.categoria))
+    } else if (tabActiva === 'respuestas') {
+      base = respuestasFeed
+    }
+
+    if (filtroCategoria !== 'todas') {
+      base = base.filter(p => (p.categoria || '').toLowerCase() === filtroCategoria.toLowerCase())
+    }
+
+    if (busquedaQuery.trim()) {
+      const q = busquedaQuery.toLowerCase().trim()
+      base = base.filter(p =>
+        (p.contenido || '').toLowerCase().includes(q) ||
+        (p.titulo || '').toLowerCase().includes(q) ||
+        (p.autor || '').toLowerCase().includes(q) ||
+        (p.categoria || '').toLowerCase().includes(q)
+      )
+    }
+
+    return [...base].sort((a, b) => {
+      if (a.fijado && !b.fijado) return -1
+      if (!a.fijado && b.fijado) return 1
+      return 0
+    })
+  }, [postsFeed, respuestasFeed, tabActiva, filtroCategoria, busquedaQuery])
+
+  // Conteo de publicaciones por categoría para el sidebar de PC
+  const conteoCategorias = useMemo(() => {
+    const mapa = { todas: postsFeed.length }
+    postsFeed.forEach(p => {
+      const c = p.categoria || 'General'
+      mapa[c] = (mapa[c] || 0) + 1
+    })
+    return mapa
+  }, [postsFeed])
+
+  // Renderizador de texto con formateo de terminal y comandos monospace
+  const renderizarTextoConComandos = (texto) => {
+    if (!texto) return null
+    const bloques = texto.split(/(```[\s\S]*?```)/g)
+
+    return bloques.map((bloque, bIdx) => {
+      if (bloque.startsWith('```') && bloque.endsWith('```')) {
+        const codigoLimpio = bloque.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim()
+        return (
+          <div
+            key={bIdx}
+            style={{
+              margin: '8px 0',
+              borderRadius: 10,
+              backgroundColor: '#1E1E1E',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              overflow: 'hidden',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '6px 12px',
+              backgroundColor: '#2D2D2D',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              fontSize: 11,
+              color: '#9E9E9E'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Terminal size={12} color="#0A84FF" />
+                <span style={{ fontWeight: 600 }}>Comando / Código SMR2</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopiarComando(codigoLimpio)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#0A84FF',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                <Copy size={11} />
+                <span>Copiar</span>
+              </button>
+            </div>
+            <pre style={{
+              margin: 0,
+              padding: '10px 12px',
+              color: '#34C759',
+              fontSize: 13,
+              lineHeight: 1.45,
+              overflowX: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all'
+            }}>
+              <code>{codigoLimpio}</code>
+            </pre>
+          </div>
+        )
+      }
+
+      // Si tiene comandos inline entre comillas invertidas `comando`
+      const partesInline = bloque.split(/(`[^`]+`)/g)
+      return (
+        <span key={bIdx}>
+          {partesInline.map((pInline, pIdx) => {
+            if (pInline.startsWith('`') && pInline.endsWith('`') && pInline.length > 2) {
+              const cmd = pInline.slice(1, -1)
+              return (
+                <code
+                  key={pIdx}
+                  onClick={() => handleCopiarComando(cmd)}
+                  title="Pulsar para copiar"
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    backgroundColor: 'var(--color-surface-secondary)',
+                    color: 'var(--color-accent)',
+                    padding: '2px 6px',
+                    borderRadius: 6,
+                    fontSize: '0.9em',
+                    border: '1px solid var(--color-separator)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {cmd}
+                </code>
+              )
+            }
+            return pInline
+          })}
+        </span>
+      )
+    })
+  }
 
   return (
     <div style={{
-      maxWidth: 640,
+      maxWidth: esDesktop ? 1160 : '100%',
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: 'var(--color-surface)',
-      borderLeft: '1px solid var(--color-separator)',
-      borderRight: '1px solid var(--color-separator)',
-      paddingBottom: 90
+      padding: esDesktop ? '16px 20px 80px' : '0 0 96px',
+      display: esDesktop ? 'flex' : 'block',
+      gap: 24,
+      alignItems: 'flex-start'
     }}>
-      {/* 1. TOP HEADER ESTILO X (STICKY & MINIMALISTA) */}
-      <header style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        backgroundColor: 'var(--tab-bar-bg)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--color-separator)'
+      {/* Toast Flotante de Notificación */}
+      {toastNotif && (
+        <aside
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 84,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            backgroundColor: toastNotif.tipo === 'error' ? 'var(--color-negative)' : '#1C1C1E',
+            color: '#FFFFFF',
+            padding: '10px 18px',
+            borderRadius: 9999,
+            fontSize: 13,
+            fontWeight: 700,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            border: '1px solid rgba(255, 255, 255, 0.15)'
+          }}
+        >
+          {toastNotif.tipo === 'error' ? <X size={15} /> : <Check size={15} color="var(--color-positive)" />}
+          <span>{toastNotif.mensaje}</span>
+        </aside>
+      )}
+
+      {/* ========================================================================= */}
+      {/* COLUMNA PRINCIPAL: TIMELINE (EN MÓVIL ES COMPLETA, EN PC ES EL PANEL IZQ) */}
+      {/* ========================================================================= */}
+      <div style={{
+        flex: 1,
+        minWidth: 0,
+        maxWidth: esDesktop ? 740 : '100%',
+        backgroundColor: 'var(--color-surface)',
+        borderRadius: esDesktop ? 18 : 0,
+        border: esDesktop ? '1px solid var(--color-separator)' : 'none',
+        boxShadow: esDesktop ? '0 2px 14px rgba(0, 0, 0, 0.04)' : 'none',
+        overflow: 'hidden'
       }}>
-        {/* Barra superior: Título, Puntos y Perfil */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 16px',
-          height: 52
+        {/* CABECERA STICKY DEL FEED */}
+        <header style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 90,
+          backgroundColor: 'var(--tab-bar-bg)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+          borderBottom: '1px solid var(--color-separator)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: -0.5, color: 'var(--color-ink)' }}>
-              Feed SMR2
-            </span>
-            {avisoHoy && (
-              <span
-                title={avisoHoy}
+          {/* Barra superior de controles */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: esDesktop ? '12px 18px' : '10px 14px',
+            gap: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: esDesktop ? 20 : 17, fontWeight: 900, letterSpacing: -0.5, color: 'var(--color-ink)' }}>
+                Feed SMR2
+              </span>
+
+              {/* Botón de refrescar en vivo */}
+              <button
+                type="button"
+                onClick={() => cargarFeedCompleto(false)}
+                title="Actualizar publicaciones del aula"
+                disabled={refrescando}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-secondary-ink)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center'
+                }}
+              >
+                <RefreshCw
+                  size={15}
+                  style={{
+                    animation: refrescando ? 'spin 0.8s linear infinite' : 'none',
+                    opacity: refrescando ? 1 : 0.7
+                  }}
+                />
+              </button>
+
+              {avisoHoy && (
+                <span
+                  title={avisoHoy}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                    color: '#D97706',
+                    padding: '2px 8px',
+                    borderRadius: 9999
+                  }}
+                >
+                  <Megaphone size={11} />
+                  <span>Aviso</span>
+                </span>
+              )}
+            </div>
+
+            {/* Controles de Racha, Monedas y Perfil */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Buscador toggle en móvil */}
+              {!esDesktop && (
+                <button
+                  type="button"
+                  onClick={() => setBusquedaAbiertaMovil(prev => !prev)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: busquedaQuery ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                    padding: 6,
+                    cursor: 'pointer'
+                  }}
+                  title="Buscar en el feed"
+                >
+                  <Search size={18} />
+                </button>
+              )}
+
+              {/* Chip de Racha */}
+              <div
+                title={`Racha actual: ${perfil?.racha_actual || 0} días`}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 4,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  backgroundColor: 'rgba(255, 149, 0, 0.12)',
-                  color: '#D97706',
-                  padding: '2px 8px',
-                  borderRadius: 9999
+                  padding: '4px 9px',
+                  borderRadius: 9999,
+                  backgroundColor: 'rgba(255, 59, 48, 0.1)',
+                  color: 'var(--color-negative)',
+                  fontSize: 12,
+                  fontWeight: 800
                 }}
               >
-                <Megaphone size={11} />
-                <span>Aviso</span>
-              </span>
-            )}
-          </div>
+                <Flame size={14} />
+                <span>{perfil?.racha_actual || 0}d</span>
+              </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Chip de Racha */}
-            <div
-              title={`Racha actual: ${perfil?.racha_actual || 0} días`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '4px 10px',
-                borderRadius: 9999,
-                backgroundColor: 'rgba(255, 59, 48, 0.1)',
-                color: '#FF3B30',
-                fontSize: 12,
-                fontWeight: 800
-              }}
-            >
-              <Flame size={14} />
-              <span>{perfil?.racha_actual || 0}d</span>
-            </div>
-
-            {/* Chip de Puntos (Abre tienda) */}
-            <button
-              type="button"
-              onClick={() => { sound.playPop(); setMostrarTienda(true) }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '4px 11px',
-                borderRadius: 9999,
-                backgroundColor: 'rgba(255, 149, 0, 0.12)',
-                color: '#D97706',
-                border: '1px solid rgba(255, 149, 0, 0.25)',
-                fontSize: 12,
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-            >
-              <ShoppingBag size={13} />
-              <span>{perfil?.puntos_total || 0} SE 💶</span>
-            </button>
-
-            {/* Avatar del usuario con acceso a su perfil */}
-            <div onClick={() => navigate('/perfil')} style={{ cursor: 'pointer' }}>
-              <AvatarUsuario
-                nombre={perfil?.nombre || 'Usuario'}
-                color={perfil?.color_acento || '#007AFF'}
-                rol={perfil?.rol || 'alumno'}
-                size={34}
-                marco={perfil?.marco_avatar}
-                showRoleBadge={false}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Pestañas de navegación de Timeline estilo X */}
-        <div style={{ display: 'flex', borderTop: '1px solid var(--color-separator)' }}>
-          {[
-            { id: 'para_ti', label: 'Para ti' },
-            { id: 'tips', label: 'Chuletas & Tips' },
-            { id: 'respuestas', label: `Soluciones (${respuestasFeed.length})` }
-          ].map((tab) => {
-            const activa = tabActiva === tab.id
-            return (
+              {/* Chip de StevenEuros (Abre Tienda) */}
               <button
-                key={tab.id}
                 type="button"
-                onClick={() => { sound.playPop(); setTabActiva(tab.id) }}
+                onClick={() => { sound.playPop(); setMostrarTienda(true) }}
+                title="Abrir tienda de recompensas"
                 style={{
-                  flex: 1,
-                  padding: '12px 0',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '4px 10px',
+                  borderRadius: 9999,
+                  backgroundColor: 'rgba(255, 149, 0, 0.12)',
+                  color: '#D97706',
+                  border: '1px solid rgba(255, 149, 0, 0.25)',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                <ShoppingBag size={13} />
+                <span>{perfil?.puntos_total || 0} SE 💶</span>
+              </button>
+
+              {/* Avatar del usuario */}
+              <div onClick={() => navigate('/perfil')} style={{ cursor: 'pointer' }}>
+                <AvatarUsuario
+                  nombre={perfil?.nombre || 'Usuario'}
+                  color={perfil?.color_acento || '#007AFF'}
+                  rol={perfil?.rol || 'alumno'}
+                  size={32}
+                  marco={perfil?.marco_avatar}
+                  showRoleBadge={false}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Input de Búsqueda Desplegable en Móvil */}
+          {!esDesktop && busquedaAbiertaMovil && (
+            <div style={{ padding: '0 14px 10px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                backgroundColor: 'var(--color-surface-secondary)',
+                borderRadius: 10,
+                padding: '6px 10px',
+                border: '1px solid var(--color-separator)'
+              }}>
+                <Search size={15} color="var(--color-secondary-ink)" />
+                <input
+                  type="text"
+                  placeholder="Buscar comando, tema o compañero..."
+                  value={busquedaQuery}
+                  onChange={(e) => setBusquedaQuery(e.target.value)}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    outline: 'none',
+                    backgroundColor: 'transparent',
+                    fontSize: 13,
+                    color: 'var(--color-ink)'
+                  }}
+                  autoFocus
+                />
+                {busquedaQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setBusquedaQuery('')}
+                    style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--color-secondary-ink)' }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pestañas de Navegación de Timeline */}
+          <div style={{ display: 'flex', borderTop: '1px solid var(--color-separator)' }}>
+            {[
+              { id: 'para_ti', label: 'Para ti', count: postsFeed.length },
+              { id: 'tips', label: 'Chuletas & Tips', count: postsFeed.filter(p => ['Truco', 'Linux', 'Redes', 'Comando'].includes(p.categoria)).length },
+              { id: 'respuestas', label: 'Soluciones', count: respuestasFeed.length }
+            ].map((t) => {
+              const activa = tabActiva === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { sound.playPop(); setTabActiva(t.id) }}
+                  style={{
+                    flex: 1,
+                    padding: '11px 6px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    fontSize: 13,
+                    fontWeight: activa ? 800 : 500,
+                    color: activa ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
+                    transition: 'color 0.15s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span>{t.label}</span>
+                  {t.count > 0 && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: 9999,
+                      backgroundColor: activa ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
+                      color: activa ? 'var(--color-accent)' : 'var(--color-secondary-ink)'
+                    }}>
+                      {t.count}
+                    </span>
+                  )}
+                  {activa && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      width: 44,
+                      height: 3,
+                      borderRadius: 9999,
+                      backgroundColor: 'var(--color-accent)'
+                    }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Carrusel Horizontal de Categorías (Pill Selector) */}
+          <div style={{
+            display: 'flex',
+            gap: 6,
+            padding: '8px 14px',
+            overflowX: 'auto',
+            borderTop: '1px solid var(--color-separator)',
+            scrollbarWidth: 'none',
+            WebkitOverflowScrolling: 'touch'
+          }}>
+            {CATEGORIAS_VALIDAS.map((cat) => {
+              const activa = filtroCategoria.toLowerCase() === cat.id.toLowerCase()
+              const CatIcon = cat.icon
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    sound.playPop()
+                    setFiltroCategoria(activa && cat.id !== 'todas' ? 'todas' : cat.id)
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '5px 11px',
+                    borderRadius: 9999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: activa ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                    backgroundColor: activa ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-surface-secondary)',
+                    color: activa ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <CatIcon size={12} color={activa ? 'var(--color-accent)' : cat.color || 'currentColor'} />
+                  <span>{cat.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </header>
+
+        {/* WIDGET MÓVIL: CLASE EN CURSO EN 1 LÍNEA (SOLO MÓVIL) */}
+        {!esDesktop && (
+          <div
+            onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
+            role="button"
+            tabIndex={0}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: estadoHorario.estado === 'en_clase' ? 'rgba(52, 199, 89, 0.08)' : 'var(--color-surface-secondary)',
+              borderBottom: '1px solid var(--color-separator)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              fontSize: 12
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                backgroundColor: estadoHorario.estado === 'en_clase' ? 'var(--color-positive)' : 'var(--color-warning)',
+                flexShrink: 0
+              }} />
+              <strong style={{ color: 'var(--color-ink)' }}>
+                {estadoHorario.claseActual?.codigo || 'SMR2'}:
+              </strong>
+              <span style={{ color: 'var(--color-secondary-ink)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {estadoHorario.claseActual?.nombre || 'Jornada escolar'}
+              </span>
+              {estadoHorario.minutosRestantes > 0 && (
+                <span style={{ color: 'var(--color-accent)', fontWeight: 700, flexShrink: 0 }}>
+                  ({estadoHorario.minutosRestantes} min)
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--color-accent)', fontWeight: 700, flexShrink: 0 }}>
+              <span>Horario</span>
+              <ChevronRight size={13} />
+            </div>
+          </div>
+        )}
+
+        {/* BANNER COMPACTO DE ASISTENCIA 15:30 */}
+        {bannerAsistenciaVisible && (
+          <div style={{
+            padding: '8px 16px',
+            borderBottom: '1px solid var(--color-separator)',
+            backgroundColor: asistenciaConfirmada ? 'rgba(52, 199, 89, 0.06)' : 'rgba(10, 132, 255, 0.06)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, minWidth: 0 }}>
+              {asistenciaConfirmada ? (
+                <>
+                  <CheckCircle2 size={16} color="var(--color-positive)" />
+                  <span style={{ fontWeight: 600, color: 'var(--color-positive)' }}>
+                    Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} SE)
+                  </span>
+                </>
+              ) : solicitudPendiente ? (
+                <>
+                  <Clock size={16} color="var(--color-warning)" />
+                  <span style={{ fontWeight: 600, color: 'var(--color-warning)' }}>
+                    Solicitud enviada a lominoño. Esperando confirmación...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Clock size={16} color="var(--color-accent)" />
+                  <span style={{ fontWeight: 600, color: 'var(--color-ink)' }}>
+                    Clase de las 15:30: Sella tu presencia en el aula
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {!asistenciaConfirmada && !solicitudPendiente && (
+                <button
+                  type="button"
+                  onClick={handleCheckinRapido}
+                  style={{
+                    backgroundColor: 'var(--color-accent)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 9999,
+                    padding: '4px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Sellar (+{calcularPuntosGanados('checkin')} SE)
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setBannerAsistenciaVisible(false)}
+                style={{
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  position: 'relative',
-                  fontSize: 14,
-                  fontWeight: activa ? 800 : 500,
-                  color: activa ? 'var(--color-ink)' : 'var(--color-secondary-ink)',
-                  transition: 'color 0.15s ease'
+                  color: 'var(--color-secondary-ink)',
+                  padding: 4
                 }}
               >
-                <span>{tab.label}</span>
-                {activa && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 48,
-                    height: 3,
-                    borderRadius: 9999,
-                    backgroundColor: 'var(--color-accent)'
-                  }} />
-                )}
+                <X size={14} />
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* COMPOSITOR DE PUBLICACIONES */}
+        <section style={{
+          padding: esDesktop ? '16px 18px' : '12px 14px',
+          borderBottom: '1px solid var(--color-separator)',
+          backgroundColor: 'var(--color-surface)',
+          display: 'flex',
+          gap: 12
+        }}>
+          <AvatarUsuario
+            nombre={perfil?.nombre || 'Yo'}
+            color={perfil?.color_acento || '#007AFF'}
+            rol={perfil?.rol || 'alumno'}
+            size={esDesktop ? 42 : 36}
+          />
+
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {esModerador && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--color-accent)',
+                backgroundColor: 'rgba(10, 132, 255, 0.08)',
+                padding: '4px 10px',
+                borderRadius: 8,
+                border: '1px solid rgba(10, 132, 255, 0.2)'
+              }}>
+                <ShieldCheck size={13} />
+                <span>Publicando como: {perfil?.nombre || 'lominoño'} (Post de administración)</span>
+              </div>
+            )}
+
+            <textarea
+              ref={composerRef}
+              rows={textoPost.includes('\n') || (esDesktop && textoPost.length > 50) ? 3 : 2}
+              value={textoPost}
+              onChange={(e) => setTextoPost(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  handlePublicarPost(e)
+                }
+              }}
+              onFocus={() => setComposerExpandidoMovil(true)}
+              placeholder={esModerador ? 'Publicar comunicado oficial o tip técnico para la clase...' : '¿Qué estás aprendiendo hoy? Comparte un comando bash, chuleta de redes o duda...'}
+              style={{
+                width: '100%',
+                border: 'none',
+                outline: 'none',
+                backgroundColor: 'transparent',
+                fontSize: esDesktop ? 15 : 14,
+                lineHeight: 1.45,
+                resize: 'none',
+                fontFamily: 'inherit',
+                color: 'var(--color-ink)'
+              }}
+            />
+
+            {/* Categorías pill selector en el compositor */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {(esModerador
+                ? ['Aviso', 'Linux', 'Redes', 'Truco', 'Duda', 'General']
+                : ['Truco', 'Linux', 'Redes', 'Duda', 'General']
+              ).map(cat => {
+                const sel = categoriaPost === cat
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCategoriaPost(cat)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 9999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                      backgroundColor: sel ? 'rgba(10, 132, 255, 0.12)' : 'var(--color-fill-secondary)',
+                      color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    #{cat}
+                  </button>
+                )
+              })}
+
+              {/* Botón rápido para insertar bloque de código */}
+              <button
+                type="button"
+                onClick={() => {
+                  setTextoPost(prev => prev + '\n```bash\n# comando de terminal\n\n```\n')
+                  composerRef.current?.focus()
+                }}
+                title="Insertar bloque de comandos bash / linux"
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--color-separator)',
+                  borderRadius: 6,
+                  padding: '2px 7px',
+                  fontSize: 11,
+                  color: 'var(--color-secondary-ink)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                <Terminal size={11} />
+                <span>+ Código</span>
+              </button>
+
+              {esModerador && (
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={fijarPostAdmin}
+                    onChange={(e) => setFijarPostAdmin(e.target.checked)}
+                    style={{ accentColor: 'var(--color-accent)' }}
+                  />
+                  <span>📌 Fijar</span>
+                </label>
+              )}
+            </div>
+
+            {/* Barra inferior del compositor */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderTop: '1px solid var(--color-separator)',
+              paddingTop: 8,
+              marginTop: 4,
+              flexWrap: 'wrap',
+              gap: 8
+            }}>
+              <div>
+                {!esModerador ? (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
+                    🎁 Ganas +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} SE al publicar contenido técnico
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-positive)' }}>
+                    ✓ Comunicado Oficial Verificado
+                  </span>
+                )}
+                {esDesktop && (
+                  <span style={{ fontSize: 11, color: 'var(--color-tertiary-ink)', marginLeft: 8 }}>
+                    (Ctrl + Enter para enviar)
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handlePublicarPost}
+                disabled={!textoPost.trim() || publicando}
+                style={{
+                  backgroundColor: textoPost.trim() ? 'var(--color-accent)' : 'rgba(10, 132, 255, 0.4)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 9999,
+                  padding: '6px 18px',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: textoPost.trim() ? 'pointer' : 'default',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Send size={13} />
+                <span>{publicando ? 'Publicando...' : (esModerador ? 'Publicar Oficial' : 'Postear')}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* BANNER SI HAY FILTRO ACTIVO */}
+        {(filtroCategoria !== 'todas' || busquedaQuery) && (
+          <div style={{
+            padding: '8px 16px',
+            backgroundColor: 'var(--color-surface-secondary)',
+            borderBottom: '1px solid var(--color-separator)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--color-secondary-ink)' }}>Filtrando por:</span>
+              {filtroCategoria !== 'todas' && (
+                <strong style={{ color: 'var(--color-accent)' }}>#{filtroCategoria}</strong>
+              )}
+              {busquedaQuery && (
+                <strong style={{ color: 'var(--color-ink)' }}>"{busquedaQuery}"</strong>
+              )}
+              <span style={{ color: 'var(--color-secondary-ink)' }}>({itemsTimeline.length} resultados)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setFiltroCategoria('todas'); setBusquedaQuery('') }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-accent)',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: 11
+              }}
+            >
+              Mostrar todos
+            </button>
+          </div>
+        )}
+
+        {/* TIMELINE DE PUBLICACIONES */}
+        <main style={{ display: 'flex', flexDirection: 'column' }}>
+          {cargandoPosts && itemsTimeline.length === 0 && (
+            <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)' }}>
+              <Sparkles size={24} style={{ opacity: 0.5, margin: '0 auto 8px', display: 'block' }} />
+              <span style={{ fontSize: 13 }}>Cargando publicaciones de la clase...</span>
+            </div>
+          )}
+
+          {!cargandoPosts && itemsTimeline.length === 0 && (
+            <div style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <Sparkles size={32} color="var(--color-accent)" style={{ opacity: 0.4 }} />
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>No hay publicaciones para mostrar</h3>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--color-secondary-ink)', maxWidth: 320 }}>
+                {busquedaQuery || filtroCategoria !== 'todas'
+                  ? 'Prueba a cambiar el filtro o el término de búsqueda.'
+                  : 'Sé el primero del aula en compartir un comando, apunte o duda.'}
+              </p>
+            </div>
+          )}
+
+          {itemsTimeline.map((item) => {
+            const yaLeDiLike = Boolean(likesDados[item.id])
+            const yaRepostee = Boolean(repostsDados[item.id])
+            const esRespuesta = item.tipo === 'respuesta'
+            const esAdminPost = item.esAdministracion || item.rol === 'moderador'
+            const puedeBorrar = esModerador || item.userId === perfil?.id
+            const comentariosEstePost = comentariosPorPost[item.id] || []
+            const comentariosAbiertosEstePost = Boolean(comentariosAbiertos[item.id])
+
+            return (
+              <article
+                key={item.id}
+                style={{
+                  padding: esDesktop ? '16px 18px' : '14px 14px',
+                  borderBottom: '1px solid var(--color-separator)',
+                  display: 'flex',
+                  gap: 12,
+                  backgroundColor: item.fijado ? 'rgba(10, 132, 255, 0.03)' : 'transparent',
+                  transition: 'background-color 0.12s ease'
+                }}
+              >
+                {/* Columna Izquierda: Avatar */}
+                <div style={{ flexShrink: 0 }}>
+                  <AvatarUsuario
+                    nombre={item.autorLimpio || item.autor}
+                    color={item.color || '#007AFF'}
+                    rol={item.rol || 'alumno'}
+                    size={esDesktop ? 42 : 36}
+                    fontSize={13}
+                  />
+                </div>
+
+                {/* Columna Derecha: Cabecera, Contenido y Acciones */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* Cabecera del post */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-ink)' }}>
+                        {item.autor}
+                      </span>
+
+                      {esAdminPost && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            backgroundColor: 'rgba(10, 132, 255, 0.12)',
+                            color: '#0A84FF',
+                            padding: '1px 6px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(10, 132, 255, 0.25)'
+                          }}
+                        >
+                          <ShieldCheck size={11} />
+                          Post de administración
+                        </span>
+                      )}
+
+                      <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)', opacity: 0.8 }}>
+                        {item.username.startsWith('@') ? item.username : `@${item.username}`}
+                      </span>
+                      <span style={{ color: 'var(--color-secondary-ink)', opacity: 0.5 }}>·</span>
+                      <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
+                        {item.tiempoHace}
+                      </span>
+
+                      {item.fijado && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#FF9500',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                          padding: '1px 6px',
+                          borderRadius: 4
+                        }}>
+                          <Pin size={10} /> Fijado
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        onClick={() => setFiltroCategoria(item.categoria)}
+                        title={`Filtrar por #${item.categoria}`}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 9999,
+                          backgroundColor: esRespuesta ? 'rgba(52, 199, 89, 0.1)' : 'rgba(10, 132, 255, 0.08)',
+                          color: esRespuesta ? 'var(--color-positive)' : 'var(--color-accent)',
+                          flexShrink: 0,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        #{item.categoria || (esRespuesta ? 'Reto' : 'Tip')}
+                      </span>
+
+                      {puedeBorrar && (
+                        <button
+                          type="button"
+                          onClick={() => handleEliminarPost(item.id)}
+                          title="Eliminar publicación"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--color-secondary-ink)',
+                            padding: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            opacity: 0.7
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Título opcional si existe */}
+                  {item.titulo && !esRespuesta && item.titulo !== item.contenido && (
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
+                      {item.titulo}
+                    </h4>
+                  )}
+
+                  {/* Cuerpo del post con formateo de comandos y markdown */}
+                  <div style={{
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    color: 'var(--color-ink)',
+                    wordBreak: 'break-word',
+                    whiteSpace: 'pre-line'
+                  }}>
+                    {renderizarTextoConComandos(item.contenido)}
+                  </div>
+
+                  {/* Fila de Interacciones (Thumb-Friendly en móvil) */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    maxWidth: 380,
+                    marginTop: 6,
+                    color: 'var(--color-secondary-ink)'
+                  }}>
+                    {/* Botón Comentarios */}
+                    <button
+                      type="button"
+                      title="Ver o responder comentarios"
+                      onClick={() => handleToggleComentarios(item.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        color: comentariosAbiertosEstePost ? 'var(--color-accent)' : 'inherit',
+                        fontSize: 12,
+                        minHeight: 38,
+                        minWidth: 44,
+                        padding: '4px 6px'
+                      }}
+                    >
+                      <MessageSquare size={16} />
+                      <span>{comentariosEstePost.length}</span>
+                    </button>
+
+                    {/* Botón Repost */}
+                    <button
+                      type="button"
+                      title="Impulsar en el aula"
+                      onClick={() => handleRepost(item.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        color: yaRepostee ? 'var(--color-positive)' : 'inherit',
+                        fontSize: 12,
+                        minHeight: 38,
+                        minWidth: 44,
+                        padding: '4px 6px'
+                      }}
+                    >
+                      <Repeat2 size={16} />
+                      <span>{yaRepostee ? 1 : 0}</span>
+                    </button>
+
+                    {/* Botón Me Gusta */}
+                    <button
+                      type="button"
+                      title="Me gusta"
+                      onClick={() => handleToggleLike(item.id, !esRespuesta)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        color: yaLeDiLike ? '#FF3B30' : 'inherit',
+                        fontSize: 12,
+                        minHeight: 38,
+                        minWidth: 44,
+                        padding: '4px 6px',
+                        transition: 'color 0.12s ease'
+                      }}
+                    >
+                      <Heart size={16} fill={yaLeDiLike ? '#FF3B30' : 'none'} color={yaLeDiLike ? '#FF3B30' : 'currentColor'} />
+                      <span>{item.likes || 0}</span>
+                    </button>
+
+                    {/* Botón Compartir */}
+                    <button
+                      type="button"
+                      title="Compartir publicación"
+                      onClick={() => handleCompartirPost(item)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        color: 'inherit',
+                        fontSize: 12,
+                        minHeight: 38,
+                        minWidth: 44,
+                        padding: '4px 6px'
+                      }}
+                    >
+                      <Share2 size={15} />
+                    </button>
+                  </div>
+
+                  {/* HILO DE COMENTARIOS INLINE */}
+                  {comentariosAbiertosEstePost && (
+                    <div style={{
+                      marginTop: 10,
+                      paddingTop: 10,
+                      borderTop: '1px solid var(--color-separator)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8
+                    }}>
+                      {cargandoComentarios[item.id] && comentariosEstePost.length === 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', padding: 6 }}>
+                          Cargando comentarios...
+                        </div>
+                      )}
+
+                      {comentariosEstePost.map((c, cIdx) => {
+                        const cProf = c.profiles
+                        const cEsAdmin = cProf?.rol === 'moderador' || !cProf
+                        const cNombre = cEsAdmin ? `${cProf?.nombre || 'lominoño'} (Post de administración)` : (cProf?.nombre || 'Alumno')
+
+                        return (
+                          <div key={c.id || cIdx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <CornerDownRight size={13} color="var(--color-secondary-ink)" style={{ marginTop: 6, flexShrink: 0 }} />
+                            <AvatarUsuario
+                              nombre={cProf?.nombre || 'lominoño'}
+                              color={cProf?.color_acento || '#007AFF'}
+                              rol={cProf?.rol || 'alumno'}
+                              size={26}
+                              fontSize={10}
+                            />
+                            <div style={{
+                              flex: 1,
+                              backgroundColor: 'var(--color-surface-secondary)',
+                              borderRadius: 10,
+                              padding: '6px 10px',
+                              fontSize: 12,
+                              lineHeight: 1.4
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                <span style={{ fontWeight: 700, color: 'var(--color-ink)' }}>{cNombre}</span>
+                                <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)' }}>
+                                  {calcularTiempoRelativo(c.created_at)}
+                                </span>
+                              </div>
+                              <div style={{ color: 'var(--color-ink)', wordBreak: 'break-word' }}>
+                                {c.contenido}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {/* Input para responder */}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                        <input
+                          type="text"
+                          className="apple-input"
+                          placeholder="Añade un aporte o duda técnica..."
+                          value={nuevoComentarioTexto[item.id] || ''}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setNuevoComentarioTexto(prev => ({ ...prev, [item.id]: val }))
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleEnviarComentario(item.id)
+                          }}
+                          style={{ flex: 1, height: 34, fontSize: 12 }}
+                        />
+                        <button
+                          type="button"
+                          disabled={!(nuevoComentarioTexto[item.id] || '').trim() || enviandoComentario}
+                          onClick={() => handleEnviarComentario(item.id)}
+                          className="btn-primary"
+                          style={{ minHeight: 34, padding: '0 12px', fontSize: 12, fontWeight: 700 }}
+                        >
+                          Responder (+2 SE)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </article>
             )
           })}
-        </div>
-      </header>
+        </main>
+      </div>
 
-      {/* WIDGET EN VIVO: CLASE ACTUAL Y HORARIO DE AULA SMR2 */}
-      <section
-        onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
-        role="button"
-        tabIndex={0}
-        title="Pulsar para abrir horario semanal completo"
-        style={{
-          margin: '10px 16px 8px',
-          padding: '12px 14px',
-          borderRadius: 14,
-          backgroundColor: estadoHorario.estado === 'en_clase'
-            ? 'rgba(52, 199, 89, 0.08)'
-            : estadoHorario.estado === 'en_descanso'
-            ? 'rgba(255, 149, 0, 0.08)'
-            : 'var(--color-surface)',
-          border: estadoHorario.estado === 'en_clase'
-            ? '1px solid rgba(52, 199, 89, 0.35)'
-            : estadoHorario.estado === 'en_descanso'
-            ? '1px solid rgba(255, 149, 0, 0.35)'
-            : '1px solid var(--color-separator)',
-          boxShadow: estadoHorario.estado === 'en_clase'
-            ? '0 2px 12px rgba(52, 199, 89, 0.12)'
-            : '0 2px 8px rgba(0, 0, 0, 0.04)',
-          cursor: 'pointer',
+      {/* ========================================================================= */}
+      {/* COLUMNA LATERAL DERECHA (EXCLUSIVA DE PC / PANTALLA ANCHA >= 1024px)      */}
+      {/* ========================================================================= */}
+      {esDesktop && (
+        <aside style={{
+          width: 360,
+          flexShrink: 0,
+          position: 'sticky',
+          top: 16,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          transition: 'all 0.15s ease'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-          {/* Badge de Asignatura o Recreo */}
+          flexDirection: 'column',
+          gap: 16
+        }}>
+          {/* WIDGET 1: HORARIO EN DIRECTO DEL AULA */}
           <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            backgroundColor: estadoHorario.claseActual?.colorBg || 'rgba(0, 122, 255, 0.12)',
-            color: estadoHorario.claseActual?.color || 'var(--color-accent)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 900,
-            fontSize: 13,
-            letterSpacing: -0.2,
-            flexShrink: 0
+            backgroundColor: 'var(--color-surface)',
+            borderRadius: 16,
+            padding: 16,
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.04)'
           }}>
-            {estadoHorario.claseActual?.codigo ? (
-              <span>{estadoHorario.claseActual.codigo}</span>
-            ) : estadoHorario.estado === 'en_descanso' ? (
-              <span style={{ fontSize: 18 }}>☕</span>
-            ) : (
-              <Calendar size={18} />
-            )}
-          </div>
-
-          {/* Información de la Clase en Directo */}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={16} color="var(--color-accent)" />
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
+                  Clase en Directo SMR2
+                </h3>
+              </div>
               <span style={{
                 fontSize: 10,
                 fontWeight: 800,
                 padding: '2px 7px',
                 borderRadius: 9999,
                 backgroundColor: estadoHorario.estado === 'en_clase'
+                  ? 'rgba(52, 199, 89, 0.15)'
+                  : estadoHorario.estado === 'en_descanso'
+                  ? 'rgba(255, 149, 0, 0.15)'
+                  : 'var(--color-surface-secondary)',
+                color: estadoHorario.estado === 'en_clase'
                   ? 'var(--color-positive)'
                   : estadoHorario.estado === 'en_descanso'
                   ? 'var(--color-warning)'
-                  : 'var(--color-accent)',
-                color: '#FFFFFF'
+                  : 'var(--color-secondary-ink)'
               }}>
-                {estadoHorario.estado === 'en_clase' ? 'EN CLASE AHORA' : estadoHorario.estado === 'en_descanso' ? 'DESCANSO' : 'SMR2'}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-ink)' }}>
-                {estadoHorario.claseActual?.nombre || 'Jornada escolar'}
+                {estadoHorario.estado === 'en_clase' ? '● EN CURSO' : estadoHorario.estado === 'en_descanso' ? 'DESCANSO' : 'FINALIZADA'}
               </span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
-              {estadoHorario.minutosRestantes ? `${estadoHorario.minutosRestantes} min restantes · ` : ''}Prof. {estadoHorario.claseActual?.profesor || 'lominoño'}
-            </div>
-          </div>
-        </div>
 
-        {/* Botón táctil para abrir horario */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '6px 10px',
-          borderRadius: 8,
-          backgroundColor: 'var(--color-surface-secondary)',
-          border: '1px solid var(--color-separator)',
-          color: 'var(--color-accent)',
-          fontSize: 12,
-          fontWeight: 700,
-          flexShrink: 0
-        }}>
-          <Calendar size={13} />
-          <span className="hidden sm:inline">Ver Horario</span>
-          <ChevronRight size={14} />
-        </div>
-      </section>
-
-      {/* 2. CHIP COMPACTO NO INVASIVO DE ASISTENCIA 15:30 */}
-      {bannerAsistenciaVisible && (
-        <div style={{
-          padding: '8px 16px',
-          borderBottom: '1px solid var(--color-separator)',
-          backgroundColor: asistenciaConfirmada ? 'rgba(52, 199, 89, 0.06)' : 'rgba(0, 122, 255, 0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            {asistenciaConfirmada ? (
-              <>
-                <CheckCircle2 size={16} color="var(--color-positive)" />
-                <span style={{ fontWeight: 600, color: 'var(--color-positive)' }}>
-                  Asistencia sellada hoy a las {asistenciaConfirmada.hora || '15:30'} (+{asistenciaConfirmada.puntos_ganados || calcularPuntosGanados('checkin')} SE 💶)
-                </span>
-              </>
-            ) : solicitudPendiente ? (
-              <>
-                <Clock size={16} color="var(--color-warning)" />
-                <span style={{ fontWeight: 600, color: 'var(--color-warning)' }}>
-                  Solicitud enviada a lominoño. Esperando confirmación...
-                </span>
-              </>
-            ) : (
-              <>
-                <Clock size={16} color="var(--color-accent)" />
-                <span style={{ fontWeight: 600, color: 'var(--color-ink)' }}>
-                  Clase de las 15:30: Sella tu presencia en el aula
-                </span>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {!asistenciaConfirmada && !solicitudPendiente && (
-              <button
-                type="button"
-                onClick={handleCheckinRapido}
-                style={{
-                  backgroundColor: 'var(--color-accent)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 9999,
-                  padding: '5px 12px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                Sellar (+{calcularPuntosGanados('checkin')} SE 💶)
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setBannerAsistenciaVisible(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--color-secondary-ink)',
-                padding: 4
-              }}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 3. COMPOSITOR INLINE ESTILO X */}
-      <section style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid var(--color-separator)',
-        display: 'flex',
-        gap: 12,
-        backgroundColor: 'var(--color-surface)'
-      }}>
-        {/* Avatar del autor */}
-        <AvatarUsuario
-          nombre={perfil?.nombre || 'Yo'}
-          color={perfil?.color_acento || '#007AFF'}
-          rol={perfil?.rol || 'alumno'}
-          size={40}
-        />
-
-        {/* Input box */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Indicador para moderadores */}
-          {esModerador && (
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'var(--color-accent)',
-              backgroundColor: 'rgba(0, 122, 255, 0.08)',
-              padding: '4px 10px',
-              borderRadius: 8,
-              border: '1px solid rgba(0, 122, 255, 0.2)'
+              backgroundColor: 'var(--color-surface-secondary)',
+              borderRadius: 12,
+              padding: '12px 14px',
+              marginBottom: 10,
+              border: '1px solid var(--color-separator)'
             }}>
-              <ShieldCheck size={13} />
-              <span>Publicando como: {perfil?.nombre || 'lominoño'} (Post de administración)</span>
-            </div>
-          )}
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--color-ink)' }}>
+                {estadoHorario.claseActual?.nombre || 'Jornada fuera de horario'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', marginTop: 2 }}>
+                Profesor: {estadoHorario.claseActual?.profesor || 'lominoño'}
+              </div>
 
-          <textarea
-            ref={composerRef}
-            rows={textoPost.includes('\n') ? 3 : 2}
-            value={textoPost}
-            onChange={(e) => setTextoPost(e.target.value)}
-            placeholder={esModerador ? 'Publicar comunicado oficial o tip técnico para la clase...' : '¿Qué está pasando en clase? Comparte un comando, duda o truco...'}
-            style={{
-              width: '100%',
-              border: 'none',
-              outline: 'none',
-              backgroundColor: 'transparent',
-              fontSize: 15,
-              lineHeight: 1.45,
-              resize: 'none',
-              fontFamily: 'inherit',
-              color: 'var(--color-ink)'
-            }}
-          />
-
-          {/* Categorías pill selector */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {(esModerador ? ['Aviso', 'Truco', 'Linux', 'Redes', 'Duda', 'General'] : ['Truco', 'Linux', 'Redes', 'Duda', 'General']).map(cat => {
-              const sel = categoriaPost === cat
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategoriaPost(cat)}
-                  style={{
-                    padding: '3px 9px',
-                    borderRadius: 9999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    border: sel ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
-                    backgroundColor: sel ? 'rgba(0, 122, 255, 0.15)' : 'var(--color-fill-secondary)',
-                    color: sel ? 'var(--color-accent)' : 'var(--color-secondary-ink)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  #{cat}
-                </button>
-              )
-            })}
-
-            {esModerador && (
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--color-secondary-ink)', cursor: 'pointer', marginLeft: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={fijarPostAdmin}
-                  onChange={(e) => setFijarPostAdmin(e.target.checked)}
-                  style={{ accentColor: 'var(--color-accent)' }}
-                />
-                <span>📌 Fijar</span>
-              </label>
-            )}
-          </div>
-
-          {/* Barra inferior del compositor: Recompensa y Botón Postear */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderTop: '1px solid var(--color-separator)',
-            paddingTop: 8,
-            marginTop: 4
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {!esModerador ? (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)' }}>
-                  🎁 +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * 0.5 * (Number(configRec?.multiplicadorGlobal) || 1)))} a +{Math.max(1, Math.round((Number(configRec?.puntosPostFeed) || 10) * (Number(configRec?.multiplicadorGlobal) || 1)))} StevenEuros (SE 💶) al publicar
-                </span>
-              ) : (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-positive)' }}>
-                  ✓ Post Oficial Verificado del Aula SMR2
-                </span>
+              {estadoHorario.minutosRestantes > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: 'var(--color-secondary-ink)', marginBottom: 4 }}>
+                    <span>Tiempo restante</span>
+                    <span style={{ color: 'var(--color-accent)' }}>{estadoHorario.minutosRestantes} minutos</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 9999, backgroundColor: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(100, Math.max(10, 100 - (estadoHorario.minutosRestantes / 50 * 100)))}%`,
+                      height: '100%',
+                      backgroundColor: 'var(--color-accent)',
+                      borderRadius: 9999
+                    }} />
+                  </div>
+                </div>
               )}
             </div>
 
             <button
               type="button"
-              onClick={handlePublicarPost}
-              disabled={!textoPost.trim() || publicando}
-              style={{
-                backgroundColor: textoPost.trim() ? 'var(--color-accent)' : 'rgba(0, 122, 255, 0.4)',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: 9999,
-                padding: '7px 18px',
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: textoPost.trim() ? 'pointer' : 'default',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                boxShadow: textoPost.trim() ? '0 2px 8px rgba(0, 122, 255, 0.3)' : 'none',
-                transition: 'all 0.15s ease'
-              }}
+              onClick={() => { sound.playPop(); setMostrarModalHorario(true) }}
+              className="btn-secondary"
+              style={{ width: '100%', minHeight: 36, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
-              <Send size={13} />
-              <span>{publicando ? 'Publicando...' : (esModerador ? 'Publicar (Admin)' : 'Postear')}</span>
+              <Calendar size={13} />
+              <span>Ver Horario Semanal Completo</span>
             </button>
           </div>
-        </div>
-      </section>
 
-      {/* 4. STREAM DEL FEED ESTILO X (TIMELINE CONTINUO) */}
-      <main style={{ display: 'flex', flexDirection: 'column' }}>
-        {cargandoPosts && itemsTimeline.length === 0 && (
-          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--color-secondary-ink)' }}>
-            <Sparkles size={24} style={{ opacity: 0.5, margin: '0 auto 8px', display: 'block' }} />
-            <span style={{ fontSize: 13 }}>Cargando actividad de clase...</span>
-          </div>
-        )}
+          {/* WIDGET 2: TEMAS Y CANALES TÉCNICOS SMR2 */}
+          <div style={{
+            backgroundColor: 'var(--color-surface)',
+            borderRadius: 16,
+            padding: 16,
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+              <TrendingUp size={16} color="var(--color-accent)" />
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
+                Canales & Temas Técnicos
+              </h3>
+            </div>
 
-        {!cargandoPosts && itemsTimeline.length === 0 && (
-          <div style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <Sparkles size={32} color="var(--color-accent)" style={{ opacity: 0.4 }} />
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>El feed está en calma</h3>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--color-secondary-ink)', maxWidth: 320 }}>
-              Sé el primero de la clase en compartir un apunte, tip de examen o duda técnica.
-            </p>
-          </div>
-        )}
-
-        {itemsTimeline.map((item) => {
-          const yaLeDiLike = Boolean(likesDados[item.id])
-          const yaRepostee = Boolean(repostsDados[item.id])
-          const esRespuesta = item.tipo === 'respuesta'
-          const esAdminPost = item.esAdministracion || item.rol === 'moderador'
-          const puedeBorrar = esModerador || item.userId === perfil?.id
-          const comentariosEstePost = comentariosPorPost[item.id] || []
-          const comentariosAbiertosEstePost = Boolean(comentariosAbiertos[item.id])
-
-          return (
-            <article
-              key={item.id}
-              style={{
-                padding: '14px 16px',
-                borderBottom: '1px solid var(--color-separator)',
-                display: 'flex',
-                gap: 12,
-                backgroundColor: item.fijado ? 'rgba(0, 122, 255, 0.02)' : 'transparent',
-                transition: 'background-color 0.1s ease'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = item.fijado ? 'rgba(0, 122, 255, 0.04)' : 'var(--color-fill-tertiary)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = item.fijado ? 'rgba(0, 122, 255, 0.02)' : 'transparent' }}
-            >
-              {/* Columna izquierda: Avatar */}
-              <div style={{ flexShrink: 0 }}>
-                <AvatarUsuario
-                  nombre={item.autorLimpio || item.autor}
-                  color={item.color || '#007AFF'}
-                  rol={item.rol || 'alumno'}
-                  size={40}
-                  fontSize={13}
-                />
-              </div>
-
-              {/* Columna derecha: Cabecera, Contenido y Acciones estilo X */}
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {/* Cabecera del tweet */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--color-ink)' }}>
-                      {item.autor}
-                    </span>
-
-                    {/* Badge destacado de Post de Administración */}
-                    {esAdminPost && (
-                      <span
-                        className="apple-badge apple-badge-accent"
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                          backgroundColor: 'rgba(10, 132, 255, 0.12)',
-                          color: '#0A84FF',
-                          border: '1px solid rgba(10, 132, 255, 0.25)'
-                        }}
-                      >
-                        <ShieldCheck size={11} />
-                        Post de administración
-                      </span>
-                    )}
-
-                    <span style={{ fontSize: 13, color: 'var(--color-secondary-ink)', opacity: 0.8 }}>
-                      {item.username.startsWith('@') ? item.username : `@${item.username}`}
-                    </span>
-                    <span style={{ color: 'var(--color-secondary-ink)', opacity: 0.5 }}>·</span>
-                    <span style={{ fontSize: 12, color: 'var(--color-secondary-ink)' }}>
-                      {item.tiempoHace}
-                    </span>
-
-                    {item.fijado && (
-                      <span style={{
-                        fontSize: 10,
-                        fontWeight: 800,
-                        color: 'var(--color-warning)',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        backgroundColor: 'rgba(255, 149, 0, 0.1)',
-                        padding: '1px 6px',
-                        borderRadius: 4
-                      }}>
-                        <Pin size={10} /> Fijado
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {/* Badge de categoría */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {CATEGORIAS_VALIDAS.map((cat) => {
+                const activo = filtroCategoria.toLowerCase() === cat.id.toLowerCase()
+                const count = conteoCategorias[cat.id] || 0
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      sound.playPop()
+                      setFiltroCategoria(activo && cat.id !== 'todas' ? 'todas' : cat.id)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      border: activo ? '1px solid var(--color-accent)' : '1px solid var(--color-separator)',
+                      backgroundColor: activo ? 'rgba(10, 132, 255, 0.08)' : 'var(--color-surface-secondary)',
+                      color: activo ? 'var(--color-accent)' : 'var(--color-ink)',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.12s ease',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: cat.color || 'var(--color-secondary-ink)' }}>#</span>
+                      <span>{cat.label}</span>
+                    </div>
                     <span style={{
                       fontSize: 11,
                       fontWeight: 700,
-                      padding: '2px 7px',
-                      borderRadius: 9999,
-                      backgroundColor: esRespuesta ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0, 122, 255, 0.08)',
-                      color: esRespuesta ? 'var(--color-positive)' : 'var(--color-accent)',
-                      flexShrink: 0
+                      color: 'var(--color-secondary-ink)',
+                      backgroundColor: 'rgba(0,0,0,0.05)',
+                      padding: '1px 6px',
+                      borderRadius: 9999
                     }}>
-                      #{item.categoria || (esRespuesta ? 'Reto' : 'Tip')}
+                      {count}
                     </span>
-
-                    {/* Botón de eliminar para moderadores o dueños */}
-                    {puedeBorrar && (
-                      <button
-                        type="button"
-                        onClick={() => handleEliminarPost(item.id)}
-                        title="Eliminar publicación"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: 'var(--color-secondary-ink)',
-                          padding: 4,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          opacity: 0.7
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-negative)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-secondary-ink)' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Si es respuesta a un reto específico */}
-                {esRespuesta && (
-                  <div style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: 'var(--color-positive)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5
-                  }}>
-                    <CheckCircle2 size={13} />
-                    <span>Resolvió: {item.retoTitulo}</span>
-                  </div>
-                )}
-
-                {/* Título opcional si tiene */}
-                {item.titulo && !esRespuesta && item.titulo !== item.contenido && (
-                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
-                    {item.titulo}
-                  </h4>
-                )}
-
-                {/* Cuerpo del tweet */}
-                <div style={{
-                  fontSize: 14,
-                  lineHeight: 1.48,
-                  color: 'var(--color-ink)',
-                  wordBreak: 'break-word',
-                  whiteSpace: 'pre-line'
-                }}>
-                  {item.contenido}
-                </div>
-
-                {/* Feedback del moderador si existe */}
-                {item.feedback && (
-                  <div style={{
-                    fontSize: 12,
-                    color: 'var(--color-positive)',
-                    backgroundColor: 'rgba(52, 199, 89, 0.08)',
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(52, 199, 89, 0.2)',
-                    marginTop: 2
-                  }}>
-                    💬 <strong>lominoño:</strong> {item.feedback}
-                  </div>
-                )}
-
-                {/* Fila de Interacciones estilo X */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  maxWidth: 380,
-                  marginTop: 6,
-                  color: 'var(--color-secondary-ink)'
-                }}>
-                  {/* Comentarios */}
-                  <button
-                    type="button"
-                    title="Ver o responder comentarios"
-                    onClick={() => handleToggleComentarios(item.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      color: comentariosAbiertosEstePost ? 'var(--color-accent)' : 'inherit',
-                      fontSize: 12,
-                      padding: 4
-                    }}
-                  >
-                    <MessageSquare size={15} />
-                    <span>{comentariosEstePost.length}</span>
                   </button>
+                )
+              })}
+            </div>
+          </div>
 
-                  {/* Repost / Retweet */}
-                  <button
-                    type="button"
-                    title="Impulsar en el aula"
-                    onClick={() => handleRepost(item.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      color: yaRepostee ? 'var(--color-positive)' : 'inherit',
-                      fontSize: 12,
-                      padding: 4
-                    }}
-                  >
-                    <Repeat2 size={16} />
-                    <span>{yaRepostee ? 1 : 0}</span>
-                  </button>
-
-                  {/* Corazón Like */}
-                  <button
-                    type="button"
-                    title="Me gusta"
-                    onClick={() => handleToggleLike(item.id, !esRespuesta)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      color: yaLeDiLike ? '#FF3B30' : 'inherit',
-                      fontSize: 12,
-                      padding: 4,
-                      transition: 'color 0.12s ease'
-                    }}
-                  >
-                    <Heart size={15} fill={yaLeDiLike ? '#FF3B30' : 'none'} color={yaLeDiLike ? '#FF3B30' : 'currentColor'} />
-                    <span>{item.likes || 0}</span>
-                  </button>
-
-                  {/* Compartir */}
-                  <button
-                    type="button"
-                    title="Compartir o copiar"
-                    onClick={() => {
-                      if (navigator.clipboard) {
-                        navigator.clipboard.writeText(item.contenido)
-                        sound.playPop()
-                      }
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      color: 'inherit',
-                      fontSize: 12,
-                      padding: 4
-                    }}
-                  >
-                    <Share2 size={14} />
-                  </button>
-                </div>
-
-                {/* HILO DE COMENTARIOS INLINE */}
-                {comentariosAbiertosEstePost && (
-                  <div style={{
-                    marginTop: 10,
-                    paddingTop: 10,
-                    borderTop: '1px solid var(--color-separator)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8
-                  }}>
-                    {cargandoComentarios[item.id] && comentariosEstePost.length === 0 && (
-                      <div style={{ fontSize: 12, color: 'var(--color-secondary-ink)', padding: 6 }}>
-                        Cargando comentarios...
-                      </div>
-                    )}
-
-                    {comentariosEstePost.map((c, cIdx) => {
-                      const cProf = c.profiles
-                      const cEsAdmin = cProf?.rol === 'moderador' || !cProf
-                      const cNombre = cEsAdmin ? `${cProf?.nombre || 'lominoño'} (Post de administración)` : (cProf?.nombre || 'Alumno')
-
-                      return (
-                        <div key={c.id || cIdx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          <CornerDownRight size={13} color="var(--color-secondary-ink)" style={{ marginTop: 6, flexShrink: 0 }} />
-                          <AvatarUsuario
-                            nombre={cProf?.nombre || 'lominoño'}
-                            color={cProf?.color_acento || '#007AFF'}
-                            rol={cProf?.rol || 'alumno'}
-                            size={26}
-                            fontSize={10}
-                          />
-                          <div style={{
-                            flex: 1,
-                            backgroundColor: 'var(--color-surface-secondary)',
-                            borderRadius: 10,
-                            padding: '6px 10px',
-                            fontSize: 12,
-                            lineHeight: 1.4
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <span style={{ fontWeight: 700, color: 'var(--color-ink)' }}>{cNombre}</span>
-                              <span style={{ fontSize: 10, color: 'var(--color-secondary-ink)' }}>
-                                {calcularTiempoRelativo(c.created_at)}
-                              </span>
-                            </div>
-                            <div style={{ color: 'var(--color-ink)', wordBreak: 'break-word' }}>
-                              {c.contenido}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    {/* Input para responder */}
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                      <input
-                        type="text"
-                        className="apple-input"
-                        placeholder="Escribe una respuesta técnica..."
-                        value={nuevoComentarioTexto[item.id] || ''}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          setNuevoComentarioTexto(prev => ({ ...prev, [item.id]: val }))
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleEnviarComentario(item.id)
-                        }}
-                        style={{ flex: 1, height: 32, fontSize: 12 }}
-                      />
-                      <button
-                        type="button"
-                        disabled={!(nuevoComentarioTexto[item.id] || '').trim() || enviandoComentario}
-                        onClick={() => handleEnviarComentario(item.id)}
-                        className="btn-primary"
-                        style={{ minHeight: 32, padding: '0 12px', fontSize: 12, fontWeight: 700 }}
-                      >
-                        Responder (+2 SE)
-                      </button>
-                    </div>
-                  </div>
-                )}
+          {/* WIDGET 3: BILLETERA DE STEVETOKENS & TIENDA */}
+          <div style={{
+            backgroundColor: 'var(--color-surface)',
+            borderRadius: 16,
+            padding: 16,
+            border: '1px solid var(--color-separator)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ShoppingBag size={16} color="var(--color-warning)" />
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--color-ink)' }}>
+                  Tu Economía de Clase
+                </h3>
               </div>
-            </article>
-          )
-        })}
-      </main>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--color-negative)' }}>
+                🔥 {perfil?.racha_actual || 0}d racha
+              </span>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 6,
+              marginBottom: 10
+            }}>
+              <span style={{ fontSize: 24, fontWeight: 900, color: 'var(--color-ink)', fontVariantNumeric: 'tabular-nums' }}>
+                {perfil?.puntos_total || 0}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-secondary-ink)' }}>
+                StevenEuros (SE 💶)
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { sound.playPop(); setMostrarTienda(true) }}
+              className="btn-primary"
+              style={{ width: '100%', minHeight: 38, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <ShoppingBag size={14} />
+              <span>Abrir Tienda de Recompensas</span>
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* MODAL TIENDA DE RECOMPENSAS VIRTUALES */}
       {mostrarTienda && (
         <TiendaRecompensas onClose={() => setMostrarTienda(false)} />
       )}
 
-      {/* MODAL HORARIO */}
+      {/* MODAL HORARIO SEMANAL */}
       <ModalHorario
         abierto={mostrarModalHorario}
         onCerrar={() => setMostrarModalHorario(false)}

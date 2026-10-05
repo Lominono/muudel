@@ -24,7 +24,7 @@ export const YOSHI_ROULETTE_CONFIG = {
   MAX_MONEDAS_POR_PARTIDA: 250,   // Tope anti-cheat por partida individual
   MAX_MONEDAS_POR_HORA: 800,      // Tope anti-cheat por hora de juego
   MAX_MONEDAS_POR_SEGUNDO: 12,    // Tasa máxima creíble en juego
-  DURACION_MINIMA_PARTIDA_MS: 4000, // Mínimo 4s si monedas > 0
+  DURACION_MINIMA_PARTIDA_MS: 1200, // Mínimo 1.2s para permitir partidas cortas normales
   SPIN_COOLDOWN_MS: 4000,         // Cooldown mínimo obligatorio entre tiradas (4s)
 
   // ─── RENDIMIENTOS DECRECIENTES DIARIOS EN RULETA ───────────────────────────
