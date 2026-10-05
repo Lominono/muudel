@@ -865,3 +865,129 @@ adminRouter.post('/tienda-editar-precio', requireAdmin, async (req, res) => {
   }
 })
 
+/**
+ * POST /api/admin/reinicio-total-aula
+ * Purgado completo del aula: chat, inventarios, asistencia, puntuaciones y reseteo de saldos a 10 SE
+ */
+adminRouter.post('/reinicio-total-aula', requireAdmin, async (req, res) => {
+  try {
+    const supabase = getSupabaseAdmin()
+    const bancaId = LedgerService.getBancaId()
+    const BONO_INICIAL_SE = 10
+    const SALDO_INICIAL_BANCA_BRUTO = 2000
+
+    // 1. Mensajes
+    try {
+      await supabase.from('message_likes').delete().neq('user_id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    } catch (_) {}
+
+    // 2. Inventario
+    try {
+      await supabase.from('inventario_usuario').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    } catch (_) {}
+
+    // 3. Asistencias
+    try {
+      await supabase.from('checkins').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    } catch (_) {}
+
+    // 4. Juegos y retos
+    try {
+      await supabase.from('juegos_puntuaciones').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('arcade_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('reto_completado').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('yoshi_sesiones').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    } catch (_) {}
+
+    // 5. Ledger
+    try {
+      await supabase.from('steven_ledger').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    } catch (_) {}
+
+    // 6. Perfiles
+    const { data: profiles, error: pErr } = await supabase.from('profiles').select('*')
+    if (pErr) throw new Error(pErr.message)
+
+    const userProfiles = (profiles || []).filter(p => p.id !== bancaId)
+    let gastoTotalBono = 0
+
+    for (const user of userProfiles) {
+      gastoTotalBono += BONO_INICIAL_SE
+      await supabase.from('profiles').update({
+        puntos_total: BONO_INICIAL_SE,
+        monedas_ruleta_yoshi: 0,
+        racha_actual: 0,
+        mejor_racha: 0,
+        xp_nivel: 0,
+        freeze_usadas: 0,
+        ultimo_checkin: null,
+        updated_at: new Date().toISOString()
+      }).eq('id', user.id)
+
+      try {
+        await supabase.from('steven_ledger').insert({
+          user_id: user.id,
+          contrapartida_id: bancaId,
+          tipo: 'bienvenida',
+          moneda: 'steveneuros',
+          cantidad: BONO_INICIAL_SE,
+          saldo_anterior: 0,
+          saldo_posterior: BONO_INICIAL_SE,
+          actor_id: bancaId,
+          motivo: 'Bono de bienvenida tras reinicio total de aula SMR2',
+          idempotency_key: `reinicio_admin_${user.id}_${Date.now()}`,
+          detalles: { bono: BONO_INICIAL_SE, nombre: user.nombre }
+        })
+      } catch (_) {}
+    }
+
+    const saldoFinalBanca = SALDO_INICIAL_BANCA_BRUTO - gastoTotalBono
+    await supabase.from('profiles').update({
+      puntos_total: saldoFinalBanca,
+      monedas_ruleta_yoshi: 0,
+      racha_actual: 0,
+      mejor_racha: 0,
+      ultimo_checkin: null,
+      updated_at: new Date().toISOString()
+    }).eq('id', bancaId)
+
+    try {
+      await supabase.from('steven_ledger').insert({
+        user_id: bancaId,
+        contrapartida_id: bancaId,
+        tipo: 'emision_banca',
+        moneda: 'steveneuros',
+        cantidad: saldoFinalBanca,
+        saldo_anterior: 0,
+        saldo_posterior: saldoFinalBanca,
+        actor_id: bancaId,
+        motivo: 'Fondo de solvencia de la Banca tras reinicio total de aula SMR2',
+        idempotency_key: `banca_reinicio_admin_${Date.now()}`,
+        detalles: { saldo_inicial_bruto: SALDO_INICIAL_BANCA_BRUTO, bonos_emitidos: gastoTotalBono }
+      })
+    } catch (_) {}
+
+    try {
+      await supabase.from('messages').insert({
+        user_id: bancaId,
+        canal: 'general',
+        texto: '🏛️ AVISO OFICIAL: Se ha completado el reinicio general del aula SMR2. Todos los alumnos parten con 10 StevenEuros de bienvenida. ¡Pizarra limpia y buen comienzo de curso!',
+        es_solucion: false,
+        likes_count: 0
+      })
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      mensaje: 'Reinicio total del aula completado con éxito',
+      alumnosReiniciados: userProfiles.length,
+      bonoPorAlumno: BONO_INICIAL_SE,
+      saldoBanca: saldoFinalBanca
+    })
+  } catch (err) {
+    console.error('Error en /reinicio-total-aula:', err)
+    return res.status(500).json({ error: err.message || 'Error durante el reinicio total' })
+  }
+})
+

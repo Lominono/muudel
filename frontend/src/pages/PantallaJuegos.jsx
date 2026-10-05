@@ -266,20 +266,12 @@ export function PantallaJuegos() {
     setCargandoRanking(false)
   }
 
-  const handleMonedasGanadas = (nuevasMonedas) => {
-    const nuevoTotal = monedasHoy + nuevasMonedas
-    setMonedasHoy(nuevoTotal)
-    const fecha = new Date().toISOString().split('T')[0]
-    localStorage.setItem(`muudel_arcade_monedas_${fecha}_${perfil?.id}`, String(nuevoTotal))
-
-    if (perfil) {
-      const nuevoSaldo = (perfil?.puntos_total || 0) + nuevasMonedas
+  const handleMonedasGanadas = (nuevoSaldoMonedas) => {
+    if (typeof nuevoSaldoMonedas === 'number' && perfil) {
       setPerfil(prev => ({
         ...prev,
-        puntos_total: nuevoSaldo
+        monedas_ruleta_yoshi: nuevoSaldoMonedas
       }))
-      window.dispatchEvent(new CustomEvent('steveneuros_actualizados', { detail: { puntos: nuevoSaldo, userId: perfil.id } }))
-      transmitirEvento('steveneuros_actualizados', { alumnoId: perfil.id, nuevosPuntos: nuevoSaldo, userId: perfil.id })
     }
   }
 
@@ -1268,17 +1260,17 @@ export function PantallaJuegos() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
                   <section className="card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <Coins size={18} color="#D97706" />
+                      <Coins size={18} color="#FBBF24" />
                       <h3 className="apple-headline" style={{ fontSize: 15, margin: 0 }}>
-                        StevenEuros del Runner
+                        Monedas Yoshi (Para Ruleta)
                       </h3>
                     </div>
                     <p className="apple-caption" style={{ margin: '0 0 10px' }}>
-                      Las frutas y huevos recogidos en carrera suman StevenEuros a tu cuenta sin límite. Las monedas doradas se usan en la Ruleta Yoshi al terminar partida.
+                      Las monedas y frutas recogidas en carrera se acumulan exclusivamente como Monedas Yoshi (🪙) para girar la Ruleta Yoshi. ¡No otorgan StevenEuros directos!
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span className="apple-caption">Ganados hoy:</span>
-                      <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} SE (Ilimitado)</strong>
+                      <span className="apple-caption">Saldo para Ruleta:</span>
+                      <strong style={{ fontSize: 13, color: '#FBBF24' }}>{perfil?.monedas_ruleta_yoshi || 0} 🪙</strong>
                     </div>
                   </section>
 

@@ -29,7 +29,7 @@ function ContenidoApp() {
   // Aviso de reinicio de economía y asignación del bono de bienvenida
   useEffect(() => {
     if (!perfil?.id) return
-    const storageKey = `aviso_reinicio_economia_${perfil.id}`
+    const storageKey = `muudel_aviso_reinicio_aula_v3_${perfil.id}`
     const yaVisto = localStorage.getItem(storageKey)
     if (!yaVisto) {
       fetch('/api/ruleta/verificar-bienvenida', {
@@ -631,7 +631,7 @@ function ContenidoApp() {
           </>
         )}
       </Routes>
-      {/* MODAL DE AVISO DE REINICIO DE ECONOMÍA */}
+      {/* COMUNICADO OFICIAL: REINICIO DEL AULA (DISEÑO ANTI-IA · ARTESANÍA ESCOLAR) */}
       {mostrarAvisoReinicio && (
         <div style={{
           position: 'fixed',
@@ -641,76 +641,111 @@ function ContenidoApp() {
           alignItems: 'center',
           justifyContent: 'center',
           padding: 16,
-          backgroundColor: 'rgba(0, 0, 0, 0.72)',
-          backdropFilter: 'blur(8px)'
+          backgroundColor: 'rgba(0, 0, 0, 0.76)',
+          backdropFilter: 'blur(6px)'
         }}>
           <div style={{
-            maxWidth: 420,
+            maxWidth: 440,
             width: '100%',
             backgroundColor: 'var(--color-surface, #1C1C1E)',
-            borderRadius: 22,
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6)',
-            padding: '26px 22px',
+            borderRadius: 20,
+            border: '1px solid var(--color-separator, rgba(255, 255, 255, 0.15))',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+            padding: '24px 20px',
             display: 'flex',
             flexDirection: 'column',
             gap: 16,
             textAlign: 'center',
-            color: '#FFFFFF'
+            color: 'var(--color-ink, #FFFFFF)'
           }}>
-            <div style={{
-              width: 58,
-              height: 58,
-              margin: '0 auto',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(10, 132, 255, 0.15)',
-              color: '#0A84FF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <RotateCcw size={28} />
+            {/* Sello mecánico tampón Anti-IA */}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                borderRadius: 4,
+                border: '1.5px solid #D93829',
+                backgroundColor: 'rgba(217, 56, 41, 0.08)',
+                color: '#D93829',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                fontWeight: 900,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase'
+              }}>
+                ✦ COMUNICADO OFICIAL · SMR2
+              </span>
             </div>
 
             <div>
-              <h3 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 6px', color: '#FFF' }}>
-                Economía de Clase Reiniciada
+              <h3 style={{ fontSize: 19, fontWeight: 800, margin: '0 0 6px', letterSpacing: -0.3 }}>
+                Pizarra Limpia en el Aula
               </h3>
-              <p style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: 'rgba(255, 255, 255, 0.85)' }}>
-                Hemos reiniciado la economía de StevenEuros. <strong>Tus artículos se mantienen.</strong>
+              <p style={{ fontSize: 13, lineHeight: 1.5, margin: 0, color: 'var(--color-secondary-ink, rgba(255, 255, 255, 0.75))' }}>
+                Se ha completado el reinicio de curso para igualar condiciones. Saldos, compras, chat y clasificaciones se han restablecido.
               </p>
             </div>
 
+            {/* Ficha técnica escolar */}
             <div style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              backgroundColor: 'var(--color-fill-secondary, rgba(255, 255, 255, 0.05))',
               borderRadius: 14,
-              padding: '12px 14px',
+              padding: '14px 16px',
               textAlign: 'left',
               fontSize: 12,
               lineHeight: 1.5,
               display: 'flex',
               flexDirection: 'column',
-              gap: 8,
-              border: '1px solid rgba(255, 255, 255, 0.08)'
+              gap: 10,
+              border: '1px solid var(--color-separator, rgba(255, 255, 255, 0.08))'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#34C759' }}>
-                <span>💶</span>
-                <span>Bono de bienvenida: +10 StevenEuros acreditados</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>💶</span>
+                <div>
+                  <strong style={{ color: '#30D158' }}>Bono inicial de 10 SE:</strong>
+                  <div style={{ color: 'var(--color-secondary-ink, rgba(255,255,255,0.7))', marginTop: 1 }}>
+                    Acreditados en tu cuenta para empezar desde el pupitre.
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 255, 255, 0.8)' }}>
-                <span>🛡️</span>
-                <span>Tus marcos, títulos y mejoras previas siguen activos en tu cuenta y Mochila.</span>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🪙</span>
+                <div>
+                  <strong style={{ color: '#FBBF24' }}>Monedas Yoshi exclusivas:</strong>
+                  <div style={{ color: 'var(--color-secondary-ink, rgba(255,255,255,0.7))', marginTop: 1 }}>
+                    Yoshi Island otorga únicamente monedas para girar la ruleta, sin mezclar StevenEuros.
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 255, 255, 0.8)' }}>
-                <span>🏷️</span>
-                <span>Precios de tienda reajustados para ser alcanzables jugando.</span>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>💬</span>
+                <div>
+                  <strong style={{ color: 'var(--color-accent, #0A84FF)' }}>Chat y dudas despejados:</strong>
+                  <div style={{ color: 'var(--color-secondary-ink, rgba(255,255,255,0.7))', marginTop: 1 }}>
+                    Canales listos para resolver ejercicios de Linux y redes.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>⏱️</span>
+                <div>
+                  <strong style={{ color: 'var(--color-ink, #FFFFFF)' }}>Pase de lista a las 15:30:</strong>
+                  <div style={{ color: 'var(--color-secondary-ink, rgba(255,255,255,0.7))', marginTop: 1 }}>
+                    Marca tu asistencia diaria para construir tu racha de clase.
+                  </div>
+                </div>
               </div>
             </div>
 
             <button
               type="button"
               onClick={() => {
-                if (perfil?.id) localStorage.setItem(`aviso_reinicio_economia_${perfil.id}`, 'true')
+                if (perfil?.id) localStorage.setItem(`muudel_aviso_reinicio_aula_v3_${perfil.id}`, 'true')
                 setMostrarAvisoReinicio(false)
                 sound.playPop()
               }}
@@ -719,14 +754,15 @@ function ContenidoApp() {
                 padding: '12px 16px',
                 borderRadius: 12,
                 border: 'none',
-                backgroundColor: '#0A84FF',
+                backgroundColor: 'var(--color-accent, #0A84FF)',
                 color: '#FFFFFF',
                 fontSize: 14,
-                fontWeight: 700,
-                cursor: 'pointer'
+                fontWeight: 800,
+                cursor: 'pointer',
+                letterSpacing: 0.2
               }}
             >
-              Entendido
+              Entendido · Entrar al Aula
             </button>
           </div>
         </div>

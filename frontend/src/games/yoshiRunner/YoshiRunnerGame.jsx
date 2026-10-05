@@ -232,44 +232,44 @@ export const DIFICULTADES_YOSHI = {
   normal: {
     id: 'normal',
     nombre: 'Normal',
-    speedInitial: 6.0,
-    speedMax: 18.0,
-    accelRate: 0.0032,
-    bulletSpeed: 1.75,
-    lowBillSpeed: 2.0,
-    spawnMult: 1.0,
+    speedInitial: 7.2,
+    speedMax: 20.0,
+    accelRate: 0.0055,
+    bulletSpeed: 2.1,
+    lowBillSpeed: 2.35,
+    spawnMult: 1.35,
     coinMultiplier: 1.0,
     color: '#34C759',
     badge: 'Normal 1x',
-    descripcion: 'Velocidad equilibrada y ritmo fluido'
+    descripcion: 'Velocidad ágil, ritmo exigente y reflejos activos'
   },
   dificil: {
     id: 'dificil',
     nombre: 'Difícil',
-    speedInitial: 8.0,
-    speedMax: 22.0,
-    accelRate: 0.005,
-    bulletSpeed: 2.15,
-    lowBillSpeed: 2.45,
-    spawnMult: 1.45,
+    speedInitial: 9.2,
+    speedMax: 25.0,
+    accelRate: 0.0085,
+    bulletSpeed: 2.65,
+    lowBillSpeed: 2.95,
+    spawnMult: 1.85,
     coinMultiplier: 1.5,
     color: '#FF9500',
     badge: 'Difícil 1.5x',
-    descripcion: 'Más misiles, velocidad acelerada y +50% monedas'
+    descripcion: 'Oleadas densas, misiles rasantes y +50% monedas Yoshi'
   },
   extremo: {
     id: 'extremo',
     nombre: 'Pesadilla Extrema',
-    speedInitial: 10.2,
-    speedMax: 28.0,
-    accelRate: 0.0075,
-    bulletSpeed: 2.85,
-    lowBillSpeed: 3.15,
-    spawnMult: 2.15,
+    speedInitial: 12.0,
+    speedMax: 30.0,
+    accelRate: 0.0125,
+    bulletSpeed: 3.45,
+    lowBillSpeed: 3.8,
+    spawnMult: 2.7,
     coinMultiplier: 2.5,
     color: '#FF3B30',
     badge: '💀 Pesadilla 2.5x',
-    descripcion: 'Velocidad supersónica, oleadas agresivas y x2.5 monedas sin límite'
+    descripcion: 'Velocidad supersónica, reflejos milimétricos y x2.5 monedas Yoshi'
   }
 }
 
@@ -1082,53 +1082,52 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           // Spawn de nuevas alertas
           const hayAlerta = state.alerts.length > 0
           const ultimo = state.obstacles[state.obstacles.length - 1]
-          const minObstacleGap = state.dificultad === 'extremo' ? 140 : 200
+          const minObstacleGap = state.dificultad === 'extremo' ? 105 : state.dificultad === 'dificil' ? 130 : 155
           const espacio = !ultimo || (CANVAS_W - ultimo.x > minObstacleGap)
 
           if (!hayAlerta && espacio) {
             const r = Math.random()
             const spawnMult = diffConfig.spawnMult * (1 + (state.speed - diffConfig.speedInitial) / (diffConfig.speedMax - diffConfig.speedInitial) * 0.5)
 
-            const scoreBomb = state.dificultad === 'extremo' ? 10 : 20
-            const scoreBill = state.dificultad === 'extremo' ? 25 : 55
-            const scorePara = state.dificultad === 'extremo' ? 18 : 35
-            const scoreLow = state.dificultad === 'extremo' ? 35 : 80
+            const scoreBomb = state.dificultad === 'extremo' ? 8 : 15
+            const scoreBill = state.dificultad === 'extremo' ? 18 : 35
+            const scorePara = state.dificultad === 'extremo' ? 12 : 25
+            const scoreLow = state.dificultad === 'extremo' ? 22 : 45
 
-            if (state.score > scoreBomb && r < 0.016 * spawnMult) {
-              state.alerts.push({ tipo: 'bomb', timer: state.dificultad === 'extremo' ? 28 : 38, maxTimer: 38, label: '¡BOMBA!', icon: '!', color: '#FF3B30', y: GROUND_Y - 38 })
+            if (state.score > scoreBomb && r < 0.022 * spawnMult) {
+              state.alerts.push({ tipo: 'bomb', timer: state.dificultad === 'extremo' ? 22 : state.dificultad === 'dificil' ? 28 : 32, maxTimer: 32, label: '¡BOMBA!', icon: '!', color: '#FF3B30', y: GROUND_Y - 38 })
               retroAudio.playWarning()
-            } else if (state.score > scoreBill && r < 0.030 * spawnMult) {
+            } else if (state.score > scoreBill && r < 0.038 * spawnMult) {
               const billY = Math.random() > 0.5 ? GROUND_Y - 48 : GROUND_Y - 72
-              state.alerts.push({ tipo: 'bulletBill', timer: state.dificultad === 'extremo' ? 30 : 42, maxTimer: 42, label: '¡MISIL!', icon: '!', color: '#EF4444', y: billY })
+              state.alerts.push({ tipo: 'bulletBill', timer: state.dificultad === 'extremo' ? 24 : state.dificultad === 'dificil' ? 29 : 34, maxTimer: 34, label: '¡MISIL!', icon: '!', color: '#EF4444', y: billY })
               retroAudio.playWarning()
-            } else if (state.score > scorePara && r < 0.040 * spawnMult) {
-              state.alerts.push({ tipo: 'paratroopa', timer: state.dificultad === 'extremo' ? 26 : 36, maxTimer: 36, label: '¡VOLADOR!', icon: '!', color: '#F59E0B', y: GROUND_Y - 54 })
+            } else if (state.score > scorePara && r < 0.048 * spawnMult) {
+              state.alerts.push({ tipo: 'paratroopa', timer: state.dificultad === 'extremo' ? 20 : state.dificultad === 'dificil' ? 25 : 29, maxTimer: 29, label: '¡VOLADOR!', icon: '!', color: '#F59E0B', y: GROUND_Y - 54 })
               retroAudio.playWarning()
-            } else if (state.score > scoreLow && r < 0.022 * spawnMult) {
-              // Obstáculo bajo donde obligatoriamente hay que agacharse
-              state.alerts.push({ tipo: 'lowBill', timer: state.dificultad === 'extremo' ? 32 : 44, maxTimer: 44, label: '¡AGÁCHATE!', icon: '!', color: '#8B5CF6', y: GROUND_Y - 30 })
+            } else if (state.score > scoreLow && r < 0.030 * spawnMult) {
+              state.alerts.push({ tipo: 'lowBill', timer: state.dificultad === 'extremo' ? 24 : state.dificultad === 'dificil' ? 29 : 34, maxTimer: 34, label: '¡AGÁCHATE!', icon: '!', color: '#8B5CF6', y: GROUND_Y - 30 })
               retroAudio.playWarning()
             }
           }
 
           // Obstáculos base (tuberías / caparazones / paredes bajas)
-          const baseGap = state.dificultad === 'extremo' ? 130 : 190
-          const minGap = baseGap + Math.random() * 80 + state.speed * 5
+          const baseGap = state.dificultad === 'extremo' ? 105 : state.dificultad === 'dificil' ? 130 : 155
+          const minGap = baseGap + Math.random() * 65 + state.speed * 4
           const canSpawn = !hayAlerta && (!ultimo || (CANVAS_W - ultimo.x > minGap))
 
-          if (canSpawn && Math.random() < (state.dificultad === 'extremo' ? 0.06 : 0.04)) {
+          if (canSpawn && Math.random() < (state.dificultad === 'extremo' ? 0.08 : state.dificultad === 'dificil' ? 0.065 : 0.05)) {
             const rObs = Math.random()
             if (rObs < 0.33) {
               state.obstacles.push({ tipo: 'pipe', x: CANVAS_W, y: GROUND_Y - 48, w: 38, h: 48, sprite: 'piranhaPipe', speedMod: 1.0 })
             } else if (rObs < 0.66) {
-              state.obstacles.push({ tipo: 'shell', x: CANVAS_W, y: GROUND_Y - 24, w: 34, h: 24, sprite: 'koopaShell', speedMod: 1.05 })
+              state.obstacles.push({ tipo: 'shell', x: CANVAS_W, y: GROUND_Y - 24, w: 34, h: 24, sprite: 'koopaShell', speedMod: 1.1 })
             } else {
               // Pared baja: hay que saltar Y agacharse según altura
               const altoBajo = Math.random() > 0.5
               if (altoBajo) {
                 state.obstacles.push({ tipo: 'pipe', x: CANVAS_W, y: GROUND_Y - 72, w: 28, h: 72, sprite: 'piranhaPipe', speedMod: 1.0 })
               } else {
-                state.obstacles.push({ tipo: 'lowWall', x: CANVAS_W, y: GROUND_Y - 26, w: 60, h: 26, sprite: 'koopaShell', speedMod: 1.0 })
+                state.obstacles.push({ tipo: 'lowWall', x: CANVAS_W, y: GROUND_Y - 26, w: 60, h: 26, sprite: 'koopaShell', speedMod: 1.05 })
               }
             }
           }
@@ -1167,7 +1166,12 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           })
 
           // Mover obstáculos
-          state.obstacles.forEach(obs => { obs.x -= state.speed * (obs.speedMod || 1) * speedFactor })
+          state.obstacles.forEach(obs => {
+            obs.x -= state.speed * (obs.speedMod || 1) * speedFactor
+            if (obs.tipo === 'paratroopa') {
+              obs.y = (GROUND_Y - 54) + Math.sin(state.frameCount * 0.09) * 16
+            }
+          })
           state.obstacles = state.obstacles.filter(obs => obs.x + obs.w > -60)
 
           // ── COLECCIONABLES ────────────────────────────────────────────
@@ -1722,7 +1726,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     if (state.coins > 0) {
       ctx.fillStyle = '#D97706'
       ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif'
-      ctx.fillText(`+${state.coins} SE`, CANVAS_W - 16, 44)
+      ctx.fillText(`+${state.coins} 🪙`, CANVAS_W - 16, 44)
     }
 
     // Indicador sutil de energía / overdrive
@@ -1863,11 +1867,108 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
           }}
           onMouseUp={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
           onMouseLeave={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
-          onTouchStart={e => { e.preventDefault(); if (juegoEstado === 'inicio' || juegoEstado === 'muerto' || juegoEstado === 'victoria') iniciarPartida(); else { isJumpPressedRef.current = true; saltar() } }}
-          onTouchEnd={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
-          onTouchCancel={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
+          onTouchStart={(e) => {
+            e.preventDefault()
+            if (juegoEstado === 'inicio' || juegoEstado === 'muerto' || juegoEstado === 'victoria') {
+              iniciarPartida()
+              return
+            }
+            const rect = e.currentTarget.getBoundingClientRect()
+            let tocaIzq = false
+            let tocaDer = false
+            for (let i = 0; i < e.touches.length; i++) {
+              const t = e.touches[i]
+              const relX = t.clientX - rect.left
+              if (relX < rect.width * 0.44) tocaIzq = true
+              else tocaDer = true
+            }
+            if (tocaIzq) setAgachado(true)
+            if (tocaDer) {
+              isJumpPressedRef.current = true
+              saltar()
+            }
+          }}
+          onTouchMove={(e) => {
+            e.preventDefault()
+            if (juegoEstado !== 'jugando') return
+            const rect = e.currentTarget.getBoundingClientRect()
+            let tocaIzq = false
+            let tocaDer = false
+            for (let i = 0; i < e.touches.length; i++) {
+              const t = e.touches[i]
+              const relX = t.clientX - rect.left
+              if (relX < rect.width * 0.44) tocaIzq = true
+              else tocaDer = true
+            }
+            setAgachado(tocaIzq)
+            isJumpPressedRef.current = tocaDer
+            if (!tocaDer && gameStateRef.current?.yoshi) {
+              gameStateRef.current.yoshi.isFluttering = false
+            }
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault()
+            const rect = e.currentTarget.getBoundingClientRect()
+            let tocaIzq = false
+            let tocaDer = false
+            for (let i = 0; i < e.touches.length; i++) {
+              const t = e.touches[i]
+              const relX = t.clientX - rect.left
+              if (relX < rect.width * 0.44) tocaIzq = true
+              else tocaDer = true
+            }
+            setAgachado(tocaIzq)
+            isJumpPressedRef.current = tocaDer
+            if (!tocaDer && gameStateRef.current?.yoshi) {
+              gameStateRef.current.yoshi.isFluttering = false
+            }
+          }}
+          onTouchCancel={(e) => {
+            e.preventDefault()
+            setAgachado(false)
+            isJumpPressedRef.current = false
+            if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false
+          }}
           style={{ width: '100%', height: '100%', display: 'block', cursor: 'pointer', touchAction: 'none' }}
         />
+
+        {/* Guía táctil contextual en pantalla para móvil */}
+        {juegoEstado === 'jugando' && (
+          <div style={{
+            position: 'absolute',
+            bottom: 6,
+            left: 8,
+            right: 8,
+            display: 'flex',
+            justifyContent: 'space-between',
+            pointerEvents: 'none',
+            userSelect: 'none',
+            opacity: 0.7
+          }}>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 800,
+              backgroundColor: 'rgba(0,0,0,0.55)',
+              color: '#FFF',
+              padding: '2px 8px',
+              borderRadius: 6,
+              backdropFilter: 'blur(3px)'
+            }}>
+              👇 Toca Izq: Agacharse
+            </span>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 800,
+              backgroundColor: 'rgba(0,0,0,0.55)',
+              color: '#FFF',
+              padding: '2px 8px',
+              borderRadius: 6,
+              backdropFilter: 'blur(3px)'
+            }}>
+              👆 Toca Der: Saltar / Aletear
+            </span>
+          </div>
+        )}
 
         {/* Pantalla de inicio */}
         {juegoEstado === 'inicio' && (
@@ -2046,7 +2147,7 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             <div style={{ fontSize: 28, fontWeight: 900, color: '#FFD700' }}>¡VICTORIA!</div>
             <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
               <div>{puntos}m</div>
-              <div style={{ color: '#FBBF24' }}>+{monedasPartida} SE (Sin límite)</div>
+              <div style={{ color: '#FBBF24' }}>+{monedasPartida} Monedas Yoshi</div>
             </div>
             <button type="button" className="btn-primary" onClick={iniciarPartida} style={{ marginTop: 6, gap: 6, backgroundColor: '#FFD700', color: '#000', fontWeight: 800, fontSize: 13, padding: '8px 20px', borderRadius: 9999 }}>
               <Star size={14} fill="#000" /><span>Siguiente ronda</span>
@@ -2080,24 +2181,26 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             onMouseDown={() => setAgachado(true)}
             onMouseUp={() => setAgachado(false)}
             onMouseLeave={() => setAgachado(false)}
-            onTouchStart={e => { e.preventDefault(); setAgachado(true) }}
+            onTouchStart={e => { e.preventDefault(); sound.playPop(); setAgachado(true) }}
             onTouchEnd={e => { e.preventDefault(); setAgachado(false) }}
             onTouchCancel={e => { e.preventDefault(); setAgachado(false) }}
             style={{
               flex: 1,
-              minHeight: 48,
-              padding: '8px 14px',
+              minHeight: 54,
+              padding: '10px 14px',
               fontSize: 13,
-              fontWeight: 700,
-              gap: 6,
-              borderRadius: 12,
+              fontWeight: 800,
+              gap: 8,
+              borderRadius: 14,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: 'var(--color-fill-secondary)'
+              backgroundColor: 'var(--color-fill-secondary)',
+              touchAction: 'manipulation',
+              userSelect: 'none'
             }}
           >
-            <ArrowDown size={18} />
+            <ArrowDown size={20} />
             <span>Agacharse</span>
           </button>
 
@@ -2107,25 +2210,27 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
             onMouseDown={() => { isJumpPressedRef.current = true; saltar() }}
             onMouseUp={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onMouseLeave={() => { isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
-            onTouchStart={e => { e.preventDefault(); isJumpPressedRef.current = true; saltar() }}
+            onTouchStart={e => { e.preventDefault(); sound.playPop(); isJumpPressedRef.current = true; saltar() }}
             onTouchEnd={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             onTouchCancel={e => { e.preventDefault(); isJumpPressedRef.current = false; if (gameStateRef.current?.yoshi) gameStateRef.current.yoshi.isFluttering = false }}
             style={{
               flex: 2,
-              minHeight: 48,
-              padding: '8px 20px',
+              minHeight: 54,
+              padding: '10px 20px',
               fontSize: 14,
               fontWeight: 800,
               gap: 8,
               backgroundColor: '#30D158',
-              borderRadius: 12,
+              borderRadius: 14,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(48, 209, 88, 0.3)'
+              boxShadow: '0 4px 12px rgba(48, 209, 88, 0.35)',
+              touchAction: 'manipulation',
+              userSelect: 'none'
             }}
           >
-            <ArrowUp size={18} />
+            <ArrowUp size={20} />
             <span>Saltar / Aletear</span>
           </button>
         </div>

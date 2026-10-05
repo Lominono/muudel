@@ -35,6 +35,7 @@ import { sound, triggerConfetti } from '../utils/haptics'
 import { InsigniaIniciales } from './InsigniaIniciales'
 import { fetchAdmin } from '../utils/apiAuth'
 import { transmitirEvento } from '../utils/realtimeHub'
+const BANCA_ID = '00000000-0000-4000-a000-000000000000'
 
 export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onActualizarAlumno }) {
   const [datosSalud, setDatosSalud] = useState(null)
@@ -431,6 +432,35 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
     }
   }
 
+  const [reiniciandoAula, setReiniciandoAula] = useState(false)
+
+  const handleReinicioTotalAula = async () => {
+    const confirmar = window.confirm(
+      '⚠️ ATENCIÓN: Esta acción purgará los mensajes del chat, inventarios de tienda, puntuaciones arcade, asistencias y restablecerá los saldos a 10 SE de bienvenida para todos los alumnos.\n\n¿Deseas continuar con el reinicio oficial?'
+    )
+    if (!confirmar) return
+
+    setReiniciandoAula(true)
+    try {
+      const res = await fetchAdmin('/api/admin/reinicio-total-aula', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        sound.playWin()
+        alert(`✓ Reinicio completado: ${data.alumnosReiniciados} alumnos restablecidos con 10 SE. Saldo Banca: ${data.saldoBanca} SE.`)
+        cargarSaludEconomica()
+        cargarLedgerGlobal()
+        transmitirEvento('steveneuros_actualizados', {})
+        transmitirEvento('banca_actualizada', { nuevoSaldo: data.saldoBanca })
+      } else {
+        alert(data.error || 'Error durante el reinicio')
+      }
+    } catch (e) {
+      alert('Error de conexión al ejecutar reinicio: ' + e.message)
+    } finally {
+      setReiniciandoAula(false)
+    }
+  }
+
   const saldoBanca = datosSalud?.banca?.saldo ?? 5000
   const reservaMinima = datosSalud?.banca?.reservaMinima ?? 500
   const enAusteridad = datosSalud?.banca?.enAusteridad
@@ -510,6 +540,24 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
           >
             <Gift size={13} color="#34C759" />
             <span>Estímulo Masivo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleReinicioTotalAula}
+            disabled={reiniciandoAula}
+            className="btn-secondary"
+            style={{
+              padding: '7px 13px',
+              fontSize: 12,
+              fontWeight: 800,
+              borderColor: 'rgba(239, 68, 68, 0.45)',
+              color: '#EF4444'
+            }}
+            title="Purgar datos del aula y restablecer saldos a 10 SE"
+          >
+            <RotateCcw size={13} className={reiniciandoAula ? 'animate-spin' : ''} />
+            <span>{reiniciandoAula ? 'Reiniciando...' : 'Reinicio de Aula'}</span>
           </button>
 
           <button
@@ -828,7 +876,7 @@ export function PanelSaludEconomicaBanca({ perfilAdmin, todosAlumnos = [], onAct
 
           {!cargandoLedger && ledgerGlobal.map((tx, idx, arr) => {
             const esCredito = tx.cantidad > 0
-            const esBanca = tx.user_id === LedgerService?.getBancaId?.() || tx.user_nombre === 'BANCA SISTEMA'
+            const esBanca = tx.user_id === BANCA_ID || tx.user_nombre === 'BANCA SISTEMA'
             return (
               <div
                 key={tx.id || idx}
