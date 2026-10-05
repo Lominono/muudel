@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { YoshiRunnerGame } from '../games/yoshiRunner/YoshiRunnerGame'
+import { RuletaYoshiModal } from '../games/yoshiRunner/RuletaYoshiModal'
 import { RuletaCasinoGame } from '../games/ruleta/RuletaCasinoGame'
 import { BatallaDadosPvP } from '../games/BatallaDadosPvP'
 import { Duelo21PvP } from '../games/veintiuno/Duelo21PvP'
@@ -110,13 +111,13 @@ const CATALOGO_JUEGOS = [
     color: '#FF9500',
     colorBg: 'rgba(255, 149, 0, 0.12)',
     bordeColor: 'rgba(255, 149, 0, 0.28)',
-    descripcion: 'Corre sin frenos, esquiva tuberías y Shy Guys, y recoge monedas. Desbloquea la Ruleta Yoshi al terminar para ganar premios en StevenEuros.',
-    premioMaximo: '+15 SE reto + Ruleta de Monedas',
+    descripcion: 'Corre sin frenos, esquiva tuberías y Shy Guys, y recoge monedas y frutas. Acumula Fichas Yoshi para girar la Ruleta oficial y ganar StevenEuros.',
+    premioMaximo: '+15 SE reto + Premios en Ruleta Yoshi',
     detalles: [
-      'Controles: [Espacio] o tap para saltar, [Abajo] o swipe para agacharte',
-      'Frutas y Huevos suman +1 a +3 SE sin tope diario',
-      'Monedas doradas suman fichas para la Ruleta Yoshi post-partida',
-      'Supera los 250m de carrera para completar el Reto Diario y ganar +15 SE'
+      'Controles: Tap/Botón derecho para saltar y aletear, Tap/Botón izquierdo para agacharte',
+      'Frutas, Huevos y Monedas suman Fichas Yoshi (🪙) para la Ruleta sin límite',
+      'Gira la Ruleta de Yoshi en Bronce, Plata u Oro para multiplicar tus ganancias en StevenEuros',
+      'Supera los 250m de carrera para completar el Desafío Diario y ganar +15 SE directos'
     ],
     ctaTexto: 'Correr en Yoshi Runner'
   }
@@ -147,6 +148,7 @@ export function PantallaJuegos() {
     return Number(localStorage.getItem(`muudel_arcade_monedas_${fecha}_${perfil?.id}`) || 0)
   })
   const [retoArcadeCompletado, setRetoArcadeCompletado] = useState(false)
+  const [mostrarRuletaModal, setMostrarRuletaModal] = useState(false)
   const pageRef = useRef(null)
 
   const fechaHoy = new Date().toISOString().split('T')[0]
@@ -491,9 +493,33 @@ export function PantallaJuegos() {
               <div>
                 <div style={{ fontSize: 11, color: 'var(--color-secondary-ink)', fontWeight: 600 }}>Fichas Yoshi</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#2F9E44', fontFamily: 'monospace' }}>
-                  {perfil?.monedas_ruleta_yoshi || 0} 🎰
+                  {perfil?.monedas_ruleta_yoshi || 0} 🪙
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playPop()
+                  setMostrarRuletaModal(true)
+                }}
+                style={{
+                  marginLeft: 4,
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  backgroundColor: 'rgba(52, 199, 89, 0.12)',
+                  border: '1px solid rgba(52, 199, 89, 0.3)',
+                  color: '#2F9E44',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+                title="Tirar la Ruleta Yoshi con tus fichas"
+              >
+                <span>🎰 Girar</span>
+              </button>
             </div>
           </div>
 
@@ -866,12 +892,12 @@ export function PantallaJuegos() {
                   </h3>
                 </div>
                 <p className="apple-caption" style={{ margin: '0 0 12px' }}>
-                  Sin límite diario en juegos de habilidad. Consigue StevenEuros en carreras o apuesta en las mesas para aumentar tu saldo.
+                  Sin límite diario en recolección de habilidad. Acumula Fichas Yoshi en carrera para girar la Ruleta, o desafía a tus compañeros en las mesas de clase.
                 </p>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span className="apple-caption">Ganados hoy en Arcade:</span>
-                  <strong style={{ fontSize: 13, color: '#D97706' }}>{monedasHoy} SE (Ilimitado)</strong>
+                  <span className="apple-caption">Fichas Yoshi disponibles para Ruleta:</span>
+                  <strong style={{ fontSize: 13, color: '#2F9E44' }}>{perfil?.monedas_ruleta_yoshi || 0} 🪙</strong>
                 </div>
 
                 <div
@@ -1377,6 +1403,21 @@ export function PantallaJuegos() {
           </div>
         )}
       </div>
+
+      {/* Modal interactivo de la Ruleta Yoshi */}
+      {mostrarRuletaModal && (
+        <RuletaYoshiModal
+          perfil={perfil}
+          saldoMonedasRuleta={perfil?.monedas_ruleta_yoshi || 0}
+          onCerrar={() => setMostrarRuletaModal(false)}
+          onActualizarSaldoMonedas={(nuevoSaldo) => {
+            setPerfil(prev => prev ? { ...prev, monedas_ruleta_yoshi: nuevoSaldo } : prev)
+          }}
+          onActualizarStevenEuros={(nuevosPuntos) => {
+            setPerfil(prev => prev ? { ...prev, puntos_total: nuevosPuntos } : prev)
+          }}
+        />
+      )}
     </main>
   )
 }

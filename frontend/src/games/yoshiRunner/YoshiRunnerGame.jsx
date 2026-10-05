@@ -227,6 +227,31 @@ class RetroAudio {
 
 const retroAudio = new RetroAudio()
 
+// Helper para headers seguros de juego y sincronización con el servidor
+async function obtenerHeadersYoshi(p) {
+  const headers = { 'Content-Type': 'application/json' }
+  try {
+    const { data: sData } = await supabase.auth.getSession()
+    if (sData?.session?.access_token) {
+      headers['Authorization'] = `Bearer ${sData.session.access_token}`
+    }
+  } catch (_) {}
+
+  let localId = null
+  try {
+    const localUser = localStorage.getItem('racha_local_user')
+    if (localUser) localId = JSON.parse(localUser)?.id
+  } catch (_) {}
+
+  const uid = p?.id || localId || '00000000-0000-4000-a000-000000000001'
+  headers['x-user-id'] = uid
+
+  const pin = localStorage.getItem('muudel_admin_pin_custom') || '2026'
+  if (pin) headers['x-admin-pin'] = pin
+
+  return headers
+}
+
 // ─── Modos de dificultad Yoshi Runner ───────────────────────────────────────
 export const DIFICULTADES_YOSHI = {
   normal: {
@@ -510,15 +535,11 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
 
     if (monedasGanadas > 0 && p) {
       const idempKey = `partida_${p.id}_${Date.now()}`
-      const headers = { 'Content-Type': 'application/json', 'x-user-id': p.id }
 
       const ejecutarFinalizar = async () => {
         try {
-          const { data: sData } = await supabase.auth.getSession()
-          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-        } catch (_) {}
+          const headers = await obtenerHeadersYoshi(p)
 
-        try {
           const resp = await fetch('/api/ruleta/yoshi-finalizar-partida', {
             method: 'POST',
             headers,
@@ -594,35 +615,20 @@ export function YoshiRunnerGame({ perfil, onMonedasGanadas, onRetoCompletado, re
     sessionTokenRef.current = localToken
 
     if (p?.id) {
-      const headers = { 'Content-Type': 'application/json', 'x-user-id': p.id }
-      try {
-        supabase.auth.getSession().then(({ data: sData }) => {
-          if (sData?.session?.access_token) headers['Authorization'] = `Bearer ${sData.session.access_token}`
-          fetch('/api/ruleta/yoshi-iniciar-partida', {
+      obtenerHeadersYoshi(p)
+        .then(headers => {
+          return fetch('/api/ruleta/yoshi-iniciar-partida', {
             method: 'POST',
             headers
           })
-            .then(r => r.json())
-            .then(d => {
-              if (d.success && d.session_token) {
-                sessionTokenRef.current = d.session_token
-              }
-            })
-            .catch(() => {})
         })
-      } catch (_) {
-        fetch('/api/ruleta/yoshi-iniciar-partida', {
-          method: 'POST',
-          headers
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && d.session_token) {
+            sessionTokenRef.current = d.session_token
+          }
         })
-          .then(r => r.json())
-          .then(d => {
-            if (d.success && d.session_token) {
-              sessionTokenRef.current = d.session_token
-            }
-          })
-          .catch(() => {})
-      }
+        .catch(() => {})
     }
 
     const winsActuales = getWins()

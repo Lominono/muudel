@@ -1186,5 +1186,33 @@ body {
   margin-top: 14px;
 }
 
+@media (max-width: 640px) {
+  .juegos-container {
+    padding: 10px 12px;
+    gap: 12px;
+  }
+  .juegos-wallet-bar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .juegos-nav-segmented {
+    padding: 3px;
+    gap: 4px;
+  }
+  .juegos-nav-btn {
+    min-height: 38px;
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 5px;
+  }
+  .juegos-card-item {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .juegos-stage-topbar {
+    padding: 10px 12px;
+  }
+}
+
 
 
